@@ -151,7 +151,11 @@
             cont_hist[prev_to][piece_idx][to] added to SearchInfo (Box, 192KB heap)
             Used in score_move() for quiet moves; updated in update_ordering_on_cutoff()
             Gravity formula matches regular history; zeroed each search
-- [ ] 13.7 — Node count benchmarking vs known engines
+- [x] 13.7 — Node count benchmarking vs known engines
+            tests/node_count.rs: 5 #[ignore] fixed-depth benchmarks
+            build.yml bench job: runs on main push, results in Actions log
+            Positions: startpos/d10, kiwipete/d9, endgame/d11, tactical/d9,
+            Pet Dragon rank-1 pawn/d8. Baselines filled from first Actions run.
 
 ---
 

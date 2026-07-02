@@ -7,6 +7,34 @@ Most recent session at TOP.
 
 ---
 
+## Session 16 — 2026-07 (Phase 13.7 Node Count Benchmarking)
+
+**Built:**
+- Phase 13.7 complete — 2 files:
+  - `tests/node_count.rs` (NEW) — 5 `#[ignore]`-tagged fixed-depth benchmarks:
+      node_count_startpos_depth10, node_count_kiwipete_depth9,
+      node_count_endgame_depth11, node_count_tactical_depth9,
+      node_count_pet_dragon_rank1_depth8
+    Each calls iterative_deepening() with fixed_depth_tc(d), prints nodes/NPS/best.
+    Uses 32MB TT. Does NOT run in normal cargo test — CI-gated separately.
+  - `.github/workflows/build.yml` (DELTA) — new `bench` job after `test`:
+    runs `cargo test --release node_count -- --ignored --nocapture` on main push.
+    Results appear in GitHub Actions log permanently per commit.
+- Baseline node counts: fill in from first Actions run of bench job.
+
+**Architecture decisions:**
+- None new. Node counting infrastructure already existed (info.nodes).
+- Benchmark is observation-only; does not gate build or release.
+
+**Next session start point:**
+Phase 13 complete. Decision point: Phase 14 (Texel tuning) vs Phase 16 (NNUE).
+Recommendation: skip Phase 14 (Texel), proceed to Phase 15 (Syzygy) then Phase 16
+(NORU NNUE). Borrowed Ethereal weights are sufficient for NNUE training data.
+If Gokul confirms skip, start Phase 15.1 — add pyrrhic-rs to Cargo.toml.
+Read DECISIONS.md first for D12 (Texel optional) before starting.
+
+---
+
 ## Session 15 — 2026-07 (Phase 13.6 Continuation History)
 
 **Built:**
