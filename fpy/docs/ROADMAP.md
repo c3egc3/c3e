@@ -1,4 +1,4 @@
-# FastPy — Roadmap 
+# FastPy — Roadmap
 
 Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 

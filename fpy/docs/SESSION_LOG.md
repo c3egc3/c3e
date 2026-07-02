@@ -1,4 +1,4 @@
-# FastPy — Session Log 
+# FastPy — Session Log
 
 Append-only. One entry per session. Most recent at top.
 
