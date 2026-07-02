@@ -152,10 +152,12 @@
             Used in score_move() for quiet moves; updated in update_ordering_on_cutoff()
             Gravity formula matches regular history; zeroed each search
 - [x] 13.7 — Node count benchmarking vs known engines
-            tests/node_count.rs: 5 #[ignore] fixed-depth benchmarks
-            build.yml bench job: runs on main push, results in Actions log
-            Positions: startpos/d10, kiwipete/d9, endgame/d11, tactical/d9,
-            Pet Dragon rank-1 pawn/d8. Baselines filled from first Actions run.
+            tests/node_count.rs: 5 #[ignore] fixed-depth benchmarks (depth 8–11)
+            build.yml bench job: cargo test --profile bench-tests node_count -- --ignored --nocapture
+            Cargo.toml: [profile.bench-tests] inherits release, panic=unwind, lto=false
+            Bug fixed: panic=abort in [profile.release] silently killed test binary (exit 101)
+            Positions: startpos/d10, kiwipete/d9, endgame/d11, tactical/d9, rank-1/d8
+            Baselines: fill in ??? slots from bench job Actions log after next run
 
 ---
 

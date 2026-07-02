@@ -7,32 +7,45 @@ Most recent session at TOP.
 
 ---
 
-## Session 16 — 2026-07 (Phase 13.7 Node Count Benchmarking)
+## Session 16 — 2026-07-03 (Phase 13.7 Node Count Benchmarking)
 
 **Built:**
-- Phase 13.7 complete — 2 files:
-  - `tests/node_count.rs` (NEW) — 5 `#[ignore]`-tagged fixed-depth benchmarks:
-      node_count_startpos_depth10, node_count_kiwipete_depth9,
-      node_count_endgame_depth11, node_count_tactical_depth9,
-      node_count_pet_dragon_rank1_depth8
-    Each calls iterative_deepening() with fixed_depth_tc(d), prints nodes/NPS/best.
-    Uses 32MB TT. Does NOT run in normal cargo test — CI-gated separately.
-  - `.github/workflows/build.yml` (DELTA) — new `bench` job after `test`:
-    runs `cargo test --release node_count -- --ignored --nocapture` on main push.
-    Results appear in GitHub Actions log permanently per commit.
-- Baseline node counts: fill in from first Actions run of bench job.
+- `tests/node_count.rs` (NEW) — 5 #[ignore] fixed-depth node count benchmarks:
+  node_count_startpos_depth10, node_count_kiwipete_depth9, node_count_endgame_depth11,
+  node_count_tactical_depth9, node_count_pet_dragon_rank1_depth8.
+  Each calls iterative_deepening() via fixed_depth_tc(), prints nodes/NPS/best move.
+  32MB TT. Skipped in normal cargo test; run only by bench CI job.
+- `.github/workflows/build.yml` (DELTA) — bench job added: runs on main push after test,
+  uses cargo test --profile bench-tests node_count -- --ignored --nocapture.
+- `Cargo.toml` (DELTA) — [profile.bench-tests] added: inherits release (opt-level=3,
+  codegen-units=1), overrides panic=unwind (required for test harness), lto=false
+  (faster CI compile), strip=false.
+
+**Bug fixed:**
+- Cause: [profile.release] has panic="abort"; cargo test --release applied this to
+  test binary, killing process on any assert! with no output (exit 101, silent).
+- Fix: new [profile.bench-tests] profile with panic="unwind".
+- Why correct: Rust test harness requires unwinding to catch panics per test;
+  abort mode kills the whole process before the harness can report results.
 
 **Architecture decisions:**
-- None new. Node counting infrastructure already existed (info.nodes).
-- Benchmark is observation-only; does not gate build or release.
+- None new. panic=abort stays in [profile.release] for the native binary (correct
+  for production). Only test profile overrides it.
+
+**Baselines to fill in** (from bench job Actions log):
+  node_count_startpos_depth10:    nodes = ???, nps = ???
+  node_count_kiwipete_depth9:     nodes = ???, nps = ???
+  node_count_endgame_depth11:     nodes = ???, nps = ???
+  node_count_tactical_depth9:     nodes = ???, nps = ???
+  node_count_pet_dragon_rank1_d8: nodes = ???, nps = ???
 
 **Next session start point:**
-Phase 13 complete. Decision point: Phase 14 (Texel tuning) vs Phase 16 (NNUE).
-Recommendation: skip Phase 14 (Texel), proceed to Phase 15 (Syzygy) then Phase 16
-(NORU NNUE). Borrowed Ethereal weights are sufficient for NNUE training data.
-If Gokul confirms skip, start Phase 15.1 — add pyrrhic-rs to Cargo.toml.
-Read DECISIONS.md first for D12 (Texel optional) before starting.
-
+Phase 13 complete. Decision point per D12 (DECISIONS.md):
+  Skip Phase 14 (Texel tuning). Proceed to Phase 15 (Syzygy tablebases).
+  Start: Phase 15.1 — verify pyrrhic-rs on crates.io, add to Cargo.toml,
+  confirm it builds on stable Rust. Read DECISIONS.md D12 first.
+  Then: Phase 15.2 — UCI SyzygyPath option in main.rs.
+  
 ---
 
 ## Session 15 — 2026-07 (Phase 13.6 Continuation History)
