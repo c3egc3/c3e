@@ -113,7 +113,7 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 - [x] FastPy transpiler: IRGlobal, global array emission, subscript-expr targets
 - [ ] Null move pruning
 - [ ] Late Move Reductions (LMR)  
-- [ ] Hash move ordering (try TT move first before MVV-LVA)
+- [ ] Hash move ordering (TT move first — highest remaining gain)
 - [ ] Aspiration windows in iterative deepening
 
 

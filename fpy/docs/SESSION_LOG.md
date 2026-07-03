@@ -4,6 +4,61 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 10 — Transposition Table + Zobrist (clean apply from GitHub baseline)
+**Status:** COMPLETE ✅
+
+**FastPy transpiler (g-c-3/fastpy):**
+- `parser.py`: IRGlobal dataclass, `_try_global()`, `_try_constant()` returns bool,
+  `_resolve_target()` handles arbitrary subscript index expressions (`arr[a*64+b]`),
+  `IRModule.globals_` field, `build()` includes globals_
+- `type_system.py`: `_check_global()`, `_global_names` set pre-seeds `declared` in
+  `_check_function()`, `check_module()` registers globals before checking functions
+- `emitter.py`: `IRGlobal` import, `_emit_globals()` emits C++ global arrays in
+  BSS segment (`uint64_t TT_HASH[1048576] = {};`), `emit()` calls `_emit_globals()`
+
+**engine.py (g-c-3/fastpy-engine):**
+- TT constants: `TT_SIZE=1048576`, `TT_MASK`, `TT_EXACT/LOWER/UPPER`
+- Zobrist constants: `ZK_GOLDEN`, `ZK_SIDE`, `ZK_CASTLE_*`, `ZK_EP_*`
+- Global arrays: `TT_HASH/SCORE/DEPTH/FLAG[1048576]`, `ZK_TABLE[768]`, `ZK_TABLE_INIT[1]`
+- `BoardState.hash: uint64 = 0` field
+- Free functions (after `pop_lsb`, before directional shifts — D-26):
+  `zk_piece`, `zk_sq`, `zk_ep_key`, `init_zk_table`, `compute_hash`
+- `select_next_move()` — lazy single-step selection after `sort_moves()`
+- `make_move()` — full incremental Zobrist hash update (XOR in/out per piece)
+- `tt_probe()`, `tt_store()` — before PIECE-SQUARE TABLES section
+- `alpha_beta()` — TT probe at entry, TT store at exit, lazy sort
+- `find_best_move()` — ZK_TABLE_INIT guard on first call
+
+**run.py (g-c-3/fastpy-engine) — full replacement:**
+- Python-mode TT arrays resized to 1M entries at import time
+- `init_zk_table()` called once at module load
+- `_apply_position()` seeds `board.hash` via `compute_hash()`
+- `_alpha_beta_py()` uses `tt_probe`/`tt_store`
+- `ucinewgame` clears TT arrays
+
+**Results:**
+- 117/117 tests passing (all GitHub tests)
+- `fastpy check engine.py` — zero errors
+- `g++ -O3 -march=native` — zero warnings
+- perft(6) = 119,060,324 ✅ (reference correct)
+- Nodes (depth 7): 134,976,638 → **46,640,189 (−65%)**
+- Wall time (depth 7): 30.4s → **18.7s (−38%)**
+- Perft NPS: 16.5M → **23.5M (+42%)**
+
+**Key decisions:**
+- D-29: `compute_hash` as free function not BoardState method (C++ ordering, D-26)
+- D-30: `zk_piece` two-step via `idx: uint64` avoids operator-precedence C++ warnings
+- D-31: `ZK_TABLE` precomputed lookup — single array index replaces 2 multiplies per move
+- D-32: Python-mode TT arrays resized in `run.py` (not engine.py) — engine.py is dialect-only
+
+**Next (ROADMAP):**
+- Hash move ordering: try TT move first before MVV-LVA (free nodes, biggest remaining gain)
+- Null move pruning
+- Late Move Reductions (LMR)
+- test_phase5.py + test_phase6.py not yet on GitHub — need to write and commit
+
+---
+
 ## Session 9 — Transposition Table (Zobrist Hashing) + FastPy Transpiler Extensions
 **Status:** COMPLETE ✅
 
