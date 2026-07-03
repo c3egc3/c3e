@@ -141,3 +141,23 @@ full rewrites of run.py. Context usage drops dramatically each session.
 **Problem:** PST evaluation (`pst_sum`'s per-piece lsb/pop_lsb loop) is measurably more expensive than the old material-only `evaluate()`, called at every quiescence leaf node. Depth 4 search time grew from acceptable to ~6.4s; depth 5 exceeded test harness timeouts. There is currently no mid-search time abort — `_iterative_deepening_py` only checks elapsed time *between* completed depths, so once depth 5 starts it runs to completion regardless of budget.
 **Decision:** Reduced `default_depth` in run.py's bare `go` handler from 5 to 4 as an immediate fix. Root cause (no mid-search abort) is tracked as a Phase 4 follow-up, not fixed here — it's a larger structural change (needs a node counter or periodic clock check threaded through `alpha_beta`/`quiescence`).
 
+## D-29: compute_hash() is a full recompute inside make_move(), not incremental XOR (2026-07-04)
+**Problem:** The Session 9–10 write-up described incremental Zobrist updates (XOR out the moved piece, XOR in at the new square, etc., directly inside `make_move()`). That implementation never actually reached `engine.py` on main — only its `run.py` counterpart shipped, leaving nothing to reconstruct from.
+**Decision:** `make_move()` now calls `compute_hash(board)` once on the fully-updated board immediately before `return board`. O(64) bit-scans per move instead of O(1) XORs — correct, verified against `perft(5) = 4,865,609` and transposition equality (`1.Nf3 Nf6 2.Nc3` == `1.Nc3 Nf6 2.Nf3` hash), but leaves incremental-hash perf on the table.
+**Follow-up:** convert to true incremental XOR updates inside `make_move()` next time the move-type branches are touched — candidate for the same pass as hash move ordering.
+
+## D-30: Zobrist keys via splitmix64 mixer, not Python `random` (2026-07-04)
+**Problem:** `engine.py` is FastPy dialect only — no `random` module (not compilable).
+**Decision:** `zk_rand(seed: uint64) -> uint64` implements a splitmix64-style mixer (golden-ratio increment + two xor-shift-multiply rounds), seeded 1, 2, 3... for the 768 table entries. Deterministic and reproducible across Python-mode and compiled runs.
+
+## D-31: En-passant Zobrist key derived from ZK_TABLE, not a separate array (2026-07-04)
+**Problem:** Only 8 EP-file keys are needed.
+**Decision:** `zk_ep_key(file)` reuses `ZK_TABLE[file] ^ ZK_EP_MIX` instead of a second small global array — one fewer BSS global, negligible collision risk increase for a table already keyed by full hash equality in `tt_probe`/`tt_store`.
+
+## D-32: run.py's import list is the contract when it and SESSION_LOG.md disagree (2026-07-04)
+**Problem:** `run.py` on main was already Phase 5 (imported `TT_MASK`, `tt_probe`, `tt_store`, `compute_hash`, `init_zk_table`), but `engine.py` was still Phase 4 — the Session 9–10 `engine.py` patches were written up in `SESSION_LOG.md` but never committed.
+**Decision:** before starting new roadmap work, diff `engine.py`'s exported names against what `run.py` actually imports. That import list is the current contract — more reliable than a session log's prose description of what should have shipped.
+
+## D-33: DECISIONS.md entries land in the same commit as the code they document (2026-07-04)
+**Problem:** Sessions 9–10 referenced decision IDs that were never written into `DECISIONS.md`, and this session's own D-26–D-30 proposal collided with three legitimate decisions (PST ordering, `is_side_to_move_in_check`, default_depth) committed under the same numbers in the meantime.
+**Decision:** decision IDs are claimed at commit time, not draft time. A docstring `# see D-N` reference is only trustworthy once both files are committed together — re-verify the number against the live `DECISIONS.md` before trusting an in-code reference.
