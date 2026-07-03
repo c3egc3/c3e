@@ -173,12 +173,25 @@
 
 ---
 
-## Phase 15 — Syzygy Tablebases ⏳
-- [ ] 15.1 — Integrate Syzygy probe via pyrrhic-rs or own implementation
-- [ ] 15.2 — UCI SyzygyPath option
-- [ ] 15.3 — Probe in search when <= 7 pieces on board
-- [ ] 15.4 — WDL (Win/Draw/Loss) probing for eval
-- [ ] 15.5 — DTZ (Distance to Zero) probing for perfect endgame play
+## Phase 15 — Syzygy Tablebases ✅
+- [x] 15.1 — pyrrhic-rs v0.2.0 (crates.io). PetDragonAdapter implements
+             EngineAdapter via our precomputed bitboard attack tables.
+             SyzygyProber wraps TableBases<PetDragonAdapter> with Position helpers.
+             TB_WIN_SCORE = 10_000 (above max HCE, below mate threshold 900_000).
+             Gate: [target.'cfg(not(target_arch = "wasm32"))'.dependencies].
+             WASM builds unaffected — libc excluded on wasm32.
+- [x] 15.2 — UCI SyzygyPath string option (cmd_uci). setoption handler in
+             main.rs: init SyzygyProber on non-empty path, print info string
+             with max_pieces. Disable and log on empty path or bad path.
+- [x] 15.3 — WDL probe at ALL interior nodes in alpha_beta_with_excluded(),
+             after draw checks, before TT probe.
+             Condition: piece_count ≤ tb.max_pieces() && halfmove_clock == 0.
+- [x] 15.4 — WDL scores: Win=+10000, CursedWin=+1, Draw=0,
+             BlessedLoss=-1, Loss=-10000 cp. Score stored in TT for efficiency.
+- [x] 15.5 — DTZ root probe in cmd_go() BEFORE spawning helper threads (not
+             thread-safe — must run serially). On DTZ success: print bestmove
+             and return early, no search spawned. syzygy_for_threads Arc cloned
+             into main + N-1 helper SearchInfos for WDL during search.
 
 ---
 
