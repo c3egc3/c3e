@@ -1,4 +1,4 @@
-# FastPy — Key Decisions 
+# FastPy — Key Decisions
 
 Every significant decision recorded here with its rationale.
 When a decision changes, the old entry stays (struck through) and the new one is added below it with a date.
@@ -127,21 +127,17 @@ full rewrites of run.py. Context usage drops dramatically each session.
 **Resolution:** Python wrappers `_generate_captures_py` and `_quiescence_py` in `run.py` replicate the same logic using Python lists. Tests use these wrappers, not the engine functions directly.
 **Pattern:** This is the established pattern for all compiled search functions (D-20).
 
----
+## D-26: PST functions must be source-ordered before their first caller (2026-06-30)
+**Problem:** Appending new functions at the end of engine.py is the normal workflow (D-23), but `evaluate()` is defined ~250 lines earlier than the file end and calls `pst_sum()`. The emitter walks `ir.functions` in source order with no forward declarations — C++ requires a function be declared before use.
+**Decision:** New helper functions must be inserted immediately before their first caller in engine.py, not always appended at file end. Append-only is safe for leaf functions (nothing else calls them yet); it is not safe for functions consumed by existing code.
+**Rule of thumb:** if patch X adds `helper()` and also modifies `existing_fn()` to call it, `helper()`'s definition must appear above `existing_fn()` in the file.
 
-## Decisions Pending / Open Questions
+## D-27: is_side_to_move_in_check() is a new function, not a repurposed is_in_check() (2026-06-30)
+**Problem:** `is_in_check(board)` checks whether the side that JUST moved left their own king in check — used by `generate_legal_moves()` for legality filtering. Checkmate/stalemate detection in `alpha_beta()` needs the opposite: whether the side currently TO move is in check. Conflating these silently produces wrong checkmate detection (caught only by a failing test, not a type error — the bug is purely semantic).
+**Decision:** Added `is_side_to_move_in_check(board) -> bool8` as a separate function with the inverted side logic. `is_in_check()` is untouched and remains load-bearing for move generation.
+**Lesson:** any board-state query with a "whose perspective" ambiguity needs that perspective in its name or docstring, not just inferred from call site.
 
-*(none currently open)*
+## D-28: default_depth lowered 5→4 for bare `go` (2026-06-30)
+**Problem:** PST evaluation (`pst_sum`'s per-piece lsb/pop_lsb loop) is measurably more expensive than the old material-only `evaluate()`, called at every quiescence leaf node. Depth 4 search time grew from acceptable to ~6.4s; depth 5 exceeded test harness timeouts. There is currently no mid-search time abort — `_iterative_deepening_py` only checks elapsed time *between* completed depths, so once depth 5 starts it runs to completion regardless of budget.
+**Decision:** Reduced `default_depth` in run.py's bare `go` handler from 5 to 4 as an immediate fix. Root cause (no mid-search abort) is tracked as a Phase 4 follow-up, not fixed here — it's a larger structural change (needs a node counter or periodic clock check threaded through `alpha_beta`/`quiescence`).
 
----
-
-## Resolved Pending Decisions
-
-### DP-01: Move encoding in fastpy-engine
-**Resolved (Session 3):** Option A — pack `from_sq | (to_sq << 6)` into a single `uint64`.  
-Extended in Session 3 to include promotion bits (12-13) and flag bits (14-15):
-
-### DP-02: Return type for find_best_move
-**Resolved (Session 4):** Returns a single `uint64` (packed move word). Score from `alpha_beta()` separately. `find_best_move` loop now calls `make_move(board, move)` before recursing, matching `alpha_beta`. Both functions use value-copy board semantics consistently.
-
----
