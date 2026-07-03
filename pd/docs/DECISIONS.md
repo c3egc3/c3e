@@ -135,9 +135,18 @@ These have DIFFERENT feature encodings → different evaluation → correct beha
 
 ---
 
+---
+
 ## D16 — Singular Extension via Wrapper Function, Not Signature Change
 **Decision**: Implement singular extensions by keeping `pub fn alpha_beta(...)` with its original 9-argument signature as a thin wrapper, and moving the actual search body into a private `fn alpha_beta_with_excluded(..., excluded: Move)`. All internal recursive self-calls within the search body call `alpha_beta_with_excluded` directly (with `excluded = Move::NULL` for normal recursion); only the singular-verification search passes `excluded = tt_move`.
 
 **Why**: Singular extension verification needs to search the current position with one specific move (the TT move) excluded from the move loop, to answer "how good is the position without it?" Adding an `excluded: Move` parameter to the existing public `alpha_beta()` would have required touching every call site — `iterative.rs` (2 sites) and every test in `alpha_beta.rs` and `iterative.rs` that constructs an `alpha_beta(...)` call directly. The wrapper approach confines the change entirely to `alpha_beta.rs` with zero edits needed outside that file.
 
 **Rejected**: Adding `excluded: Move` directly to `alpha_beta()`'s public signature — more "standard" looking but would have cascaded into `iterative.rs` and ~10 test call sites for no functional benefit, increasing the size and risk of an already nontrivial delta.
+
+## D17 — pyrrhic-rs SyzygyPath re-set not supported mid-process (2026-07-04)
+`pyrrhic_rs::TableBases` is a process-wide singleton internally. Re-calling
+`setoption SyzygyPath <new path>` after a successful init will return
+`Err(AlreadyInitialized)` regardless of path validity. Decision: accept this
+as expected UCI behavior for now (GUIs set SyzygyPath once at startup); do
+not add re-init workaround unless a real compatibility issue is reported.
