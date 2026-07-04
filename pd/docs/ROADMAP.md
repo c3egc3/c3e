@@ -230,15 +230,10 @@
              the Actions tab — mobile-friendly, no terminal needed.
              (Gokul is mobile-only, can't `cargo run` locally).
 - [x] 16.4b — src/bin/lichess_sample.rs + .github/workflows/lichess_sample.yml
-             CONFIRMED WORKING (Session 27, 500/500 sample run: 0 parse
-             failures, multi-frame zstd archive handled correctly — the
-             Lichess file is split into multiple sequential content frames
-             plus skippable metadata frames; both handled by looping
-             StreamingDecoder creation on the same open connection).
-             Sampling is a skip+stride prefix of the file, not a uniform
-             sample of all 388M positions (documented limitation, D18).
-             NEXT: run at full scale (skip_lines=0, sample_size=50000,
-             stride=200) and download the artifact for Phase 16.5.
+             CONFIRMED WORKING AT FULL SCALE (Session 27: 500/500 test run,
+             then 50000/50000 full run, 0 parse failures both times.
+             Full run: 9,999,801 lines read, lichess_sample.txt = 9.6M,
+             50000 rows). PHASE 16.4b COMPLETE.
 - [ ] 16.4c — Pawn start feature convergence design:
              Features become 0 as pawns leave starting squares.
              Network naturally transitions to standard-chess-like eval

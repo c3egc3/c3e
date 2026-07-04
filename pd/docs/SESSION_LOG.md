@@ -7,7 +7,7 @@ Most recent session at TOP.
 
 ---
 
-## Session 27 — 2026-07-04 (Phase 16.4b: Lichess sampler, 3 bugs fixed)
+## Session 28 — 2026-07-04 (Phase 16.4b: Lichess sampler, 3 bugs fixed)
 
 **Built:** src/bin/lichess_sample.rs (NEW) + .github/workflows/lichess_sample.yml
 (NEW) — streaming Lichess CC0 eval dataset sampler. Feature-gated behind
@@ -33,24 +33,26 @@ or wasm) — zero impact on native release build, cargo test, or WASM bundle.
    frame-opening loop directly into main()'s outer 'frames loop instead
    of a named helper, so both generics are inferred from usage.
 
-**Verified (Session 27, workflow run):** 500/500 samples written, 0 parse
-failures, 2 skippable frames skipped, 99,801 real lines read across
-multiple content frames before hitting sample_size=500. JSON field
-assumptions (evals[].pvs[].cp/.mate, evals[].depth, 4-field FEN) all
-correct against the real dataset — no further guessing needed here.
+**Verified (Session 28, workflow runs):** 500/500 test sample run first
+(0 parse failures, 99,801 lines read). Then full-scale run confirmed:
+50000/50000 samples, 0 parse failures, 9,999,801 lines read,
+lichess_sample.txt = 9.6M / 50000 rows. JSON field assumptions
+(evals[].pvs[].cp/.mate, evals[].depth, 4-field FEN) all correct against
+the real dataset. Gokul needs to download the artifact
+(lichess-sample-skip0-n50000-stride200) before Phase 16.5 can start.
 
 **Decisions made:** None new this session — D18 (prefix-sampling approach,
 from Session prior) stands as documented, now empirically confirmed to
 produce clean data.
 
 **Next session start point:**
-Gokul: trigger lichess_sample.yml with skip_lines=0, sample_size=50000,
-stride=200 (real scale — expect several minutes, not seconds), download
-the resulting artifact. Then start Phase 16.5: combine selfplay_data.txt
-(from selfplay.yml artifacts) + lichess_sample.txt into one training set,
-write the Colab notebook for NORU NNUE training (D14's blend-eval-vs-
-game-result decision happens at that stage — lichess rows have result="NA"
-and must be treated as eval-only targets, self-play rows have both signals).
+Gokul: download the lichess_sample.txt artifact from the full-scale run
+(50000 rows, 9.6M) and upload it, along with the most recent
+selfplay_data.txt artifact from selfplay.yml. Then start Phase 16.5:
+combine both into one training set, write the Colab notebook for NORU
+NNUE training (D14's blend-eval-vs-game-result decision happens at that
+stage — lichess rows have result="NA" and must be treated as eval-only
+targets, self-play rows have both signals).
 
 ---
 
