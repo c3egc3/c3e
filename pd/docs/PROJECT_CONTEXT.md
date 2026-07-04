@@ -1,4 +1,4 @@
-# PROJECT_CONTEXT.md 
+# PROJECT_CONTEXT.md
 # Pet Dragon Chess Engine
 
 ## Purpose
@@ -43,6 +43,10 @@ Live: https://g-c-3.github.io/pet-dragon
 - **Board**: Bitboards + Magic bitboards
 - **Search**: Alpha-beta + PVS, iterative deepening, aspiration windows
 - **Eval**: HCE (Ethereal weights) → Texel tuning → NORU NNUE (Phase 16)
+- **Training compute**: GitHub Actions (CPU) by default for all training
+  (Texel tuning, NNUE). Kaggle backgrounding is the documented fallback only
+  if dataset size or a future GPU-dependent training path outgrows the
+  Actions time budget — see DECISIONS.md D19/D20. Not used by default.
 - **Protocol**: UCI for GUI compatibility
 - **Crate**: `pet_dragon` / `pet_dragon_lib`
 

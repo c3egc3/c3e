@@ -206,3 +206,44 @@ interactively cell-by-cell, with periodic checkpoint saves to
 conventions (/kaggle/input/, /kaggle/working/), not Colab's Drive-mount
 paths.
 
+## D19 — NNUE Training via GitHub Actions, Not Colab (2026-07-05)
+**Decision**: Phase 16.5 training runs as a GitHub Actions workflow
+(train_nnue.yml) rather than a Google Colab notebook.
+
+**Why**: NORU is pure Rust with no GPU-dependent training path (FP32
+backprop is CPU-only), so Colab's main advantage (free GPU) doesn't apply.
+Running it in Colab would still require Gokul to paste and run Rust/cargo
+commands in notebook cells — functionally the same as a terminal, which
+violates D15 (GitHub Actions handles all building, Gokul never runs cargo).
+An Actions workflow with workflow_dispatch inputs achieves the same
+"trigger training with custom hyperparameters from mobile" goal while
+keeping the one-button-tap UX consistent with every other phase.
+
+**Rejected**: Colab notebook (as originally noted in Phase 16 ROADMAP
+comments from Session 7) — rejected once it became clear NORU has no
+GPU-training benefit to justify breaking the Actions-only convention.
+
+## D20 — Kaggle Backgrounding as Documented Fallback, Not Default (2026-07-05)
+**Decision**: GitHub Actions remains the default for all training workloads
+(Texel tuning if revisited, NNUE training). Kaggle (background execution) is
+documented as the fallback path, triggered only if either condition is met:
+(a) NORU or a future eval component gains a GPU-dependent training path, or
+(b) self-play/Lichess dataset size grows large enough that a single training
+run approaches GitHub Actions' 6-hour job ceiling.
+
+**Why**: Kaggle's main advantage over Actions is free GPU + long background
+runs. NORU's training is FP32 CPU backprop with no CUDA path, and current
+dataset sizes (tens of thousands of rows) finish in minutes on Actions. Using
+Kaggle today would add manual artifact-shuffling steps (download from
+Actions → upload to Kaggle → run → download → re-upload to repo) with no
+compute benefit, breaking the one-tap Actions workflow convention (D15/D19).
+
+**Trigger conditions for revisiting**: dataset row count exceeds roughly
+1-2M rows (self-play + Lichess combined) such that a training run's wall
+time starts competing with Actions' free-tier minutes/time limits, or a
+future NNUE architecture change requires GPU-accelerated training that
+NORU's CPU-only trainer can't provide.
+
+**Rejected (for now)**: Adopting Kaggle as the default training runner —
+rejected until one of the trigger conditions above is actually hit; no
+benefit today, real UX cost.

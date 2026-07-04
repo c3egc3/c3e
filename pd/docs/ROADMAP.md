@@ -175,7 +175,9 @@
             Texel tuning improves HCE quality and therefore NNUE training data
             quality, but borrowed weights are sufficient for initial NNUE training.
             Decide after Phase 13 is complete.
-            colab/texel_tuning.ipynb — optimise HCE weights via gradient descent
+            texel_tune.yml (GitHub Actions, per D19) — optimise HCE weights via
+            gradient descent. Kaggle is the fallback only if this phase is
+            revisited and Actions' time budget proves insufficient (D20).
 - [ ] 14.2 — Generate Pet Dragon game database for tuning
 - [ ] 14.3 — Run tuning on Google Colab (free GPU)
 - [ ] 14.4 — Update weights in eval/ files with tuned values
@@ -239,9 +241,14 @@
              Network naturally transitions to standard-chess-like eval
              in middlegame/endgame without switching logic.
              See DECISIONS.md for full rationale.
-- [ ] 16.5 — Train network using NORU's built-in trainer on Kaggle Notebooks
-             (Save Version → Run All / commit mode, per D18 — survives
-             disconnects, unlike interactive mode or Colab's free tier)
+- [x] 16.5 — src/bin/train_nnue.rs (NEW): reads combined selfplay+Lichess
+             rows, blends eval/result targets per D14 (lambda flag), trains
+             via NORU Adam trainer, saves FP32 + quantized weights.
+             .github/workflows/train_nnue.yml (NEW): pulls both data
+             artifacts by Run ID, builds+runs training, uploads network
+             files. Used GH Actions instead of Colab — see D19. NOT YET RUN
+             (needs Gokul to trigger with real selfplay/lichess Run IDs).
+WHERE: ROADMAP.md
 - [ ] 16.6 — Integrate trained network into eval (replace HCE or blend)
 - [ ] 16.7 — WASM-compatible inference (NORU is pure Rust)
 
