@@ -150,3 +150,59 @@ These have DIFFERENT feature encodings → different evaluation → correct beha
 `Err(AlreadyInitialized)` regardless of path validity. Decision: accept this
 as expected UCI behavior for now (GUIs set SyzygyPath once at startup); do
 not add re-init workaround unless a real compatibility issue is reported.
+
+## D18 — Lichess Sampler: Prefix Approximation, Not Uniform Sampling (2026-07-04)
+**Decision**: `lichess_sample.rs` samples a skip+stride *prefix* of the
+decompressed Lichess CC0 eval stream (skip N lines, then keep every Kth
+line until sample_size is reached, then close the connection) rather than
+a statistically uniform sample of all 388M positions.
+
+**Why**: Standard `.zst` frames only support sequential decompression from
+the start — no seeking to an arbitrary decompressed byte offset. A true
+uniform/reservoir sample across the whole file would require decompressing
+all 388M positions, which is not feasible in a GitHub Actions job's time
+and bandwidth budget. Stopping early and dropping the HTTP connection once
+`sample_size` is reached also means bytes past that point are never
+downloaded, keeping each run cheap.
+
+**Implication for training data (Phase 16.5)**: this sample may be biased
+toward whatever ordering Lichess's export uses (e.g. earlier-logged
+positions). Acceptable for bootstrapping per D14 (self-play is the primary
+Pet Dragon-specific signal; Lichess data is a supplementary standard-chess
+bootstrap). Revisit only if Colab training shows a bias traceable to file
+ordering.
+
+**Dependency choices**: `ruzstd` (pure Rust, MIT, no libc) over the `zstd`
+crate (C bindings) — avoids adding a system zstd requirement to the CI
+runner. `reqwest` with `blocking` + `rustls-tls` features (not default TLS)
+— avoids an OpenSSL dependency and an async runtime for a single
+sequential CI job. All three (`ruzstd`, `reqwest`, `serde_json`) are
+optional, gated behind a `lichess-sample` feature absent from both
+`default` and `wasm` — cannot affect the native release binary, `cargo
+test`, or the WASM/browser bundle.
+
+## D19 — Phase 16.5 Training Platform: Kaggle Notebooks, Not Colab (2026-07-04)
+**Decision**: Phase 16.5 (NORU NNUE training on combined selfplay + Lichess
+data) will use Kaggle Notebooks instead of Google Colab.
+
+**Why**: Gokul is mobile-only (no terminal, no desktop — see CORE RULES).
+Kaggle's "Save Version → Run All" (commit) mode keeps a notebook running
+on Kaggle's cloud servers even if the tab is closed, the phone locks, or
+the connection drops — confirmed via Kaggle's own community docs, this
+survives disconnects by design, unlike Colab's free tier which has no
+real equivalent walk-away/background-commit mode. This matters directly
+for a phone-only workflow where the notebook can't be babysat.
+
+**Caveat carried forward into the Phase 16.5 notebook design**: this
+disconnect-proof behavior applies to commit/"Run All" mode only —
+Kaggle's *interactive* editing mode has its own inactivity timeout (~40min
+idle, "are you still there?" prompts, reported loss of interactive session
+state after ~12h). The Phase 16.5 notebook must therefore be written to
+run end-to-end via Save Version → Run All from the start, not built up
+interactively cell-by-cell, with periodic checkpoint saves to
+/kaggle/working/ along the way.
+
+**Implication**: any file paths in the Phase 16.5 notebook use Kaggle's
+conventions (/kaggle/input/, /kaggle/working/), not Colab's Drive-mount
+paths.
+

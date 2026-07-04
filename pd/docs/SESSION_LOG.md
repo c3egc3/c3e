@@ -48,11 +48,8 @@ produce clean data.
 **Next session start point:**
 Gokul: download the lichess_sample.txt artifact from the full-scale run
 (50000 rows, 9.6M) and upload it, along with the most recent
-selfplay_data.txt artifact from selfplay.yml. Then start Phase 16.5:
-combine both into one training set, write the Colab notebook for NORU
-NNUE training (D14's blend-eval-vs-game-result decision happens at that
-stage — lichess rows have result="NA" and must be treated as eval-only
-targets, self-play rows have both signals).
+selfplay_data.txt artifact from selfplay.yml. Then start Phase 16.5:combine both into one training set, write the Kaggle notebook (Save Version → Run All mode, per D18) for NORU NNUE training (D14's
+blend-eval-vs-game-result decision happens at that stage — lichess rows have result="NA" and must be treated as eval-only targets, self-play rows have both signals).
 
 ---
 

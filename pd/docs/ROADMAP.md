@@ -239,7 +239,9 @@
              Network naturally transitions to standard-chess-like eval
              in middlegame/endgame without switching logic.
              See DECISIONS.md for full rationale.
-- [ ] 16.5 — Train network using NORU's built-in trainer on Google Colab
+- [ ] 16.5 — Train network using NORU's built-in trainer on Kaggle Notebooks
+             (Save Version → Run All / commit mode, per D18 — survives
+             disconnects, unlike interactive mode or Colab's free tier)
 - [ ] 16.6 — Integrate trained network into eval (replace HCE or blend)
 - [ ] 16.7 — WASM-compatible inference (NORU is pure Rust)
 
