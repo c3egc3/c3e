@@ -207,7 +207,14 @@
             9 tests: range checks, own/opponent distinction, symmetric
             start-pos parity, pawn-start presence/absence (D11), 1000-seed
             no-panic sweep.
-- [ ] 16.3 — Feature extraction: update incrementally on make/unmake
+- [x] 16.3 — src/nnue/delta.rs: compute_move_changes() mirrors every
+            make_move() match arm (quiet/capture/en passant/castle/promo)
+            to produce board-space add/remove events without a full 64-sq
+            rescan. render_for_perspective() turns those into NORU-ready
+            (added, removed) index lists. Verified equivalent to full
+            extract_features() re-extraction across a 300-seed x 6-move x
+            2-perspective sweep. Accumulator not yet wired into Position/
+            search — that's 16.6, once a trained network exists.
 - [ ] 16.4a — Training data: Pet Dragon self-play (engine vs engine)
 - [ ] 16.4b — Training data strategy: include standard chess positions
              (Lichess CC0 dataset) alongside Pet Dragon self-play.

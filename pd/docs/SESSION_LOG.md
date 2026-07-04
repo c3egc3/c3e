@@ -7,6 +7,48 @@ Most recent session at TOP.
 
 ---
 
+## Session 21 — 2026-07-04 (Phase 16.3 incremental NNUE delta)
+
+**Built:**
+- Confirmed Session 20 CI green (315/315).
+- Read `src/position/make_move.rs` fresh (per own handoff note) to design
+  the delta engine against the real match arms rather than guessing.
+- `src/nnue/delta.rs` (NEW) — `compute_move_changes()` mirrors make_move()'s
+  Quiet/DoublePush/Capture/EnPassant/CastleKing/CastleQueen/Promo* arms,
+  reading `pos.piece_on()` and `pos.pawn_starts` in pre-move state (must be
+  called before `make_move()` mutates). Produces board-space
+  `BoardFeatureChange`/`PawnStartFeatureChange` events; `render_for_perspective()`
+  turns those into perspective-specific (added, removed) index pairs for
+  NORU's `FeatureDelta`. Correctness proven by a sweep test comparing the
+  delta-applied feature set against a full `extract_features()` re-extraction
+  post-move, across 300 seeds x up to 6 moves x both perspectives.
+- `src/nnue/mod.rs` (DELTA) — added `pub mod delta;`.
+
+**Decisions made:** None new — delta engine implements D10/D11 exactly,
+no new architectural call.
+
+**Bugs fixed:** N/A (new file).
+
+**Test risk flagged (unconfirmed at write time):** `test_quiet_king_move_no_pawn_start_changes`
+and `test_promotion_drops_pawn_start_feature` assume `Move::new(from, to, kind)`,
+`Position::from_fen()`, and `PawnStartMap::set(square, color)` signatures
+inferred from convention, not re-verified against `types.rs`/`position/mod.rs`
+source this session. If CI fails only on these two, it's a constructor
+mismatch — fix the call site, not the delta logic (the main sweep test is
+the real correctness proof and doesn't depend on these helpers).
+
+**Next session start point:**
+If CI green: Phase 16.4 — training data generation strategy (self-play +
+Lichess CC0, per D9/D14 already documented). Read `docs/DECISIONS.md`
+entries D9/D14 again at start of that session (not from memory) before
+picking the self-play position sampler design, since exact convergence
+criteria matter for data quality. If CI red on the two flagged tests: fetch
+`src/types.rs` Move constructor + `src/position/mod.rs` FEN parser
+signatures, patch call sites only.
+
+
+---
+
 ## Session 20 — 2026-07-04 (Phase 16.1–16.2 NNUE feature set)
 
 **Built:**
