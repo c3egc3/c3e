@@ -196,9 +196,17 @@
 ---
 
 ## Phase 16 — NORU NNUE (Optional Enhancement) ⏳
-- [ ] 16.1 — Add NORU crate to Cargo.toml
-- [ ] 16.2 — Define 896-input feature set:
-            768 standard piece-square + 128 pawn start square features
+## Phase 16 — NORU NNUE (Optional Enhancement) ⏳
+- [x] 16.1 — Added noru = "2.2" to Cargo.toml (ordinary [dependencies],
+            confirmed WASM-safe by upstream, no wasm32 exclusion needed
+            unlike pyrrhic-rs).
+- [x] 16.2 — src/nnue/features.rs: 896-input feature set defined.
+            768 piece-square (kind*128 + relative_color*64 + relative_sq)
+            + 128 pawn-start (768 + relative_color*64 + relative_sq).
+            Perspective flip via Square::mirror_rank() for Black.
+            9 tests: range checks, own/opponent distinction, symmetric
+            start-pos parity, pawn-start presence/absence (D11), 1000-seed
+            no-panic sweep.
 - [ ] 16.3 — Feature extraction: update incrementally on make/unmake
 - [ ] 16.4a — Training data: Pet Dragon self-play (engine vs engine)
 - [ ] 16.4b — Training data strategy: include standard chess positions

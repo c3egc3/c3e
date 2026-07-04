@@ -7,6 +7,48 @@ Most recent session at TOP.
 
 ---
 
+## Session 20 — 2026-07-04 (Phase 16.1–16.2 NNUE feature set)
+
+**Built:**
+- Verified `noru` v2.2.0 live on crates.io (MIT/Apache-2.0, zero deps,
+  explicitly WASM-safe per upstream README — no libc dependency like
+  pyrrhic-rs, so no wasm32 target exclusion needed).
+- `Cargo.toml` (DELTA) — `noru = "2.2"` added to ordinary [dependencies].
+- `src/lib.rs` (DELTA) — `pub mod nnue;` added.
+- `src/nnue/mod.rs` (NEW) — module root, declares `features`.
+- `src/nnue/features.rs` (NEW) — 896-input feature encoding per D10:
+  `piece_feature_index()`, `pawn_start_feature_index()`,
+  `extract_features()`, `extract_stm_nstm_features()`. Perspective-relative
+  encoding (own=0/opp=1, Black view rank-mirrored) matches NORU's
+  stm_features/nstm_features training API directly. Pawn-start feature
+  presence is driven by `PawnStartMap::started_here()` — same check move
+  generation uses — so D11 convergence can't drift out of sync with the
+  actual game rule. 9 tests added, all read-only additions (no existing
+  code path touched).
+
+**Decisions made:** None new — feature layout follows D10/D11 exactly as
+already documented; no new DECISIONS.md entry needed this session.
+
+**Bugs fixed:** N/A (new files).
+
+**Next session start point:**
+Confirm CI green with 306 + 9 = 315 tests passing (`nnue::features` tests
+are the only new ones). If green: Phase 16.3 — incremental accumulator
+updates. Design note for next session: NORU's `Accumulator::update_incremental()`
+takes a `FeatureDelta` (added/removed indices) per perspective; the natural
+hook point is inside `Position::make_move()`/`unmake_move()` (src/position/make_move.rs)
+where the piece/pawn-start deltas are already known move-by-move — read that
+file fresh before starting since this is the first eval-adjacent change to
+touch make/unmake. Decide there whether accumulator state lives on
+`Position` (simplest, mirrors `hash: u64` incremental pattern already used)
+or is threaded through `SearchInfo` (more search-friction but keeps
+Position UCI/FEN-only). Lean toward `Position` field for consistency with
+how `hash` is already handled. If CI is red: read the actual failure log
+before touching nnue/features.rs again — don't guess.
+
+
+---
+
 ## Session 19 — 2026-07-04 (Phase 15 CI green — round 2)
 
 **Fixed:**
