@@ -1,9 +1,39 @@
-# SESSION_LOG.md 
+# SESSION_LOG.md
 # Pet Dragon — Session History
 
 ## Format
 Each entry: date, what was built, decisions made, bugs fixed, next session start point.
 Most recent session at TOP.
+
+---
+
+## Session 26 — 2026-07-04 (CI fix: duplicate Cargo.toml key)
+
+**Reported:** Gokul — CI failed immediately after committing Session 25's
+WASM hang fix, before any tests ran.
+
+**Diagnosed:** `cargo metadata` error: `duplicate key` for
+`console_error_panic_hook` at Cargo.toml:49. The Session 25 delta block
+(console_error_panic_hook + web-time, with comments) had been pasted in
+twice, back-to-back.
+
+**Fixed:** Cargo.toml (DELTA) — removed the duplicate copy of the block,
+kept one. No logic change, pure duplicate-line removal.
+
+**Decisions made:** None.
+
+**Test risk:** None — failure was a TOML parse error before compilation;
+`cargo test` never ran, so the actual Session 25 search/mod.rs and lib.rs
+changes remain unverified by CI until this fix lands and a run goes green.
+
+**Next session start point:**
+Confirm CI green after this fix (this is the real first test of Session
+25's WASM Instant fix — the previous run never got far enough to test it).
+If green: ask Gokul to reload the live site and confirm the engine now
+actually moves (browser-only, cargo test can't verify this). If confirmed
+working: return to Phase 16.4b (streaming Lichess zstd sampler, per
+Session 24 handoff — resolve zstd seekability/sampling-strategy question
+first, verify a zstd-decoding crate exists on crates.io before assuming).
 
 ---
 
