@@ -7,6 +7,63 @@ Most recent session at TOP.
 
 ---
 
+## Session 27 — 2026-07-04 (Phase 16.4b streaming sampler)
+
+**Verified:** Session 26's Cargo.toml duplicate-key fix landed cleanly on
+GitHub (fetched and confirmed — no duplication, single copy of the
+web-time/console_error_panic_hook block). CI status and browser-engine-moves
+confirmation from Session 25/26 are still open — need Gokul's confirmation,
+can't verify either through curl (Actions API was rate-limited this
+session; browser behavior is inherently unverifiable without a browser).
+
+**Built:**
+- Resolved Session 24's open design question: standard .zst is
+  sequential-only (no byte-seek to arbitrary decompressed offsets) —
+  confirmed via ruzstd's public API (only exposes sequential io::Read).
+  True reservoir sampling over all 388M positions isn't CI-feasible.
+  Went with Session 24 handoff's pragmatic option (b): skip a prefix, keep
+  every Nth line after that, stop once sample_size is reached.
+- `src/bin/lichess_sample.rs` (NEW) — streams Lichess CC0 eval dataset
+  (reqwest blocking + rustls-tls) through a ruzstd StreamingDecoder,
+  parses each JSONL line (serde_json), picks highest-depth eval, converts
+  mate scores to a bounded cp proxy, negates to side-to-move perspective,
+  writes stm|nstm|eval|result rows matching selfplay.rs's format
+  (result="NA" — this dataset has no game outcome). 8 unit tests.
+- `.github/workflows/lichess_sample.yml` (NEW) — workflow_dispatch,
+  skip_lines/sample_size/stride inputs, mirrors selfplay.yml conventions.
+- `Cargo.toml` (DELTA) — ruzstd/reqwest/serde_json added as optional deps
+  behind a new "lichess-sample" feature (not in default, not in wasm) —
+  zero impact on native release build, cargo test, or WASM build. New
+  [[bin]] entry for lichess_sample with required-features gating so
+  default `cargo build`/`cargo test` never touches it.
+
+**Decisions made:** See DECISIONS.md D18 (new).
+
+**Bugs fixed:** N/A (new files).
+
+**Test risk flagged (unconfirmed at write time):** JSON field assumptions
+(evals[].pvs[].cp / .mate, evals[].depth, fen field count) are based on
+Session 24's research summary of the dataset format, not a real fetched
+line — this sandbox has no network path to database.lichess.org. The 8
+unit tests only run when built with `--features lichess-sample`, so they
+did NOT run in the main CI test job this session. First real signal comes
+from the workflow's own run log (check `parse_failures` count vs `kept`).
+
+**Next session start point:**
+First, close out the still-open Session 25/26 loop: ask Gokul (a) is CI
+green on the current main, (b) does the live browser site actually make
+engine moves now. Then: trigger the new lichess_sample.yml workflow
+(Actions tab → Run workflow, small sample_size like 1000 first) and read
+its log — if parse_failures is high relative to kept, fetch one real raw
+line's structure (e.g. via the Actions log's own stderr, or a tiny
+debug-print of the first unparsed line) and fix process_line/
+best_eval_cp_white against real data, don't re-guess blind. If the sample
+looks clean: Phase 16.5 — combine selfplay_data.txt + lichess_sample.txt
+and write the Colab NORU training notebook (D14's blend-at-training-time
+decision happens there).
+
+---
+
 ## Session 26 — 2026-07-04 (CI fix: duplicate Cargo.toml key)
 
 **Reported:** Gokul — CI failed immediately after committing Session 25's
