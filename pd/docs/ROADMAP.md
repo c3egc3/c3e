@@ -229,20 +229,16 @@
              selfplay_data.txt as a build artifact. Triggered manually from
              the Actions tab — mobile-friendly, no terminal needed.
              (Gokul is mobile-only, can't `cargo run` locally).
-- [x] 16.4b — src/bin/lichess_sample.rs (NEW, feature-gated behind
-             "lichess-sample"): streams + decompresses (ruzstd) the Lichess
-             CC0 eval dataset over HTTP (reqwest blocking), skip+stride
-             prefix sampling (NOT a uniform sample of the full 388M — zstd
-             sequential-only means true reservoir sampling isn't CI-feasible;
-             documented as a known limitation in the file header).
-             Writes stm|nstm|eval|result rows (result="NA", no game outcome
-             in this dataset — Phase 16.5 Colab loader must treat as
-             eval-only). .github/workflows/lichess_sample.yml — manual
-             workflow_dispatch, mirrors selfplay.yml conventions.
-             ⚠️ UNVERIFIED: JSON parsing logic never tested against a real
-             line from the live dataset (no network access to
-             database.lichess.org from the dev sandbox). First real test is
-             next CI run — check parse_failures count in the log.
+- [x] 16.4b — src/bin/lichess_sample.rs + .github/workflows/lichess_sample.yml
+             CONFIRMED WORKING (Session 27, 500/500 sample run: 0 parse
+             failures, multi-frame zstd archive handled correctly — the
+             Lichess file is split into multiple sequential content frames
+             plus skippable metadata frames; both handled by looping
+             StreamingDecoder creation on the same open connection).
+             Sampling is a skip+stride prefix of the file, not a uniform
+             sample of all 388M positions (documented limitation, D18).
+             NEXT: run at full scale (skip_lines=0, sample_size=50000,
+             stride=200) and download the artifact for Phase 16.5.
 - [ ] 16.4c — Pawn start feature convergence design:
              Features become 0 as pawns leave starting squares.
              Network naturally transitions to standard-chess-like eval

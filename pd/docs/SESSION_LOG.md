@@ -7,6 +7,53 @@ Most recent session at TOP.
 
 ---
 
+## Session 27 — 2026-07-04 (Phase 16.4b: Lichess sampler, 3 bugs fixed)
+
+**Built:** src/bin/lichess_sample.rs (NEW) + .github/workflows/lichess_sample.yml
+(NEW) — streaming Lichess CC0 eval dataset sampler. Feature-gated behind
+"lichess-sample" (ruzstd, reqwest, serde_json all optional, not in default
+or wasm) — zero impact on native release build, cargo test, or WASM bundle.
+
+**Bugs fixed (3, all in this new file, none in existing green code):**
+1. reqwest 0.13 feature name changed from "rustls-tls" (0.11/0.12 era) to
+   "rustls" — build failed to resolve the feature. Fixed by using the
+   correct 0.13 feature name.
+2. ruzstd's StreamingDecoder doesn't skip zstd "skippable frames"
+   (metadata headers) itself — errored with ReadFrameHeaderError::SkipFrame
+   on init. Fixed with a retry loop that reads-and-discards `length` bytes
+   then retries decoder creation (pattern confirmed from Rust std's own
+   gimli/elf.rs zstd handling).
+3. StreamingDecoder only decodes ONE zstd content frame then reports EOF —
+   the Lichess file has multiple sequential content frames (large
+   archives commonly do, e.g. via pzstd). First fix attempt only handled
+   this at decoder-init time inside a separate named function, which
+   failed to compile (E0107 — StreamingDecoder takes 2 generic params,
+   READ and DEC, and the function's return-type annotation only named
+   one, which can't use `_` in item signatures). Fixed by inlining the
+   frame-opening loop directly into main()'s outer 'frames loop instead
+   of a named helper, so both generics are inferred from usage.
+
+**Verified (Session 27, workflow run):** 500/500 samples written, 0 parse
+failures, 2 skippable frames skipped, 99,801 real lines read across
+multiple content frames before hitting sample_size=500. JSON field
+assumptions (evals[].pvs[].cp/.mate, evals[].depth, 4-field FEN) all
+correct against the real dataset — no further guessing needed here.
+
+**Decisions made:** None new this session — D18 (prefix-sampling approach,
+from Session prior) stands as documented, now empirically confirmed to
+produce clean data.
+
+**Next session start point:**
+Gokul: trigger lichess_sample.yml with skip_lines=0, sample_size=50000,
+stride=200 (real scale — expect several minutes, not seconds), download
+the resulting artifact. Then start Phase 16.5: combine selfplay_data.txt
+(from selfplay.yml artifacts) + lichess_sample.txt into one training set,
+write the Colab notebook for NORU NNUE training (D14's blend-eval-vs-
+game-result decision happens at that stage — lichess rows have result="NA"
+and must be treated as eval-only targets, self-play rows have both signals).
+
+---
+
 ## Session 27 — 2026-07-04 (Phase 16.4b streaming sampler)
 
 **Verified:** Session 26's Cargo.toml duplicate-key fix landed cleanly on
