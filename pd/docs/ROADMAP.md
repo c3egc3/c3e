@@ -1,4 +1,4 @@
-# ROADMAP.md
+# ROADMAP.md 
 # Pet Dragon — Development Roadmap
 
 ## How to Read This File
@@ -137,7 +137,16 @@
 - [x] 12.2 — Pet Dragon engine is the opponent (search_from_fen WASM export)
 - [x] 12.3 — Pet Dragon position display (rank 1/2 pieces shown correctly)
 - [x] 12.4 — Game controls: new game, undo, flip board, side select, think time
+## Phase 12 — Browser Game ✅
+## Phase 12 — Browser Game ✅
 - [x] 12.5 — Deploy via GitHub Pages (deploy.yml fixed mkdir ordering bug)
+- [x] 12.6 — Bug fix: engine never moved in browser ("Engine thinking..."
+             hung forever). Root cause: std::time::Instant::now() panics on
+             wasm32-unknown-unknown (no clock source); SearchInfo::new()
+             called it immediately on every search, silently trapping the
+             WASM module (no panic hook was wired up to report it). Fixed
+             via web-time crate (drop-in Instant replacement, wasm-safe) +
+             wired up console_error_panic_hook for future visibility.
 
 ---
 
@@ -215,10 +224,18 @@
             extract_features() re-extraction across a 300-seed x 6-move x
             2-perspective sweep. Accumulator not yet wired into Position/
             search — that's 16.6, once a trained network exists.
-- [ ] 16.4a — Training data: Pet Dragon self-play (engine vs engine)
-- [ ] 16.4b — Training data strategy: include standard chess positions
-             (Lichess CC0 dataset) alongside Pet Dragon self-play.
-             Single network learns both simultaneously.
+- [x] 16.4a — src/bin/selfplay.rs: self-play data generator (see Session 22).
+             .github/workflows/selfplay.yml: workflow_dispatch job, inputs
+             for num_games/seed_start, builds + runs the binary, uploads
+             selfplay_data.txt as a build artifact. Triggered manually from
+             the Actions tab — mobile-friendly, no terminal needed.
+             (Gokul is mobile-only, can't `cargo run` locally).
+- [~] 16.4b — Source confirmed: https://database.lichess.org/lichess_db_eval.jsonl.zst
+             (CC0-1.0, 388.4M positions, updated 2026-06-04, JSON-per-line
+             fen+evals). REMAINING: streaming zstd sampler binary — must
+             sample across the file (not just read a prefix) and must not
+             attempt a full download/decompress in CI (multi-GB file).
+             Design + implement next session.
 - [ ] 16.4c — Pawn start feature convergence design:
              Features become 0 as pawns leave starting squares.
              Network naturally transitions to standard-chess-like eval

@@ -1,9 +1,182 @@
-# SESSION_LOG.md
+# SESSION_LOG.md 
 # Pet Dragon — Session History
 
 ## Format
 Each entry: date, what was built, decisions made, bugs fixed, next session start point.
 Most recent session at TOP.
+
+---
+
+## Session 25 — 2026-07-04 (Browser hang bug fix)
+
+**Reported:** Gokul — live site (g-c-3.github.io/pet-dragon) stuck on
+"Engine thinking..." forever after playing a move, engine never responds.
+
+**Diagnosed:**
+- Read `src/lib.rs` (WASM exports) — `search_from_fen()` constructs a fresh
+  `SearchInfo::new()` per call.
+- Read `src/search/mod.rs` — `SearchInfo::new()` sets
+  `start_time: std::time::Instant::now()`.
+- Root cause: `std::time::Instant::now()` panics at runtime on
+  `wasm32-unknown-unknown` (no clock source on that specific target, unlike
+  wasm32-wasi). Every browser search call panicked immediately. The panic
+  hook (`console_error_panic_hook_setup` in lib.rs) was a no-op stub, so
+  the panic surfaced as a silent WASM trap — no console error, JS call just
+  never returned, UI stuck forever with no diagnostic trail.
+
+**Fixed:**
+- Verified `web-time` v1.1.0 on crates.io (MIT/Apache-2.0, drop-in
+  std::time replacement, Performance.now()-backed on wasm32, plain
+  std::time elsewhere — no feature-flag wiring needed on our end).
+- `Cargo.toml` (DELTA) — added `web-time = "1.1"` (unconditional dep) and
+  `console_error_panic_hook = { version = "0.1", optional = true }` (added
+  to the `wasm` feature list).
+- `src/search/mod.rs` (DELTA) — 3 sites, `std::time::Instant` →
+  `web_time::Instant`. No other Instant usage found anywhere else in
+  search/ or main.rs (grepped to confirm before finishing).
+- `src/lib.rs` (DELTA) — `console_error_panic_hook_setup()` now actually
+  calls `console_error_panic_hook::set_once()` instead of being a stub, so
+  any future wasm panic is visible in the browser console instead of
+  hanging silently again.
+
+**Decisions made:** None new — this is a platform-compatibility bug fix,
+not an architectural call.
+
+**Test risk:** Zero for `cargo test` (native Instant unaffected — web-time
+only changes behavior on wasm32 target, which isn't exercised by the test
+suite at all). This means the fix is UNVERIFIED until Gokul redeploys and
+reloads the live site — CI going green does not confirm this fix works,
+only that it doesn't break anything native.
+
+**Next session start point:**
+Confirm with Gokul that the browser engine now actually makes moves after
+redeploy. If still broken: the new console_error_panic_hook will now show
+a real error in the browser console (Chrome mobile: long-press → Inspect,
+or ask Gokul to screenshot the console) — read that error before guessing
+again, don't re-touch search/mod.rs blind. If fixed: no pending Phase 12
+work remains; return to Phase 16.4b (streaming Lichess zstd sampler,
+per Session 24's handoff — resolve the seekability/sampling-strategy
+question first).
+
+---
+
+## Session 24 — 2026-07-04 (16.4a verified live + 16.4b source research)
+
+**Verified:**
+- Gokul ran the selfplay.yml workflow (20 games, seed 0). Confirmed from
+  Actions log: 20/20 games completed, zero panics, zero compile errors,
+  2,836 samples written (476K), sum of per-game counts matches `wc -l`
+  exactly. The "1 warning" annotation on the run is GitHub's own Node.js 20
+  deprecation notice on actions/checkout@v4 — unrelated to our code.
+  Game-length spread (80–300 plies) is healthy; two games hit the 300-ply
+  cap, expected occasionally at 100ms/move search strength.
+  Phase 16.4a is now fully closed — code + workflow both proven working.
+
+**Researched (16.4b):**
+- Confirmed CC0 Lichess evaluation dataset:
+  https://database.lichess.org/lichess_db_eval.jsonl.zst — 388,458,657
+  positions, CC0-1.0, updated 2026-06-04. JSON-per-line format documented
+  in ROADMAP delta above.
+- Identified the real constraint before writing code: this is a multi-GB
+  file — a GitHub Actions job cannot download+decompress+parse the whole
+  thing. Needs a streaming zstd sampler that spreads its sample across the
+  file, not a naive full-fetch or prefix-read (either wastes the CI budget
+  or biases the sample toward whatever Lichess logged first).
+
+**Decisions made:** None finalized yet — deliberately did not pick a
+sampling strategy (every-Nth-line vs reservoir sampling vs byte-offset
+seeking) without thinking through zstd's seekability constraints first;
+that's next session's first task, not a guess to lock in now.
+
+**Bugs fixed:** N/A.
+
+**Next session start point:**
+Design and implement the 16.4b streaming sampler. Key open question to
+resolve first: standard .zst (not seekable zstd) means sequential
+decompression only — can't jump to byte offsets, so sampling strategy is
+either (a) decompress-and-count-past N lines before keeping one (works but
+means decompressing the whole file anyway, just not storing it), or
+(b) accept sequential first-N-after-skip sampling with a large skip
+distance as a pragmatic approximation. Check whether a pure-Rust zstd
+decoder crate is available offline in the sandboxed CI environment (no
+network beyond crates.io/registry) before assuming `zstd` crate works —
+verify on crates.io first like NORU was verified in Session 19.
+
+---
+
+## Session 23 — 2026-07-04 (Phase 16.4a workflow trigger)
+
+**Built:**
+- `.github/workflows/selfplay.yml` (NEW) — workflow_dispatch job with
+  `num_games`/`seed_start` inputs, builds `selfplay` in release mode, runs
+  it, reports output size, uploads `selfplay_data.txt` as an artifact
+  (30-day retention). Matched existing `build.yml` conventions
+  (dtolnay/rust-toolchain, Swatinem/rust-cache).
+
+**Decisions made:** Used workflow_dispatch inputs for game count instead of
+hardcoding a number in `selfplay.rs` or asking Gokul mid-session — puts the
+compute/data-volume tradeoff in his hands at trigger time via the Actions
+UI, which is the mobile-friendly equivalent of a CLI flag.
+
+**Bugs fixed:** N/A (new file).
+
+**Next session start point:**
+Phase 16.4a is now fully actionable — Gokul needs to actually run the
+workflow (Actions tab → Run workflow) and download the artifact before
+16.4b/16.5 can proceed meaningfully (need real sample data to sanity-check
+format, not just code that compiles). If Gokul reports the run: check the
+Actions log for `selfplay` binary panics — the highest-risk lines are
+`Position::generate_with_seed` (unverified panic behavior on edge-case
+random setups) and `iterative_deepening`'s TimeControl with only
+`movetime` set (unverified this doesn't require other TimeControl fields
+to be non-zero). If green: move to 16.4b — source and license-check a
+Lichess CC0 dataset URL before writing any fetch/parse code (data-sourcing
+decision, not code — confirm with Gokul or research the current CC0 export
+location, don't assume a URL from training data since Lichess's export
+paths may have changed).
+
+---
+
+## Session 22 — 2026-07-04 (Phase 16.4a self-play generator)
+
+**Built:**
+- Confirmed Session 21 CI green (315/315).
+- Read `position/mod.rs`, `movegen/mod.rs`, `movegen/legal.rs`, `search/mod.rs`,
+  `search/time.rs`, `position/setup.rs`, `main.rs`, `Cargo.toml` fresh, plus
+  NORU's README again, before writing a binary spanning nearly every module.
+- `src/bin/selfplay.rs` (NEW) — self-play data generator. Per game: random
+  Pet Dragon start via `Position::generate_with_seed(seed)`, 100ms/move
+  search via `iterative_deepening` (16MB TT), records
+  `extract_stm_nstm_features()` + `result.score` at every ply, backfills
+  `game_result` (0/0.5/1 from stm) once the game ends via
+  checkmate/stalemate/insufficient-material/repetition/300-ply cap. Output:
+  plain-text `stm|nstm|eval|result` lines. Both search-eval and game-result
+  signals recorded so the search-vs-outcome training blend (D14) is decided
+  in Colab (16.5), not hardcoded here. Caught and fixed my own bug mid-draft:
+  an overcomplicated Sample/FinishedSample adapter silently dropped
+  `game_result` before it ever reached `write_sample` — rewrote with one
+  flat `Sample` struct instead.
+
+**Decisions made:** None new — this is D9/D14 implementation, not a new
+architectural call. Explicitly decided NOT to add a `halfmove_clock()`
+accessor to `Position` — self-play doesn't need 50-move-rule draws, the
+ply cap is sufficient data diversity for training purposes.
+
+**Bugs fixed:** N/A (new file); one self-caught draft-stage bug, not shipped
+(see above — never left this session, no docs risk).
+
+**Test risk:** none — `src/bin/` binaries aren't exercised by `cargo test`;
+verified 11 `pet_dragon_lib::...` import paths against current source.
+
+**Next session start point:**
+`.github/workflows/selfplay.yml` — workflow_dispatch (manual trigger button,
+mobile-friendly) job that builds and runs
+`cargo run --release --bin selfplay -- <games> selfplay_data.txt`, then
+`actions/upload-artifact` for `selfplay_data.txt`. Ask Gokul how many games
+per run before writing it (CI minutes budget vs data volume tradeoff — his
+call, not mine to assume). After that: 16.4b, standard-chess Lichess CC0
+data — that's a data-sourcing/licensing task, not code, confirm CC0 dataset
+URL before writing anything that fetches it.
 
 ---
 
