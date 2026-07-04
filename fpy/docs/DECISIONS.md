@@ -161,3 +161,12 @@ full rewrites of run.py. Context usage drops dramatically each session.
 ## D-33: DECISIONS.md entries land in the same commit as the code they document (2026-07-04)
 **Problem:** Sessions 9–10 referenced decision IDs that were never written into `DECISIONS.md`, and this session's own D-26–D-30 proposal collided with three legitimate decisions (PST ordering, `is_side_to_move_in_check`, default_depth) committed under the same numbers in the meantime.
 **Decision:** decision IDs are claimed at commit time, not draft time. A docstring `# see D-N` reference is only trustworthy once both files are committed together — re-verify the number against the live `DECISIONS.md` before trusting an in-code reference.
+
+## D-34: Root search (find_best_move) now sorts and TT-stores, matching interior nodes (2026-07-04)
+**Problem:** `find_best_move()` searched root moves in raw move-generation order — no MVV-LVA, no hash move, and never wrote its own result to the TT. Every interior node had ordering; the root, searched at every single iterative-deepening depth, had none.
+**Decision:** Root now calls `sort_moves()`, promotes a TT hash move to the front exactly like `alpha_beta()` does, and stores `(board.hash, best_score, depth, TT_EXACT, best_move)` at the end. Root never breaks early (`beta = INF`, no cutoff), so its score is always exact — no bound-flag logic needed there, unlike interior nodes.
+
+## D-35: Hash move promoted via post-sort swap-to-front, not merged into MVV-LVA scoring (2026-07-04)
+**Problem:** Needed the TT move tried first without changing `sort_moves()` / `mvv_lva()` signatures, since `tests/test_phase4.py` calls both directly with their existing 2/3-arg signatures.
+**Decision:** After `sort_moves()` runs, a separate linear scan finds the hash move (if any) in the already-sorted array and swaps it to index 0. O(count) extra work — cheap next to move generation — and keeps `sort_moves()`/`mvv_lva()` untouched, so no existing test needed to change.
+

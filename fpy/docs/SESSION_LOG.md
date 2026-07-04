@@ -4,6 +4,99 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 12 — Hash move ordering (Phase 5b)
+**Status:** COMPLETE ✅
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`: added `TT_MOVE[1048576]` global array; `tt_store()` now takes
+  a `move` param; added `tt_get_move(hash_key)` accessor (ignores depth/score
+  usability — any stored move is worth trying first)
+- `alpha_beta()`: after MVV-LVA sort, hash move (if present) is swapped to
+  index 0 before the search loop; `best_move` is tracked and passed to
+  `tt_store()`
+- `find_best_move()`: previously searched root moves in raw generation order
+  with no TT interaction at all — now sorts, does hash-move-first ordering,
+  and stores its own result to the TT (D-34)
+- `run.py`: `_alpha_beta_py()` / `_find_best_move_py()` mirror the above;
+  `tt_get_move` added to the engine import list; `TT_MOVE` added to the
+  Python-mode array init block
+
+### Results
+- `fastpy check` → zero errors. `fastpy build -O3` → compiles clean.
+- 117/117 tests passing in **9.5s** (down from 18.6s pre-hash-move-ordering
+  — real node reduction, not just noise)
+- `perft(5)` = 4,865,609 ✅ unchanged (move generation untouched)
+
+### Key decisions
+- D-34: root search now sorts + TT-stores, matching interior nodes
+- D-35: hash move promoted via post-sort swap-to-front, not merged into
+  MVV-LVA scoring — keeps `sort_moves()`/`mvv_lva()` signatures stable
+
+### Next (ROADMAP — still open)
+- Null move pruning
+- Late Move Reductions (LMR)
+- Aspiration windows in iterative deepening
+- Optional: convert `compute_hash()` from full-recompute to true incremental
+  XOR inside `make_move()` (D-29 follow-up)
+- `test_phase5.py` covering TT/Zobrist/hash-move-ordering still not written
+
+---
+
+## Session 11 — Fix engine.py / run.py Phase 5 desync (TT + Zobrist restored)
+**Status:** COMPLETE ✅
+
+### Root cause
+`run.py` on `main` was already the Phase 5 (TT + Zobrist) version described
+in Sessions 9–10, but `engine.py` on `main` was still Phase 4 — the delta
+patches from those sessions were never committed, and `DECISIONS.md` was
+never given the D-26…D-32 entries either. Result: `tests/test_phase4.py`
+failed to collect (`ImportError: cannot import name 'TT_MASK'`), and
+`tests/test_uci.py` had 21/77 failing with the suite taking 3m23s instead of
+seconds.
+
+### Fix (engine.py, g-c-3/fastpy-engine)
+- Added TT constants/globals: `TT_SIZE`, `TT_MASK`, `TT_EXACT/LOWER/UPPER`,
+  `TT_HASH/SCORE/DEPTH/FLAG[1048576]`
+- Added Zobrist globals: `ZK_TABLE[768]`, `ZK_TABLE_INIT[1]`, mix constants
+- Added free functions (after `pop_lsb`, before directional shifts):
+  `zk_index`, `zk_rand`, `init_zk_table`, `zk_ep_key`, `compute_hash`,
+  `tt_probe`, `tt_store`
+- `BoardState.__init__`: added `self.hash: uint64 = 0`
+- `make_move()`: added `board.hash = compute_hash(board)` before `return board`
+  (full recompute, not incremental — see D-28)
+- `alpha_beta()`: TT probe at entry, TT store at exit (EXACT/LOWER/UPPER)
+- `find_best_move()`: `ZK_TABLE_INIT[0]` guard, seeds `board.hash`
+
+### Results
+- `fastpy check engine.py` → zero errors
+- `fastpy build --optimize=O3` → compiles clean, zero warnings
+- 117/117 tests passing in 18.6s (was: collection error + 21 failures / 3m23s)
+- `perft(5)` = 4,865,609 ✅ unchanged (move generation untouched)
+- Zobrist sanity checks: hash changes every move, incremental read matches
+  fresh `compute_hash()`, transposition order-independence confirmed
+  (`1.Nf3 Nf6 2.Nc3` hash == `1.Nc3 Nf6 2.Nf3` hash)
+
+### Key decisions
+- D-26: `run.py`'s import list is the contract when it and the log disagree
+- D-27: `DECISIONS.md` entries must land in the same commit as the code
+- D-28: `compute_hash()` full-recompute in `make_move()`, not incremental —
+  original incremental implementation unrecoverable, correctness prioritised
+- D-29: Zobrist keys via splitmix64 mixer (no `random` — not FastPy-compilable)
+- D-30: EP key derived from `ZK_TABLE[file] ^ ZK_EP_MIX`, no separate array
+
+### Next (ROADMAP — unaffected by this session, still open)
+- Hash move ordering: try TT move first before MVV-LVA (biggest remaining gain)
+- Null move pruning
+- Late Move Reductions (LMR)
+- Aspiration windows in iterative deepening
+- **Optional follow-up**: convert `compute_hash()` full-recompute to true
+  incremental XOR inside `make_move()` for the perf win described in D-28
+- `test_phase5.py` / `test_phase6.py` still not on GitHub — write once the
+  next roadmap item (hash move ordering) lands
+
+
+---
+
 ## Session 10 — Transposition Table + Zobrist (clean apply from GitHub baseline)
 **Status:** COMPLETE ✅
 
