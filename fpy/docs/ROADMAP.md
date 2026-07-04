@@ -112,7 +112,7 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 - [x] Zobrist incremental hash in make_move
 - [x] FastPy transpiler: IRGlobal, global array emission, subscript-expr targets
 - [x] Null move pruning
-- [ ] Late Move Reductions (LMR)  
+- [x] Late Move Reductions (LMR)  
 - [x] Hash move ordering (TT move first — highest remaining gain)
 - [ ] Aspiration windows in iterative deepening
 

@@ -4,6 +4,55 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 14 — Late Move Reductions (Phase 5d)
+**Status:** COMPLETE ✅
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`: added `LMR_MIN_DEPTH = 3`, `LMR_FULL_SEARCH_MOVES = 4`,
+  `LMR_REDUCTION = 1` constants; added `is_quiet_move()` next to `mvv_lva()`;
+  wired LMR into `alpha_beta()`'s move loop — moves past the first 4, at
+  depth ≥ 3, that are quiet and don't give check, get a reduced-depth
+  null-window search first, with a full-depth re-search only if that beats
+  alpha
+- `run.py`: `_alpha_beta_py()` mirrors the same LMR logic (using
+  `enumerate()` for move_num since Python-mode iterates a list, not an
+  indexed array); new names added to the engine import list
+
+### Results
+- `fastpy check` → zero errors. `fastpy build -O3` → compiles clean.
+- 117/117 tests passing in 14.8s
+- `perft(4)` = 197,281 ✅ unchanged (move generation untouched)
+- Correctness sanity checks (Python-mode, via `run.py`):
+  - Forced mate-in-1 (`Qxf7#` after `1.e4 e5 2.Bc4 Nc6 3.Qh5 Nf6??`) still
+    found correctly with LMR active
+  - Depth-5 startpos search returns a sane opening move (Nb1-c3) with a
+    near-zero score
+- Did not benchmark LMR's node/time reduction quantitatively — Python-mode
+  search at depth 6+ is too slow to run in a reasonable time (that's exactly
+  why the compiled path exists). A real benchmark needs the compiled binary
+  wired to a UCI `go` command with timing; flagged as a follow-up, not done
+  this session
+
+### Key decisions
+- D-39: fixed R=1, min depth 3, skip first 4 moves (conservative defaults)
+- D-40: eligibility = quiet (pre-move board) + not giving check (post-move board)
+- D-41: re-search uses the original full window, no PVS null-window step
+
+### Next (ROADMAP — still open)
+- Aspiration windows in iterative deepening
+- Optional: benchmark LMR/null-move/hash-move-ordering node reduction on the
+  compiled binary (needs a `go depth N` timing harness — not yet built)
+- Optional: adaptive null move reduction (R=3 at higher depths — D-36 follow-up)
+- Optional: adaptive LMR reduction (deeper reduction at higher move counts —
+  D-39 follow-up)
+- Optional: convert `compute_hash()` from full-recompute to true incremental
+  XOR inside `make_move()`/`make_null_move()` (D-29 follow-up)
+- `test_phase5.py` covering TT/Zobrist/hash-move-ordering/null-move-pruning/LMR
+  still not written
+
+
+---
+
 ## Session 13 — Null move pruning (Phase 5c)
 **Status:** COMPLETE ✅
 

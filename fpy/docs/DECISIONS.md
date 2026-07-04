@@ -180,3 +180,14 @@ full rewrites of run.py. Context usage drops dramatically each session.
 
 ## D-38: make_null_move() takes BoardState by value, mirroring make_move() (2026-07-04)
 **Decision:** `make_null_move(board: BoardState) -> BoardState` follows the exact same pass-by-value convention as `make_move()` — confirmed via `emitter.py`'s `_emit_function` (struct params are emitted with no `&`, so C++ copies the struct into the callee). `alpha_beta()`'s own `board` local is therefore untouched by the null-move sub-call; no defensive copy needed in the compiled path. The Python-mode mirror in `run.py` follows the same `copy.copy(board)`-before-call convention already used everywhere else in that file.
+
+## D-39: LMR reduction R=1, min depth 3, skip first 4 moves (2026-07-04)
+**Decision:** Conservative starting values, same philosophy as D-36's fixed null-move R=2: `LMR_REDUCTION = 1` (reduce by one ply, not the more aggressive 2-3 some engines use at high depth/move-count), `LMR_MIN_DEPTH = 3` (matches `NULL_MOVE_MIN_DEPTH`), `LMR_FULL_SEARCH_MOVES = 4` (hash move + top 3 MVV-LVA moves always get a full-depth search). Safe-first tuning; revisit once there's a way to measure the actual node/strength tradeoff.
+
+## D-40: LMR eligibility = quiet move + not giving check, computed before/after make_move respectively (2026-07-04)
+**Problem:** Reducing a capture, promotion, or checking move risks pruning a tactically critical line — LMR is only sound on genuinely "quiet, unlikely" moves.
+**Decision:** `is_quiet_move(move, board)` is evaluated on the pre-move `board` (so `piece_at_square(move_to(move), board)` still reflects the target square's real occupancy) — captures and promotions are excluded. Separately, `is_side_to_move_in_check(new_board)` is checked on the post-move board to exclude checking moves. Both conditions must hold for a move to be reduced.
+
+## D-41: LMR re-search uses the same null window, not a widened one (2026-07-04)
+**Decision:** When the reduced search beats alpha, the re-search uses the *original* full window (`-beta, -alpha`) at full depth, not an intermediate null-window verification step (no PVS in this engine yet — see D-8/D-related move-ordering notes). Simpler and correct; costs one extra full-window search only on the (rare) moves that beat alpha at reduced depth, which is by design the expensive-but-necessary path.
+
