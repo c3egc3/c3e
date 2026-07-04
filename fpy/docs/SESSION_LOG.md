@@ -4,6 +4,44 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 13 — Null move pruning (Phase 5c)
+**Status:** COMPLETE ✅
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`: added `NULL_MOVE_R = 2`, `NULL_MOVE_MIN_DEPTH = 3` constants;
+  added `make_null_move()` (passes the turn, clears EP rights, recomputes
+  hash) and `side_to_move_lacks_major_minor()` (zugzwang guard) after
+  `make_move()`; wired a null-move try into `alpha_beta()` right after the
+  `depth == 0` quiescence check, before move generation
+- `run.py`: `_alpha_beta_py()` mirrors the same null-move logic; new names
+  added to the engine import list
+
+### Results
+- `fastpy check` → zero errors. `fastpy build -O3` → compiles clean.
+- 117/117 tests passing in 10.0s
+- `perft(4)` = 197,281 ✅ unchanged (move generation untouched)
+- Correctness sanity check: engine still finds forced mate-in-1 (`Qxf7#`
+  after `1.e4 e5 2.Bc4 Nc6 3.Qh5 Nf6??`) via `run.py`'s Python-mode wrapper,
+  with null move pruning active — returns the mate score and the correct
+  move, confirming the null-move try isn't swallowing forced-mate lines
+
+### Key decisions
+- D-36: fixed R=2 reduction, min depth 3 (adaptive R deferred)
+- D-37: zugzwang guard = side to move has no knight/bishop/rook/queen
+- D-38: `make_null_move()` pass-by-value, mirrors `make_move()` exactly
+
+### Next (ROADMAP — still open)
+- Late Move Reductions (LMR)
+- Aspiration windows in iterative deepening
+- Optional: adaptive null move reduction (R=3 at higher depths — D-36 follow-up)
+- Optional: convert `compute_hash()` from full-recompute to true incremental
+  XOR inside `make_move()`/`make_null_move()` (D-29 follow-up)
+- `test_phase5.py` covering TT/Zobrist/hash-move-ordering/null-move-pruning
+  still not written
+
+
+---
+
 ## Session 12 — Hash move ordering (Phase 5b)
 **Status:** COMPLETE ✅
 

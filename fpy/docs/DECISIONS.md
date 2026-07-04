@@ -170,3 +170,13 @@ full rewrites of run.py. Context usage drops dramatically each session.
 **Problem:** Needed the TT move tried first without changing `sort_moves()` / `mvv_lva()` signatures, since `tests/test_phase4.py` calls both directly with their existing 2/3-arg signatures.
 **Decision:** After `sort_moves()` runs, a separate linear scan finds the hash move (if any) in the already-sorted array and swaps it to index 0. O(count) extra work — cheap next to move generation — and keeps `sort_moves()`/`mvv_lva()` untouched, so no existing test needed to change.
 
+## D-36: Null move reduction R=2, min depth 3 (2026-07-04)
+**Decision:** `NULL_MOVE_R = 2` is the conservative textbook default (Stockfish-lineage engines use adaptive R=2-4; a fixed R=2 is simpler and safe to ship first). `NULL_MOVE_MIN_DEPTH = 3` (= R + 1) guarantees `depth - 1 - R` never goes negative, so the reduced-depth recursive call always lands at `depth >= 0` and `alpha_beta()`'s own `depth == 0` branch handles it correctly via quiescence.
+**Follow-up candidate:** adaptive reduction (R=3 at higher depths) once the engine has a way to measure the win from this session's fixed R=2 first.
+
+## D-37: Zugzwang guarded by "side to move has no major/minor pieces", not phase-based (2026-07-04)
+**Problem:** Null move pruning is unsound in zugzwang positions (mostly king+pawn endgames), where passing can literally be the best move — a null-move cutoff there can hide a real zugzwang loss.
+**Decision:** `side_to_move_lacks_major_minor()` checks only the side to move's own knights/bishops/rooks/queens, not overall game phase or piece count. This is the standard, cheap guard (one OR of four bitboards, one comparison) and correctly disables null move exactly in the endgames where it's risky, without needing a phase-detection heuristic.
+
+## D-38: make_null_move() takes BoardState by value, mirroring make_move() (2026-07-04)
+**Decision:** `make_null_move(board: BoardState) -> BoardState` follows the exact same pass-by-value convention as `make_move()` — confirmed via `emitter.py`'s `_emit_function` (struct params are emitted with no `&`, so C++ copies the struct into the callee). `alpha_beta()`'s own `board` local is therefore untouched by the null-move sub-call; no defensive copy needed in the compiled path. The Python-mode mirror in `run.py` follows the same `copy.copy(board)`-before-call convention already used everywhere else in that file.
