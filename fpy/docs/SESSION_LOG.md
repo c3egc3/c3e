@@ -4,8 +4,129 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
-## Session 18 — `go depth N` timing harness (Phase 6b)
+## Session 20 — FEN parsing + middlegame ablation (Kiwipete)
 **Status:** COMPLETE ✅
+
+### What changed (g-c-3/fastpy-engine)
+- `run.py`: new `_parse_fen(fen)` — full 6-field FEN parser (piece
+  placement, side to move, castling rights, en passant, halfmove/fullmove
+  clocks), Python-mode only per the D-19 dialect boundary; new
+  `_FEN_PIECE_FIELD` char→field map; imported `CASTLE_WK/WQ/BK/BQ` from
+  `engine.py` for castling-rights parsing
+- `_apply_position()`: now handles `position fen <FEN> [moves ...]` in
+  addition to `position startpos [moves ...]`
+- `uci_loop()`: `position` dispatch now checks for `fen` as well as
+  `startpos`
+- `run_benchmark(max_depth=6, fen=None)`: new optional `fen` parameter,
+  prints which position was benchmarked; CLI now accepts
+  `python run.py bench [depth] ["<fen>"]`
+
+### Results
+- No `engine.py` changes — FEN parsing is pure string handling, correctly
+  kept in `run.py`. `fastpy check`/`fastpy build` unaffected. 165/165
+  tests still passing
+- Verified `_parse_fen()` against Kiwipete (`r3k2r/p1ppqpb1/bn2pnp1/
+  3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1`) — the standard perft
+  correctness fixture: castling rights, king squares, and legal move
+  count (48, matching the known value) all correct
+- Re-ran the Session 19 ablation on Kiwipete instead of startpos, depth 4:
+
+| Config | Nodes | vs baseline |
+|---|---|---|
+| Baseline | 472,172 | — |
+| No futility | 554,144 | +17% |
+| No LMR | 472,562 | +0.1% |
+| No null-move | 231,980 | -51% |
+
+- **Futility pruning confirmed meaningful on tactical positions** (17%
+  node reduction vs ~0% on startpos) — validates the Session 19 hypothesis
+- **LMR negligible here** — inverse of startpos (25x there). Kiwipete's
+  move lists are unusually capture/check-heavy, and LMR only reduces
+  quiet moves, so few moves qualify
+- **Null-move shows an unexpected node increase when enabled** — and
+  unlike the Session 19 startpos anomaly, this isn't TT-contamination
+  (depths 1-3 are byte-identical between configs going into depth 4, so
+  the divergence is real, not an artifact). The null-move verification
+  sub-search's own node cost may be outweighing its cutoffs at this
+  depth/position — flagged for follow-up, not yet explained
+
+### Key decisions
+- D-50: FEN parsing lives entirely in `run.py`, never `engine.py` —
+  consistent with D-19: string handling and I/O stay in Python-mode, the
+  compiled Speed Contract path never sees a `str`
+- D-51: Kiwipete adopted as the standard non-startpos benchmark/test
+  fixture going forward — it's the well-known perft correctness position
+  (many sources cross-check perft(1)=48 from it), so it doubles as a
+  parser sanity check and a "give the pruning heuristics something to
+  actually do" stress position
+
+### Next (ROADMAP — Phase 6, Elite Engine, still open)
+- Singular extensions
+- NNUE neural network evaluation
+- Lazy SMP multi-core search
+- Optional: investigate the null-move node-increase finding on Kiwipete
+  before trusting null-move pruning's net benefit outside startpos-like
+  positions
+- Optional: adaptive null move / LMR reduction (D-36, D-39 follow-ups)
+- Optional: convert `compute_hash()` to true incremental XOR (D-29 follow-up)
+
+---
+
+## Session 19 — Pruning ablation benchmark (measurement only)
+
+### What was done
+Used the Session 18 harness to quantify node reduction from null-move
+pruning, LMR, futility pruning, and aspiration windows on the starting
+position, depths 1-6. No repo code changed — ablation toggles were
+sandbox-only env-var flags on a throwaway copy of `run.py`, used to run
+each config as a fresh process (clean TT per config), never committed.
+
+### Results (startpos, `NULL_MOVE_R=2`/`NULL_MOVE_MIN_DEPTH=3`,
+`LMR_MIN_DEPTH=3`/`LMR_FULL_SEARCH_MOVES=4`/`LMR_REDUCTION=1`)
+
+| Depth | Baseline | No null-move | No LMR | No futility | No aspiration |
+|---|---|---|---|---|---|
+| 4 | 5,954 | 5,914 | 6,691 | 5,954 | 5,954 |
+| 5 | 38,635 | 38,633 | 973,580 | 38,685 | 38,635 |
+| 6 | 618,195 | 596,654 | 84,700 | 619,709 | 617,431 |
+
+- **LMR: ~25x node reduction at depth 5** (38,635 vs 973,580) — by far
+  the dominant pruning technique on this position
+- **Null-move, futility, aspiration: negligible effect (<3%)** on the
+  startpos — all three are conditioned on things a quiet, symmetric
+  opening position doesn't exercise much (a clearly-bad-to-pass
+  position, a hopeless static eval near a leaf, and a volatile score
+  between depths, respectively)
+- Depth-6 numbers for the no-LMR and no-null-move configs are **not**
+  clean cross-config comparisons — see D-49
+
+### Key decisions
+- D-49: `run_benchmark()`'s cross-depth TT persistence (D-48) means
+  ablation configs that diverge heavily in node count at one depth
+  (e.g. no-LMR's 973,580 vs baseline's 38,635 at depth 5) enter the next
+  depth with very different TT fill states, contaminating that depth's
+  comparison — the no-LMR depth-6 count (84,700, *lower* than its own
+  depth-5 count) is a TT-cutoff artifact, not a real search-size result.
+  Only compare configs at the first depth where they diverge, not at
+  later depths once TT contamination compounds
+- Confirmed: null-move and futility pruning are implemented correctly
+  (Sessions 15, 17) but under-exercised by the startpos test position —
+  their real contribution needs a tactical or imbalanced middlegame FEN,
+  not further code changes
+
+### Next (ROADMAP — Phase 6, Elite Engine, still open)
+- Singular extensions
+- NNUE neural network evaluation
+- Lazy SMP multi-core search
+- Optional: re-run this same ablation on a tactical/imbalanced FEN
+  (not startpos) to get a fair read on null-move and futility's
+  contribution — the startpos result likely understates both
+- Optional: adaptive null move / LMR reduction (D-36, D-39 follow-ups)
+- Optional: convert `compute_hash()` to true incremental XOR (D-29 follow-up)
+
+---
+
+## Session 18 — `go depth N` timing harness (Phase 6b)
 
 ### What changed (g-c-3/fastpy-engine)
 - `engine.py`: added `NODE_COUNT: uint64[1] = []` global next to the TT

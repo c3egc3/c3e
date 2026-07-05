@@ -127,9 +127,15 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 - [ ] Singular extensions
 - [ ] Lazy SMP multi-core search
 - [ ] **Target: 1,000,000,000 NPS on modern multi-core hardware**
-- [ ] Optional: benchmark LMR / null move / aspiration windows / futility
-      pruning node reduction now that `python run.py bench [depth]` and
-      `go depth N`'s `info ... nodes ... nps ...` fields exist (Session 18)
+- [x] Benchmark LMR / null move / aspiration windows / futility pruning
+      node reduction (Session 19) — LMR dominates (~25x at depth 5 on
+      startpos), others negligible on this position, see D-49
+- [x] Re-run the Session 19 ablation on a tactical FEN (Kiwipete,
+      Session 20) — futility confirmed meaningful (+17% nodes without
+      it), LMR negligible on this position, null-move showed an
+      unexplained node *increase* when enabled
+- [ ] Optional: investigate the Session 20 null-move node-increase
+      finding on Kiwipete before trusting it broadly
 
 ---
 
