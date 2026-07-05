@@ -4,6 +4,58 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 16 — test_phase5.py: unit coverage for all of Phase 5
+**Status:** COMPLETE ✅
+
+### What changed (g-c-3/fastpy-engine)
+- New file `tests/test_phase5.py` (37 tests) covering everything Sessions
+  10-15 added, at the unit level rather than only via the full test suite
+  passing:
+  - `TestComputeHash` (8) — determinism, hash changes on move, incremental
+    == full recompute, transposition order-independence, side-to-move /
+    castling-rights / en-passant sensitivity
+  - `TestTranspositionTable` (9) — store/probe exact hits, depth-
+    insufficient misses, EXACT/LOWER/UPPER bound semantics, `tt_get_move`
+    hit/miss, always-replace overwrite behavior
+  - `TestNullMovePruning` (7) — `make_null_move` flips side/clears EP/
+    updates hash/preserves pieces, `side_to_move_lacks_major_minor` on
+    starting position vs. king+pawns vs. lone-minor-piece
+  - `TestIsQuietMove` (4) — quiet push, capture, promotion, en-passant
+  - `TestFindBestMoveWindow` (3) + `TestIterativeDeepeningAspiration` (3) —
+    windowed root search, 2-arg backward compatibility, widening-loop
+    termination, legal-move guarantee
+  - `TestPhase5Integration` (3) — `perft(4)` regression guard, forced
+    mate-in-1 with every Phase 5 feature active together, TT-hit
+    determinism (same position searched twice returns the same move/score)
+- No changes to `engine.py` or `run.py` this session
+
+### Results
+- New file: 37/37 passing in 47.3s standalone
+- Full suite: **154/154 passing** in 55.8s (117 existing + 37 new), run
+  together to confirm the new tests' `reset_tt()` helper doesn't leak state
+  into or out of `test_phase4.py`/`test_uci.py`
+
+### Why this now
+Flagged at the end of Session 15 as worth doing before Phase 6: five
+sessions of TT/Zobrist/null-move/LMR/aspiration-window work had accumulated
+with only end-to-end (`fastpy check` + full suite + perft + one mate
+puzzle) verification, no isolated unit coverage. Session 15 itself hit a
+stale-base mistake that a real test file would have caught via import
+errors immediately rather than relying on manual re-verification.
+
+### Next (ROADMAP — Phase 6, Elite Engine)
+- NNUE neural network evaluation
+- Futility pruning
+- Singular extensions
+- Optional: benchmark aspiration windows / LMR / null move node reduction
+  on the compiled binary (needs a `go depth N` timing harness — still not
+  built, gap noted in Sessions 14 and 15)
+- Optional: adaptive null move / LMR reduction (D-36, D-39 follow-ups)
+- Optional: convert `compute_hash()` to true incremental XOR (D-29 follow-up)
+
+
+---
+
 ## Session 15 — Aspiration windows (Phase 5e) — closes out Phase 5
 **Status:** COMPLETE ✅
 
