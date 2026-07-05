@@ -268,3 +268,18 @@ D20 didn't anticipate.
 **Rejected**: Keeping self-play exclusively on GH Actions with larger/more
 batches — rejected once Actions minutes became a shared, contended resource
 across Gokul's other projects.
+
+## D22 — GitHub Releases for Data Files Over 25MB (2026-07-05)
+**Decision**: Self-play/training data files too large for the repo's
+web-upload UI (25MB cap) are attached as GitHub Release assets instead
+(supports far larger files via the same mobile web UI), and train_nnue.yml
+gained a selfplay_urls input that curls them directly. selfplay_paths
+(committed repo files) remains for smaller files.
+
+**Why**: the first Kaggle-generated file (66MB after ~93 games) hit the
+repo-content upload page's 25MB ceiling. Git LFS would need CLI setup
+Gokul can't do from mobile; Releases needed no new tooling and reused the
+same upload flow he already knows.
+
+**Rejected**: Git LFS — requires CLI/terminal setup, violates D15.
+

@@ -243,11 +243,19 @@
              See DECISIONS.md for full rationale.
 - [x] 16.5a — train_nnue.rs first run succeeded; added best-val-checkpoint
              tracking (session 30).
-- [ ] 16.5b — Generate larger self-play dataset via Kaggle notebook
-             (kaggle/pet_dragon_selfplay_kaggle.ipynb, D21), commit output to
-             data/selfplay/, retrain via train_nnue.yml's new selfplay_paths
-             input. NOT YET RUN.
-- [ ] 16.6 — Integrate trained network into eval (replace HCE or blend)
+- [x] 16.5b — Kaggle 3000-game self-play run (~93 actual games after queue
+             delay, 433,080 rows) hosted as a GitHub Release asset (25MB
+             repo-upload UI can't hold 66MB — see D22), pulled via
+             train_nnue.yml's new selfplay_urls input. Combined with 50k
+             Lichess rows = 483,080 total training rows.
+             RESULT: best epoch 8/10, val_loss=0.53776, train/val curves
+             both monotonic and near-plateaued (vs. first run's clear
+             epoch-3 overfit). PHASE 16.5 COMPLETE.
+             Trained network artifact: nnue-pet-dragon-h32-a256-e10
+             (nnue_pet_dragon_quantized.bin, 481K).
+- [ ] 16.6 — Integrate trained network into eval (replace HCE or blend).
+             NEXT SESSION START POINT. Read src/eval/mod.rs fresh before
+             touching anything.
 - [ ] 16.7 — WASM-compatible inference (NORU is pure Rust)
 
 ---

@@ -7,6 +7,54 @@ Most recent session at TOP.
 
 ---
 
+## Session 32 — 2026-07-05 (Phase 16.5 complete — 483k-row training run)
+
+**Built:**
+- Fixed a corrupted train_nnue.yml (a previous session's delta-format
+  "WHERE:" annotation had been pasted literally into the YAML body,
+  breaking the step list) — delivered as a full corrected file rather than
+  another delta, given repeated manual-paste errors on a file this small.
+- Added selfplay_urls input to train_nnue.yml (D22) — curls self-play data
+  from direct URLs (GitHub Release assets) for files too large for the
+  25MB repo-upload UI.
+- train_nnue.rs: load_rows() no longer panics on a line read error
+  (e.g. invalid UTF-8 from a truncated final line) — skips it like a
+  malformed row instead. Defensive fix; turned out not to be needed for
+  this specific file (truncation landed on a clean ASCII boundary) but is
+  real protection for the general case.
+- web/index.html: added player-turn panels, populated the previously-dead
+  coordinate-label CSS, restyled controls with plain-text icons instead of
+  color emoji (kept visual consistency with the gold/dark theme).
+
+**Bugs fixed:** train_nnue.yml YAML corruption (see above) — cause: prior
+session's delta instructions pasted into the file instead of just the
+code; fix: full corrected file; correct because delta format's plain-text
+annotations were never meant to be file content.
+
+**Decisions made:** D22 (GitHub Releases for >25MB data files, supersedes
+committing large files directly).
+
+**Result:** Phase 16.5 (train NORU NNUE) COMPLETE. 483,080-row run
+(433,080 self-play + 50,000 Lichess) — best epoch 8/10, val_loss=0.53776,
+train/val curves monotonic and near-plateaued, no meaningful overfitting
+(contrast with the first 52,836-row run's clear epoch-3 overfit). Trained
+network: nnue-pet-dragon-h32-a256-e10 artifact, nnue_pet_dragon_quantized.bin
+(481K), retained 30 days on the run's artifact page.
+
+**Next session start point:** Phase 16.6 — integrate the trained network
+into eval. Before writing anything: (1) download nnue_pet_dragon_quantized.bin
+from the run-28745742039 artifact page and re-upload it into the repo
+(suggest a new nnue/ directory or similar — decide path when there),
+(2) read src/eval/mod.rs fresh to see the current HCE call site, (3) read
+NORU's inference-side API (NnueWeights::load_from_bytes, forward pass) from
+docs.rs fresh — the trainer API was already read in Session 29 but
+inference is a different code path, (4) decide blend-vs-replace: given
+this is the first trained network and val_loss (0.538) is still well above
+a "confident" prediction (0 or 1), a blend with HCE (not a full replace)
+is probably the safer starting point pending real Elo testing later.
+
+---
+
 ## Session 31 — 2026-07-05 (Kaggle offload for self-play)
 
 **Built:**
