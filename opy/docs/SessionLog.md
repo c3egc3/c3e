@@ -2,7 +2,7 @@
 
 > **Doc 3 of 4** — companion docs: [Project_Architecture.md](./Project_Architecture.md) · [Decisions.md](./Decisions.md) · [Roadmap.md](./Roadmap.md)
 
-Append-only. One entry per working session, **newest at the bottom**. This is the file "Go" and "Continue" both read first (specifically the *last* entry).
+Append-only. One entry per working session, **newest at the top**. This is the file "Go" and "Continue" both read first (specifically the *last* entry).
 
 ## Entry template
 ```
