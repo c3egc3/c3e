@@ -4,6 +4,72 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 15 — Aspiration windows (Phase 5e) — closes out Phase 5
+**Status:** COMPLETE ✅
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`: `find_best_move()` signature changed from `(board, depth)` to
+  `(board, depth, alpha, beta, score_out: int32[1])` — accepts a caller-
+  supplied window and writes the resulting score via an output param
+  (FastPy has no tuple returns); internal logic otherwise unchanged
+- `run.py`: `_find_best_move_py(board, depth, alpha=NEG_INF, beta=INF)` —
+  same window support, with defaults preserving the existing 2-arg call
+  used by `tests/test_phase4.py::test_find_best_move_returns_tuple`;
+  `_iterative_deepening_py()` now runs an aspiration-window search from
+  depth 4 onward, widening ×4 and re-searching the same depth on fail-
+  low/fail-high, falling back to the full window once clamped
+
+### A mid-session correction worth noting
+The first attempt at this patch was built against a stale local copy of
+`engine.py`/`run.py` (pre-Late-Move-Reductions) instead of the actual
+committed `main`. Caught immediately by `pytest` failing to even collect
+(`ImportError: cannot import name 'LMR_MIN_DEPTH'`) before anything was
+presented. Re-fetched the live files from GitHub and reapplied the same
+patch cleanly on the correct base — no bad delta was ever handed over.
+
+### Results
+- `fastpy check` → zero errors. `fastpy build -O3` → compiles clean.
+- 117/117 tests passing in 9.3s
+- `perft(4)` = 197,281 ✅ unchanged (move generation untouched)
+- Correctness sanity checks (Python-mode, via `run.py`):
+  - Forced mate-in-1 (`Qxf7#`) still found via direct `_find_best_move_py`
+    call with default full window
+  - Full `_iterative_deepening_py()` driver runs depth 1→5 cleanly from the
+    startpos with aspiration windows active at depths 4-5, sane scores and
+    move throughout
+  - Existing 2-arg call signature (`_find_best_move_py(board, 1)`) still
+    works via defaults, confirming `tests/test_phase4.py` wouldn't break
+
+### Key decisions
+- D-42: `find_best_move()` takes explicit alpha/beta + `score_out` output
+  param instead of always [NEG_INF, INF] — zero-risk signature change
+- D-43: aspiration window retry loop lives only in `run.py` (no compiled
+  iterative-deepening driver exists)
+- D-44: window = 50cp, ×4 widening per retry, active from depth 4
+
+### Phase 5 status: COMPLETE
+Transposition table, Zobrist hashing, null move pruning, hash move
+ordering, Late Move Reductions, and aspiration windows are all shipped,
+tested, and documented.
+
+### Next (ROADMAP — Phase 6, Elite Engine)
+- NNUE neural network evaluation
+- Futility pruning
+- Singular extensions
+- (Phase 6 also lists LMR as a duplicate — already done in Phase 5, see D-39/40/41)
+- Optional: benchmark aspiration windows' node/time reduction on the
+  compiled binary (needs a `go depth N` timing harness — still not built,
+  same gap noted in Session 14)
+- Optional: adaptive null move / LMR reduction (D-36, D-39 follow-ups)
+- Optional: convert `compute_hash()` to true incremental XOR (D-29 follow-up)
+- `test_phase5.py` covering all of Phase 5's features still not written —
+  worth doing before starting Phase 6, given how much surface area has
+  accumulated untested at the unit level (this session's stale-base mistake
+  is exactly the kind of thing a real test_phase5.py would catch faster)
+
+
+---
+
 ## Session 14 — Late Move Reductions (Phase 5d)
 **Status:** COMPLETE ✅
 

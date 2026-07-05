@@ -191,3 +191,14 @@ full rewrites of run.py. Context usage drops dramatically each session.
 ## D-41: LMR re-search uses the same null window, not a widened one (2026-07-04)
 **Decision:** When the reduced search beats alpha, the re-search uses the *original* full window (`-beta, -alpha`) at full depth, not an intermediate null-window verification step (no PVS in this engine yet — see D-8/D-related move-ordering notes). Simpler and correct; costs one extra full-window search only on the (rare) moves that beat alpha at reduced depth, which is by design the expensive-but-necessary path.
 
+## D-42: find_best_move() signature changed to accept caller-supplied alpha/beta + score_out (2026-07-05)
+**Problem:** Aspiration windows need the root search to run with a narrow window instead of always [NEG_INF, INF], and the caller needs the resulting score back to detect fail-low/fail-high — but `find_best_move()` only returned the move, and FastPy has no tuple returns.
+**Decision:** `find_best_move(board, depth)` → `find_best_move(board, depth, alpha, beta, score_out: int32[1])`, using the same output-parameter pattern already established for move generation (`generate_legal_moves(board, moves, count)`). Zero-risk change: nothing in `engine.py` or the test suite calls `find_best_move()` directly today — only `run.py`'s `_find_best_move_py` mirror is exercised, and defaults there preserve the old 2-arg call signature `tests/test_phase4.py` relies on.
+
+## D-43: Aspiration window driver lives only in run.py, not engine.py (2026-07-05)
+**Problem:** Iterative deepening with time management has no compiled counterpart — it's always been a `run.py`-only driver (`_iterative_deepening_py`) that repeatedly calls the single-depth root search.
+**Decision:** The window-widening retry loop (fail-low/fail-high detection, quadrupling the window, falling back to full range) lives entirely in `_iterative_deepening_py`. `find_best_move()`/`_find_best_move_py()` just accept a window and report a score — they don't know or care whether it came from an aspiration search. Consistent with the existing architecture where compiled `engine.py` provides primitives and `run.py` does orchestration.
+
+## D-44: Aspiration window = 50cp, quadrupled per retry, active from depth 4 (2026-07-05)
+**Decision:** `ASPIRATION_WINDOW = 50` (centipawns) is a standard conservative starting width. On fail-low/fail-high, the window is widened ×4 rather than doubled — fewer wasted re-searches at the cost of a bigger jump, reasonable since fail-high/low should be rare with decent move ordering already in place (hash move + MVV-LVA + LMR). `ASPIRATION_START_DEPTH = 4` — shallower depths don't have a stable enough score estimate to center a window on, and the full-window search at those depths is already fast. The loop always terminates because the window is clamped to `[NEG_INF, INF]` each retry, and once both bounds hit their clamp the loop breaks and accepts whatever score came back.
+

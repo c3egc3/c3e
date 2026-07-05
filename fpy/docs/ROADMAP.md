@@ -114,7 +114,7 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 - [x] Null move pruning
 - [x] Late Move Reductions (LMR)  
 - [x] Hash move ordering (TT move first — highest remaining gain)
-- [ ] Aspiration windows in iterative deepening
+- [x] Aspiration windows in iterative deepening
 
 
 ---
