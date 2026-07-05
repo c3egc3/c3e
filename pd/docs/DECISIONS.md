@@ -181,7 +181,7 @@ optional, gated behind a `lichess-sample` feature absent from both
 `default` and `wasm` — cannot affect the native release binary, `cargo
 test`, or the WASM/browser bundle.
 
-## D19 — Phase 16.5 Training Platform: Kaggle Notebooks, Not Colab (2026-07-04)
+## D18.5 — Phase 16.5 Training Platform: Kaggle Notebooks, Not Colab (2026-07-04)
 **Decision**: Phase 16.5 (NORU NNUE training on combined selfplay + Lichess
 data) will use Kaggle Notebooks instead of Google Colab.
 
@@ -247,3 +247,24 @@ NORU's CPU-only trainer can't provide.
 **Rejected (for now)**: Adopting Kaggle as the default training runner —
 rejected until one of the trigger conditions above is actually hit; no
 benefit today, real UX cost.
+
+## D21 — Kaggle for Self-Play Generation, Actions Minutes Conserved (2026-07-05)
+**Decision**: Self-play data generation moves to a Kaggle notebook
+(kaggle/pet_dragon_selfplay_kaggle.ipynb) run via "Save & Run All (Commit)"
+background execution, rather than GitHub Actions selfplay.yml. train_nnue.yml
+gains a selfplay_paths input (comma-separated repo-committed file paths) so
+Kaggle output can be committed directly and consumed without an Actions
+artifact round-trip; selfplay_run_id becomes optional, kept for occasional
+small GH Actions batches.
+
+**Why**: Gokul runs multiple GitHub projects sharing Actions minutes/limits.
+Kaggle compute is a separate free quota, supports true background execution
+(commit-and-close, ~9-12h ceiling vs Actions' 6h), and needs no terminal —
+fits the mobile-only constraint (D15) as well as Actions did. This supersedes
+D20's original framing (Kaggle only if GPU or dataset-size forced it) — the
+real trigger turned out to be cross-project Actions budget pressure, which
+D20 didn't anticipate.
+
+**Rejected**: Keeping self-play exclusively on GH Actions with larger/more
+batches — rejected once Actions minutes became a shared, contended resource
+across Gokul's other projects.

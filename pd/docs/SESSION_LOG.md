@@ -7,6 +7,33 @@ Most recent session at TOP.
 
 ---
 
+## Session 31 — 2026-07-05 (Kaggle offload for self-play)
+
+**Built:**
+- kaggle/pet_dragon_selfplay_kaggle.ipynb (NEW) — installs Rust via rustup,
+  clones pet-dragon, builds+runs selfplay binary, writes output to Kaggle's
+  /kaggle/working/ (downloadable Output). Designed for "Save & Run All
+  (Commit)" background execution so Gokul doesn't need to keep a tab open.
+- train_nnue.yml: added selfplay_paths input (comma-separated committed
+  file paths) alongside the now-optional selfplay_run_id, so Kaggle-
+  generated data can be committed straight into the repo and consumed
+  without going through a GH Actions artifact.
+
+**Decisions made:** D21 (Kaggle for self-play generation, conserving
+Actions minutes across Gokul's multiple projects — supersedes D20's
+narrower GPU/dataset-size framing).
+
+**Next session start point:** Gokul runs the Kaggle notebook in the
+background (3000 games, seed_start=0), commits the resulting .txt to
+data/selfplay/, then triggers train_nnue.yml with selfplay_paths pointing
+to it and the existing lichess_run_id. Read the log for "best epoch: X/10"
+— with ~3000 games (~380k rows, vastly more than the 2836-row run that
+overfit by epoch 3) expect val_loss to keep improving for more of the 10
+epochs; if best epoch is still low (<=3), suspect lr too high or hidden_size
+too small for the new data volume before reaching for more data again.
+
+---
+
 ## Session 30 — 2026-07-05 (Phase 16.5 first successful training run + overfit fix)
 
 **Built:**

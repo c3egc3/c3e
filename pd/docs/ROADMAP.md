@@ -241,14 +241,12 @@
              Network naturally transitions to standard-chess-like eval
              in middlegame/endgame without switching logic.
              See DECISIONS.md for full rationale.
-- [x] 16.5 — src/bin/train_nnue.rs (NEW): reads combined selfplay+Lichess
-             rows, blends eval/result targets per D14 (lambda flag), trains
-             via NORU Adam trainer, saves FP32 + quantized weights.
-             .github/workflows/train_nnue.yml (NEW): pulls both data
-             artifacts by Run ID, builds+runs training, uploads network
-             files. Used GH Actions instead of Colab — see D19. NOT YET RUN
-             (needs Gokul to trigger with real selfplay/lichess Run IDs).
-WHERE: ROADMAP.md
+- [x] 16.5a — train_nnue.rs first run succeeded; added best-val-checkpoint
+             tracking (session 30).
+- [ ] 16.5b — Generate larger self-play dataset via Kaggle notebook
+             (kaggle/pet_dragon_selfplay_kaggle.ipynb, D21), commit output to
+             data/selfplay/, retrain via train_nnue.yml's new selfplay_paths
+             input. NOT YET RUN.
 - [ ] 16.6 — Integrate trained network into eval (replace HCE or blend)
 - [ ] 16.7 — WASM-compatible inference (NORU is pure Rust)
 
