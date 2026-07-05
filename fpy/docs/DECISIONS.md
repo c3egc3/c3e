@@ -202,3 +202,17 @@ full rewrites of run.py. Context usage drops dramatically each session.
 ## D-44: Aspiration window = 50cp, quadrupled per retry, active from depth 4 (2026-07-05)
 **Decision:** `ASPIRATION_WINDOW = 50` (centipawns) is a standard conservative starting width. On fail-low/fail-high, the window is widened ×4 rather than doubled — fewer wasted re-searches at the cost of a bigger jump, reasonable since fail-high/low should be rare with decent move ordering already in place (hash move + MVV-LVA + LMR). `ASPIRATION_START_DEPTH = 4` — shallower depths don't have a stable enough score estimate to center a window on, and the full-window search at those depths is already fast. The loop always terminates because the window is clamped to `[NEG_INF, INF]` each retry, and once both bounds hit their clamp the loop breaks and accepts whatever score came back.
 
+## D-45: Futility-pruning skip uses `if not skip_move` in engine.py, not `continue` (2026-07-05)
+**Problem:** The natural way to express "skip this move, keep the loop
+going" is `continue`, but FastPy's IR has no `IRContinue` node (only
+`IRBreak` — see `ARCHITECTURE.md`'s Statement Nodes list). Using `continue`
+in `engine.py` would fail to parse.
+**Decision:** `engine.py`'s move loop computes a `skip_move: bool8` flag
+right after `make_move()` (needs the post-move board to check whether the
+move gives check — same pattern as LMR's `is_quiet_move` + post-move
+check-detection combo, D-40), then wraps the entire scoring/recursion body
+in `if not skip_move: ...`, with `i += 1` unconditional at the bottom of
+the loop so the index always advances. `run.py`'s Python-mode mirror uses a
+real `continue` — it's plain Python, not compiled, so there's no
+restriction there.
+

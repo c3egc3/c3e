@@ -4,6 +4,65 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 17 — Futility pruning (Phase 6a)
+**Status:** COMPLETE ✅
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`: added `FUTILITY_MAX_DEPTH = 2`, `FUTILITY_MARGIN_1 = 150`,
+  `FUTILITY_MARGIN_2 = 300`, `MATE_THRESHOLD = 32000` constants; added
+  `futility_margin(depth)` helper (placed right after `is_quiet_move()`,
+  before its caller `alpha_beta()` — see D-26); wired `futility_prune`
+  computation into `alpha_beta()` right after the null-move pruning block
+  (static eval only computed when depth <= 2, not in check, and alpha is
+  far from mate scores); move loop restructured so a quiet, non-check
+  move past the first at a node is skipped with no recursive search when
+  `futility_prune` is set
+- `run.py`: `_alpha_beta_py()` mirrors the same logic; new names added to
+  the engine import list. Python-mode uses a real `continue` in the loop
+  (FastPy dialect has no `continue` — see D-45 below for how `engine.py`
+  expresses the same skip)
+
+### Results
+- `fastpy check` → zero errors. `fastpy build -O3` → compiles clean.
+- **165/165 tests passing** (154 existing + 11 new in `tests/test_phase6.py`)
+- `perft(4)` = 197,281 / `perft(5)` = 4,865,609 ✅ unchanged (move
+  generation untouched — futility pruning lives entirely inside
+  `alpha_beta()`)
+- Correctness sanity checks (Python-mode, via `run.py`):
+  - Forced mate-in-1 (`Qxf7#` after `1.e4 e5 2.Bc4 Nc6 3.Qh5 Nf6??`) still
+    found, with a real mate score (> `MATE_THRESHOLD - 100`), confirming
+    the `MATE_THRESHOLD` guard keeps pruning away from mate lines
+  - Startpos depth-4 and depth-5 searches return a legal move
+  - Startpos depth-3 full-window score stays small in magnitude (< 200cp),
+    as expected from a symmetric position, even with pruning active near
+    the leaves
+- Did not benchmark futility pruning's node/time reduction quantitatively
+  on the compiled binary — same gap as LMR/null-move (Sessions 13, 14):
+  no `go depth N` timing harness exists yet in the UCI loop for
+  apples-to-apples node counts
+
+### Key decisions
+- D-45: futility pruning skip expressed as `if not skip_move: ... ; i += 1`
+  in `engine.py` instead of `continue`, since FastPy's IR has no continue
+  statement (only `IRBreak`); `run.py`'s Python mirror uses a real
+  `continue` since it's plain Python, not compiled
+
+### Next (ROADMAP — Phase 6, Elite Engine, still open)
+- NNUE neural network evaluation
+- Singular extensions
+- Lazy SMP multi-core search
+- Optional: benchmark futility pruning / aspiration windows / LMR / null
+  move node reduction on the compiled binary (needs a `go depth N` timing
+  harness — still not built, gap noted in Sessions 14, 15, 16)
+- Optional: adaptive null move / LMR reduction (D-36, D-39 follow-ups)
+- Optional: convert `compute_hash()` to true incremental XOR (D-29 follow-up)
+- Optional: adaptive/deeper futility margins if Phase 6 benchmarking shows
+  the current fixed 150/300cp values are too conservative or too loose
+
+```
+
+---
+
 ## Session 16 — test_phase5.py: unit coverage for all of Phase 5
 **Status:** COMPLETE ✅
 

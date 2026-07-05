@@ -122,8 +122,7 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 ## Phase 6 — Elite Engine
 
 - [ ] NNUE neural network evaluation
-- [ ] Late Move Reductions (LMR)
-- [ ] Futility pruning
+- [x] Futility pruning
 - [ ] Singular extensions
 - [ ] Lazy SMP multi-core search
 - [ ] **Target: 1,000,000,000 NPS on modern multi-core hardware**
