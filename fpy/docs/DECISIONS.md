@@ -216,3 +216,38 @@ the loop so the index always advances. `run.py`'s Python-mode mirror uses a
 real `continue` — it's plain Python, not compiled, so there's no
 restriction there.
 
+## D-46: `NODE_COUNT` is a `uint64[1]` global (not a scalar) — the
+  established FastPy pattern (see `ZK_TABLE_INIT`) for a mutable
+  module-level value, since bare non-array globals aren't part of the transpiler's supported global forms
+
+## D-47: node counting lives in the Python-mode `_*_py` wrappers, not just the compiled `engine.py` functions — per D-19, `go depth N` today actually runs through `run.py`'s Python mirrors, not the compiled `alpha_beta`/`find_best_move`. Counting only in `engine.py` would leave the real, currently-running search path unmeasured. Both paths now count, so this is also ready the day the compiled binary gets a UCI shim (D-19's noted follow-up)
+
+## D-48: `run_benchmark()` uses a full-window search at every depth, not the aspiration-window driver — a fail-low/fail-high re-search doubles (or more) the node count for that depth in a way that would make depth-to-depth node comparisons misleading. The benchmark's job is a clean, comparable per-depth count; real play still uses aspiration windows via `_iterative_deepening_py`
+
+## D-49: `run_benchmark()`'s cross-depth TT persistence (D-48) means
+  ablation configs that diverge heavily in node count at one depth
+  (e.g. no-LMR's 973,580 vs baseline's 38,635 at depth 5) enter the next
+  depth with very different TT fill states, contaminating that depth's
+  comparison — the no-LMR depth-6 count (84,700, *lower* than its own
+  depth-5 count) is a TT-cutoff artifact, not a real search-size result.
+  Only compare configs at the first depth where they diverge, not at
+  later depths once TT contamination compounds
+  Confirmed: null-move and futility pruning are implemented correctly
+  (Sessions 15, 17) but under-exercised by the startpos test position —
+  their real contribution needs a tactical or imbalanced middlegame FEN,
+  not further code changes
+  
+## D-50: FEN parsing lives entirely in `run.py`, never `engine.py` —
+  consistent with D-19: string handling and I/O stay in Python-mode, the
+  compiled Speed Contract path never sees a `str`
+
+## D-51: Kiwipete adopted as the standard non-startpos benchmark/test
+  fixture going forward — it's the well-known perft correctness position
+  (many sources cross-check perft(1)=48 from it), so it doubles as a
+  parser sanity check and a "give the pruning heuristics something to
+  actually do" stress position
+  
+## D-52: `NULL_MOVE_MIN_DEPTH` raised 3→4 — see `DECISIONS.md` for full
+  writeup.
+  
+  

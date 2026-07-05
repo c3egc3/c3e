@@ -134,8 +134,15 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       Session 20) — futility confirmed meaningful (+17% nodes without
       it), LMR negligible on this position, null-move showed an
       unexplained node *increase* when enabled
-- [ ] Optional: investigate the Session 20 null-move node-increase
-      finding on Kiwipete before trusting it broadly
+- [x] Investigate the Session 20 null-move node-increase finding on
+      Kiwipete (Session 21) — root cause: `NULL_MOVE_MIN_DEPTH=3` let
+      the verification search drop straight into quiescence at
+      `reduced_depth=0`, expensive on tactical positions for a 2% hit
+      rate. Fixed via `NULL_MOVE_MIN_DEPTH` 3→4; Kiwipete depth-4 nodes
+      now match null-move-disabled exactly, startpos cost negligible
+      (+0.5%)
+- [ ] Optional: consider adaptive `NULL_MOVE_R` (larger at higher depth)
+      now that the depth-3 pathological case is closed off
 
 ---
 

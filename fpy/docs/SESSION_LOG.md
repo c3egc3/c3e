@@ -4,6 +4,66 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 21 — Null-move node-increase root cause found and fixed
+**Status:** COMPLETE ✅
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`: `NULL_MOVE_MIN_DEPTH: Final[int32]` changed `3` → `4`
+  (single-line fix, single source of truth — `run.py` imports the
+  constant rather than duplicating it)
+
+### Investigation
+- Picked up the Session 20 "optional" follow-up: null-move pruning
+  showed a node *increase* on Kiwipete at depth 4 (472,172 vs 231,980
+  nodes disabled) with no explanation on file
+- Instrumented a copy of `_alpha_beta_py` with attempt/cutoff counters,
+  clearing the TT between configs to isolate each run (the previous
+  attempt at reproducing this without clearing the TT gave nonsense
+  numbers — TT contamination between sequential runs in the same
+  process, a good reminder that the ablation harness itself needs a
+  clean TT per config)
+- Reproduced the exact Session 20 figures (472,172 / 231,980) once the
+  TT was properly cleared, then measured null-move's own attempt/cutoff
+  counts directly: **48 attempts, 1 cutoff — a 2% hit rate** at depth 4
+  on Kiwipete
+- Root cause: at `NULL_MOVE_MIN_DEPTH=3` with `NULL_MOVE_R=2`, the
+  minimum triggering depth gives `reduced_depth = depth - 1 - R = 0`,
+  so the "cheap reduced-depth verification" search drops straight into
+  `quiescence()` with no depth limit of its own. Kiwipete's hanging
+  pieces and capture chains make quiescence expensive, so 47 failed
+  attempts (98%) each paid full quiescence cost for nothing
+
+### Fix and verification
+- `NULL_MOVE_MIN_DEPTH` 3→4 guarantees `reduced_depth >= 1` — the
+  verification search always gets one real alpha-beta ply (with its own
+  pruning) before quiescence can enter, rather than skipping straight to
+  it
+- Kiwipete depth 4 with the fix: 231,980 nodes — identical to null-move
+  disabled. The depth-3 trigger simply doesn't fire in this depth range
+  now, at zero cost since it was contributing almost nothing (2% hit
+  rate) anyway
+- Startpos depth 5: 38,849 vs 38,635 nodes (+0.5%) — negligible cost
+  where null-move already does its job well (Session 19: ~25x reduction)
+- Both configs return identical scores before/after (correctness
+  unaffected); `fastpy check engine.py` — zero errors; full suite —
+  **165/165 passing**
+
+### Key decisions
+- D-52: `NULL_MOVE_MIN_DEPTH` raised 3→4 — see `DECISIONS.md` for full
+  writeup, including a noted doc gap (D-46–D-51 were referenced in
+  ROADMAP/SESSION_LOG but never written up in `DECISIONS.md`; backfill
+  still pending)
+
+### Next (ROADMAP — Phase 6, Elite Engine, still open)
+- Backfill missing D-46–D-51 writeups in `DECISIONS.md`
+- Singular extensions
+- NNUE neural network evaluation
+- Lazy SMP multi-core search
+- Consider whether `NULL_MOVE_R` should also be adaptive (larger at
+  higher depth) now that the depth-3 pathological case is closed off
+
+---
+
 ## Session 20 — FEN parsing + middlegame ablation (Kiwipete)
 **Status:** COMPLETE ✅
 
