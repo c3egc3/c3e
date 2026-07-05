@@ -7,6 +7,93 @@ Most recent session at TOP.
 
 ---
 
+## Session 30 — 2026-07-05 (Phase 16.5 first successful training run + overfit fix)
+
+**Built:**
+- First successful train_nnue.yml run (Run ID 28723114004): 2836 selfplay
+  rows + 50000 lichess rows, hidden=32, accumulator=256, 10 epochs.
+  train_loss fell 0.615→0.554 but val_loss bottomed at epoch 3 (0.615) then
+  rose to 0.635 by epoch 10 — clear overfitting on this small dataset.
+- src/bin/train_nnue.rs: added best-validation-checkpoint tracking (clone
+  TrainableWeights whenever val_loss improves, save that instead of the
+  final epoch) — confirmed TrainableWeights derives Clone from NORU 2.2.0
+  source before relying on it. Removed an unused Write import flagged by
+  the compiler.
+
+**Bugs fixed:** train_nnue.rs saved the final epoch unconditionally even
+when validation loss had been rising for several epochs; fixed by tracking
+best_val_loss and saving that snapshot; correct because it ships the
+checkpoint that generalized best rather than the one that memorized
+training rows longest.
+
+**Decisions made:** None new — noted for the record (not D-worthy yet) that
+94.7% of current training rows are Lichess "NA" rows, so target ≈
+eval-sigmoid-only for most of the dataset per existing D14; NNUE is mostly
+learning to imitate current HCE until self-play volume grows.
+
+**Next session start point:** Gokul re-runs train_nnue.yml with the same
+two Run IDs after uploading the two deltas above. Read the new log: confirm
+"best epoch: X/10" is not epoch 10 (would mean still improving — safe to
+increase epochs next time) and not epoch 1 (would mean lr too high or net
+too small). If best epoch lands mid-range (3-7) with val_loss meaningfully
+below 0.693 (the loss of a coin-flip predictor), Phase 16.5 is done — move
+to 16.6: read src/eval/mod.rs fresh, then wire nnue_pet_dragon_quantized.bin
+loading into eval as a blend-or-replace path alongside HCE.
+
+---
+
+## Session 29 — 2026-07-05 (Phase 16.5 NNUE trainer)
+
+**Built:**
+- Read NORU 2.2.0's actual trainer.rs/network.rs source from docs.rs before
+  writing anything (TrainableWeights, AdamState, Gradients, TrainingSample,
+  NnueConfig::new_owned, NnueWeights::save_to_bytes) — API guessed from the
+  crate description alone would have been wrong on several field names.
+- src/bin/train_nnue.rs (NEW) — parses stm|nstm|eval|result rows (shared
+  format from selfplay.rs/lichess_sample.rs), blends eval-sigmoid target
+  with game-result target per D14 (lambda CLI arg, default 0.7, no-op for
+  "NA" rows), trains NnueConfig(896 features, configurable accumulator/
+  hidden size, SCReLU) via NORU's FP32 Adam trainer with a seeded
+  shuffle + 5% validation split, logs per-epoch train/val BCE loss, writes
+  both an FP32 checkpoint and quantized i16 weights.
+- .github/workflows/train_nnue.yml (NEW) — workflow_dispatch, downloads
+  selfplay + lichess artifacts by Run ID (actions/download-artifact@v4),
+  builds and runs train_nnue, uploads both output binaries.
+
+**Decisions made:** D19 (new) — training runs via GitHub Actions, not the
+Colab notebook the Session 7/ROADMAP note originally proposed. Colab would
+require Gokul to manually run Rust/cargo cells, which conflicts with D15
+(Actions handles all building, Gokul never runs cargo). NORU is pure Rust
+either way, so Actions runs it exactly as well as Colab's CPU would, with
+one less manual step for Gokul.
+
+**Bugs fixed:** N/A (new files).
+
+**Test risk flagged (unconfirmed at write time):** train_nnue.rs has no
+#[cfg(test)] unit tests of its own — it's a data-processing binary, not a
+library module, consistent with selfplay.rs/lichess_sample.rs conventions
+(bins aren't exercised by `cargo test`). Real first signal comes from
+actually triggering train_nnue.yml with real Run IDs; the loss-decreasing
+behavior of NORU's Adam trainer itself is proven by NORU's own upstream
+tests, not re-tested here.
+
+**Next session start point:**
+Ask Gokul for the Run ID of a completed selfplay.yml run and a completed
+lichess_sample.yml run (visible on the Actions tab / run URL). Trigger
+train_nnue.yml with those two IDs and default hyperparameters first. Read
+the workflow log: check "X rows kept, Y skipped" lines from load_rows() —
+if skipped is high relative to kept, the row format assumption is wrong,
+fetch a raw line from one of the artifacts and fix parse_line(), don't
+re-guess. If train_loss/val_loss both decrease and finish reasonably close
+(no large train/val gap suggesting overfit at these small hidden sizes):
+Phase 16.5 done, move to 16.6 — wire the quantized network into src/eval/
+(likely as a blend-or-replace option alongside HCE, read eval/mod.rs fresh
+first). If val_loss diverges from train_loss: reduce hidden_size or add an
+L2/weight-decay knob (NORU's AdamState doesn't expose one currently —
+would need a manual weight-decay term added in train_nnue.rs itself).
+
+---
+
 ## Session 28 — 2026-07-04 (Phase 16.4b: Lichess sampler, 3 bugs fixed)
 
 **Built:** src/bin/lichess_sample.rs (NEW) + .github/workflows/lichess_sample.yml
