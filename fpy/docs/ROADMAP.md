@@ -123,9 +123,13 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 
 - [ ] NNUE neural network evaluation
 - [x] Futility pruning
+- [x] `go depth N` timing harness (node counting + NPS reporting, Session 18)
 - [ ] Singular extensions
 - [ ] Lazy SMP multi-core search
 - [ ] **Target: 1,000,000,000 NPS on modern multi-core hardware**
+- [ ] Optional: benchmark LMR / null move / aspiration windows / futility
+      pruning node reduction now that `python run.py bench [depth]` and
+      `go depth N`'s `info ... nodes ... nps ...` fields exist (Session 18)
 
 ---
 

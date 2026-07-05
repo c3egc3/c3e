@@ -4,8 +4,81 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
-## Session 17 — Futility pruning (Phase 6a)
+## Session 18 — `go depth N` timing harness (Phase 6b)
 **Status:** COMPLETE ✅
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`: added `NODE_COUNT: uint64[1] = []` global next to the TT
+  globals; added `nodes_reset()`/`nodes_get()` accessor functions after
+  `tt_get_move()`; incremented `NODE_COUNT[0]` once per `quiescence()` call,
+  once per `alpha_beta()` call, and once for the root node in
+  `find_best_move()` — the same three call sites as everywhere else in the
+  engine that "one node" is defined
+- `run.py`: mirrored the same increments in `_quiescence_py`,
+  `_alpha_beta_py`, and `_find_best_move_py` via `_engine_module.NODE_COUNT`
+  (Python-mode is what actually runs UCI `go` today per D-19, so this is
+  the path that matters for real NPS numbers right now); `NODE_COUNT`
+  added to the Phase-5-style init-block resize list and the import list
+  from `engine.py`
+- `_iterative_deepening_py`: resets `NODE_COUNT[0]` at the start of each
+  depth's search (including any aspiration re-searches at that depth), and
+  the `info` line now reports `nodes` and `nps` alongside `score`/`time`
+- New `run_benchmark(max_depth=6)` in `run.py`: standalone per-depth
+  nodes/time/NPS table on the starting position, full-window search (no
+  aspiration windows, so node counts stay unambiguous), TT persists across
+  depths like real iterative deepening. Runnable as `python run.py bench
+  [depth]` — no UCI GUI or Arena/Cutechess setup required
+- CLI dispatch added to `run.py`'s `__main__` block: `bench` argument
+  routes to `run_benchmark()`, anything else (or nothing) still runs
+  `uci_loop()` as before
+
+### Results
+- `fastpy check` → zero errors. `fastpy build -O3` → compiles clean.
+- **165/165 tests passing** (no test changes needed — node counting is
+  additive instrumentation, doesn't change search results or move choice)
+- `python run.py bench 5` on startpos: depths 1-5 completed in ~2.9s total,
+  41 → 38,635 nodes, NPS in the 10-19K range (Python-mode, as expected —
+  this is the first concrete NPS number the engine has produced)
+- Live UCI smoke test (`position startpos` + `go depth 4`): `info` lines
+  now read `info depth 4 nodes 5950 nps 10507 score cp 0 time 692` instead
+  of the old `info depth 4 score cp 0 time 692` — bestmove (`b1c3`)
+  unchanged from before this session, confirming the instrumentation is
+  observation-only
+
+### Key decisions
+- D-46: `NODE_COUNT` is a `uint64[1]` global (not a scalar) — the
+  established FastPy pattern (see `ZK_TABLE_INIT`) for a mutable
+  module-level value, since bare non-array globals aren't part of the
+  transpiler's supported global forms
+- D-47: node counting lives in the Python-mode `_*_py` wrappers, not just
+  the compiled `engine.py` functions — per D-19, `go depth N` today
+  actually runs through `run.py`'s Python mirrors, not the compiled
+  `alpha_beta`/`find_best_move`. Counting only in `engine.py` would leave
+  the real, currently-running search path unmeasured. Both paths now
+  count, so this is also ready the day the compiled binary gets a UCI
+  shim (D-19's noted follow-up)
+- D-48: `run_benchmark()` uses a full-window search at every depth, not
+  the aspiration-window driver — a fail-low/fail-high re-search doubles
+  (or more) the node count for that depth in a way that would make
+  depth-to-depth node comparisons misleading. The benchmark's job is a
+  clean, comparable per-depth count; real play still uses aspiration
+  windows via `_iterative_deepening_py`
+
+### Next (ROADMAP — Phase 6, Elite Engine, still open)
+- Singular extensions
+- NNUE neural network evaluation
+- Lazy SMP multi-core search
+- Optional (now unblocked): actually run the benchmark to quantify LMR /
+  null move / aspiration window / futility pruning node reduction —
+  Sessions 13-17 all deferred this for lack of a harness; the harness now
+  exists in Python mode. A compiled-binary version still needs a UCI shim
+  (D-19) before compiled NPS can be measured the same way
+- Optional: adaptive null move / LMR reduction (D-36, D-39 follow-ups)
+- Optional: convert `compute_hash()` to true incremental XOR (D-29 follow-up)
+
+---
+
+## Session 17 — Futility pruning (Phase 6a)
 
 ### What changed (g-c-3/fastpy-engine)
 - `engine.py`: added `FUTILITY_MAX_DEPTH = 2`, `FUTILITY_MARGIN_1 = 150`,
