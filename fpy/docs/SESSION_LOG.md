@@ -4,6 +4,93 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 23 — Adaptive NULL_MOVE_R
+**Status:** COMPLETE ✅
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`: new `null_move_r(depth)` helper tiers the null-move
+  reduction — R=2 below depth 6, R=3 at depth 6–9, R=4 at depth >= 10.
+  New constants `NULL_MOVE_R_MID=3`, `NULL_MOVE_R_HIGH=4`,
+  `NULL_MOVE_R_MID_DEPTH=6`, `NULL_MOVE_R_HIGH_DEPTH=10`. Call site now
+  computes `null_reduced_depth` and clamps it to a floor of 1 before the
+  verification search, defensively enforcing the Session 21/D-52
+  invariant regardless of constant tuning
+- `run.py`: `_alpha_beta_py` mirrors the same tiering and floor
+- `tests/test_phase5.py`: 7 new tests in `TestAdaptiveNullMoveR` — tier
+  boundary values, the min-depth case matching the old fixed R=2 exactly,
+  the floor invariant checked at every tier boundary, and an integration
+  test that a real search crosses the high tier (depth 10) and still
+  returns a legal move
+
+### Design notes
+- See D-54: tiered if/elif over named constants (matching
+  `futility_margin()`'s existing style), not a division-based formula —
+  no division anywhere else in `engine.py`
+- The floor clamp at the call site is intentionally redundant with the
+  tier-boundary math being individually safe — cheap insurance against
+  re-breaking the exact bug fixed in Session 21
+
+### Verification
+- `fastpy check engine.py` — zero errors; full `-O3 -march=native` build
+  succeeds
+- Full suite: **181/181 passing** (174 existing + 7 new), no regressions
+
+### Next (ROADMAP — Phase 6, Elite Engine, still open)
+- NNUE neural network evaluation
+- Lazy SMP multi-core search
+
+---
+
+## Session 22 — Singular extensions implemented + D-52 stub fixed
+**Status:** COMPLETE ✅
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`: `alpha_beta` gains an `excluded_move: uint64` parameter
+  (0 for every normal call). New constants `SE_MIN_DEPTH=6`,
+  `SE_TT_DEPTH_MARGIN=3`, `SE_VERIFY_REDUCTION=3`,
+  `SE_MARGIN_PER_DEPTH=2`, `SE_EXTENSION_PLIES=1`. At depth >=
+  SE_MIN_DEPTH with a qualifying hash move, the node re-searches the
+  position with that move excluded at reduced depth against a narrow
+  window; if everything else fails low, the hash move is extended one
+  ply when actually played
+- `run.py`: `_alpha_beta_py` mirrors the same logic (`excluded_move=0`
+  default keeps every existing 4-arg call site working unmodified)
+- `tests/test_phase6.py`: 9 new tests — constant sanity bounds, direct
+  proof that an excluded move is never played (scholar's-mate position),
+  proof an exclusion search never touches the TT for its own hash key,
+  proof `excluded_move=0` is a complete no-op vs. pre-Phase-6c behaviour,
+  and an integration test that a real search crosses SE_MIN_DEPTH and
+  still returns a legal move (sparse K+R vs K fixture, fast in Python
+  mode)
+
+### Design notes
+- Both the entry-point TT probe and the exit-point TT store are skipped
+  whenever `excluded_move != 0` — the parent hash key's existing entry
+  reflects the *full* move set including the move being excluded, so an
+  unguarded probe would short-circuit the verification and an unguarded
+  store would corrupt the entry for every future lookup of that position
+- Reduction logic uses subtraction/multiplication only, consistent with
+  every other depth constant in the file (LMR, futility) — no division
+  anywhere in `engine.py`, no reason to introduce it here
+- Picked up the Session 21 follow-up flagging a "D-46–D-51 backfill" as
+  pending: on inspection, those entries were already fully written up in
+  `DECISIONS.md`. The actual issue was `D-52` itself — a self-referential
+  stub ("see `DECISIONS.md` for full writeup" written inside
+  `DECISIONS.md`). Replaced with real content; added `D-53` for this
+  session's design decisions
+
+### Verification
+- `fastpy check engine.py` — zero errors; full `-O3 -march=native` build
+  succeeds
+- Full suite: **174/174 passing** (165 existing + 9 new), no regressions
+
+### Next (ROADMAP — Phase 6, Elite Engine, still open)
+- NNUE neural network evaluation
+- Lazy SMP multi-core search
+- Optional: adaptive `NULL_MOVE_R` (larger at higher depth)
+
+---
+
 ## Session 21 — Null-move node-increase root cause found and fixed
 **Status:** COMPLETE ✅
 

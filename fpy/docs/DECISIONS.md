@@ -247,7 +247,59 @@ restriction there.
   parser sanity check and a "give the pruning heuristics something to
   actually do" stress position
   
-## D-52: `NULL_MOVE_MIN_DEPTH` raised 3→4 — see `DECISIONS.md` for full
-  writeup.
+## D-52: `NULL_MOVE_MIN_DEPTH` raised 3→4 — at MIN_DEPTH=3 with
+  `NULL_MOVE_R=2`, `reduced_depth = depth - 1 - R` hit 0 at the minimum
+  triggering depth, so the verification search fell straight into
+  unbounded `quiescence()` instead of getting one real alpha-beta ply
+  first. Measured on Kiwipete depth 4: 48 attempts, 1 cutoff (2% hit
+  rate) — 47 failed attempts each paid full quiescence cost for
+  essentially nothing. Raising MIN_DEPTH to 4 guarantees
+  `reduced_depth >= 1`; Kiwipete depth-4 nodes then match null-move-
+  disabled exactly, and startpos cost is negligible (+0.5%). See
+  Session 21 in `SESSION_LOG.md` for the full investigation. (Note:
+  D-46–D-51 were previously flagged here as an undocumented gap — they
+  were in fact already written up above; there was no backfill needed.)
+
+## D-53: Singular extensions verify via an excluded-move parameter
+  threaded through `alpha_beta`/`_alpha_beta_py` rather than a separate
+  function — keeps one source of truth for the search logic (LMR,
+  futility, null-move all stay untouched) instead of duplicating the
+  whole node into a second "search excluding one move" implementation.
+  Two correctness-critical consequences of reusing the same hash key for
+  the exclusion search:
+  - The entry-point TT probe must be skipped when `excluded_move != 0` —
+    the stored entry for that hash reflects the *full* move set
+    including the very move being excluded, so an unguarded probe would
+    immediately return a cutoff that defeats the whole verification.
+  - The exit-point TT store must also be skipped for the same reason in
+    reverse: storing the exclusion search's (deliberately incomplete)
+    result under the parent's hash key would corrupt every future
+    lookup of that position.
+  Reduction/margin constants (`SE_VERIFY_REDUCTION`, `SE_MARGIN_PER_DEPTH`)
+  use plain subtraction/multiplication rather than division, consistent
+  with every other depth/margin constant in the file (LMR, futility) —
+  division has no precedent anywhere in `engine.py` and wasn't worth
+  introducing for this. `SE_MIN_DEPTH=6` was chosen to sit strictly above
+  both `NULL_MOVE_MIN_DEPTH` and `LMR_MIN_DEPTH`, since verifying a move
+  by re-searching everything else is the most expensive of the three
+  techniques and should only fire where the depth budget can absorb it.
+
+## D-54: Adaptive `NULL_MOVE_R` implemented as a tiered helper function
+  (`null_move_r(depth)`, R=2/3/4 at depth thresholds 4/6/10) rather than a
+  formula (e.g. `2 + depth // 6`) — matches the existing `futility_margin()`
+  precedent (if/elif over named constants) and avoids introducing division,
+  which has no precedent anywhere in `engine.py`. Tier boundaries were
+  picked so the shallowest depth entering each tier still satisfies
+  `depth - 1 - R >= 1` on its own (e.g. depth=6, R=3 → reduced=2) — the
+  exact invariant Session 21/D-52 restored. That said, the call site in
+  `alpha_beta()` *also* clamps `null_reduced_depth` to a floor of 1
+  defensively, rather than trusting the constants alone: a future tweak to
+  any of `NULL_MOVE_R_MID`, `NULL_MOVE_R_HIGH`, or the depth thresholds
+  could otherwise silently reintroduce the depth-0-verification bug.
+  Belt-and-suspenders was judged worth the one extra `if` given how costly
+  that bug was to diagnose the first time (Session 21).
   
+
+  
+
   

@@ -124,7 +124,9 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 - [ ] NNUE neural network evaluation
 - [x] Futility pruning
 - [x] `go depth N` timing harness (node counting + NPS reporting, Session 18)
-- [ ] Singular extensions
+- [x] Singular extensions (Session 22) — excluded-move verification search
+      at depth >= SE_MIN_DEPTH=6, one extra ply for a hash move that
+      fails low against everything else; see D-53
 - [ ] Lazy SMP multi-core search
 - [ ] **Target: 1,000,000,000 NPS on modern multi-core hardware**
 - [x] Benchmark LMR / null move / aspiration windows / futility pruning
@@ -141,8 +143,12 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       rate. Fixed via `NULL_MOVE_MIN_DEPTH` 3→4; Kiwipete depth-4 nodes
       now match null-move-disabled exactly, startpos cost negligible
       (+0.5%)
-- [ ] Optional: consider adaptive `NULL_MOVE_R` (larger at higher depth)
-      now that the depth-3 pathological case is closed off
+- [x] Fix the `DECISIONS.md` D-52 stub (Session 22) — it was a
+      self-referential placeholder, not a real missing-entries gap;
+      D-46–D-51 were already written up
+- [x] Adaptive `NULL_MOVE_R` (Session 23) — R=2/3/4 tiered by depth via
+      `null_move_r()`, floor-clamped so `depth - 1 - R >= 1` always
+      holds; see D-54
 
 ---
 
