@@ -283,3 +283,53 @@ same upload flow he already knows.
 
 **Rejected**: Git LFS — requires CLI/terminal setup, violates D15.
 
+## D23 — NNUE Blend Weight Fixed at 0.25 Pending Elo Testing (2026-07-06)
+**Decision**: Phase 16.6 integrates the trained Pet Dragon NNUE (Phase 16.5)
+as a 25%-weighted blend with the existing HCE (`eval::evaluate_blended() =
+0.75*HCE + 0.25*NNUE`), not a full replacement of HCE, and not a
+configurable/tunable weight for now — a fixed constant in `eval/mod.rs`.
+
+**Why**: The first (and only) trained network has val_loss=0.53776 —
+meaningfully better than the 0.693 coin-flip baseline, but still far from a
+confident predictor. Session 32's own handoff note already flagged this as
+the reason to start with a blend rather than a replace. A low, fixed weight
+lets the NNUE contribute real signal immediately without risking a
+regression from over-trusting an undertrained network; the weight can be
+raised (or the whole approach reconsidered) once actual Elo testing against
+the current pure-HCE build is available.
+
+**Rejected**: Full HCE replacement — premature given val_loss is still well
+above a confident-prediction threshold; borrowed Ethereal HCE weights
+(D5) are proven to ~2400-2600 Elo and shouldn't be discarded on a first
+training run. Also rejected: making the blend weight a UCI-tunable option
+immediately — adds surface area before there's any Elo data to tune
+against; revisit once benchmarking exists.
+
+## D24 — Wire info.time_allocated_ms to the Real TimeManager Hard Limit (2026-07-06)
+**Decision**: `iterative_deepening()` now sets `info.time_allocated_ms =
+hard_ms` immediately after constructing its `TimeManager`, so
+`alpha_beta`'s in-search `is_time_up()` check has the actual per-move time
+budget to compare against, instead of `SearchInfo::new()`'s hardcoded
+5000ms default.
+
+**Why**: `is_time_up()`'s mid-search abort was silently dead code for every
+real (UCI/iterative-deepening) search since it was introduced — only
+`alpha_beta.rs`'s own unit tests, which set `time_allocated_ms` by hand,
+ever exercised it. Real games were relying entirely on
+`TimeManager::should_start_next_depth()`'s between-depths check, meaning a
+single slow depth could run arbitrarily long past the allocated budget.
+This was invisible while HCE-only eval was fast enough that individual
+depths rarely overran; Phase 16.6's NNUE blend raised per-node cost enough
+to expose it via a failing CI test.
+
+**Impact**: this is a real robustness fix for actual play, not just a test
+fix — any future eval slowdown (or a slow position with a large branching
+factor) could previously have caused a real time forfeit in UCI play. Now
+bounded by the true hard limit, checked every 256 nodes (see 2048→256
+change, same session).
+
+**Rejected**: loosening the test's 500ms ceiling instead of finding the
+real wiring bug — would have hidden a genuine time-management defect rather
+than fixing it.
+
+

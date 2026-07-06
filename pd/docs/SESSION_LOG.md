@@ -53,9 +53,37 @@ pass — no weights file existed to test against while writing this. First
 real signal comes from CI's first green (or red) run once the weights file
 is uploaded.
 
+**Bugs found and fixed (post-upload CI red, two rounds):**
+1. `is_time_up()` sampled the clock every 2048 nodes — too coarse once
+   NNUE's heavier per-node eval let an 881-node depth-3 search finish
+   uninterrupted past the test's 500ms ceiling. Tightened to every 256
+   nodes (`search/mod.rs`). This alone did NOT fix the test — same 517ms,
+   same node count, proving the check wasn't actually engaging.
+2. Root cause (D24): `info.time_allocated_ms` — what `is_time_up()`
+   compares elapsed time against — was never wired to the real
+   `TimeManager` hard limit inside `iterative_deepening()`. It sat at
+   `SearchInfo::new()`'s default (5000ms) for every real search, making the
+   in-search abort dead code outside `alpha_beta.rs`'s own unit tests (which
+   set it manually). Fixed by setting `info.time_allocated_ms = hard_ms`
+   right after the `TimeManager` is constructed (`search/iterative.rs`).
+   This bug predates Phase 16.6 — NNUE's slower eval just made it visible.
+
+Both fixes together verified locally (real weights file, exact CI test
+command): **320/320 passed.** Confirmed green on GitHub Actions.
+Root-caused entirely from CI logs Gokul pasted — no guessing either round.
+
+**Phase 16.6 complete.**
+
 **Next session start point:**
-Confirm the weights file has been uploaded and CI is green (306 + existing
-NNUE-feature/delta tests + 3 new `nnue::inference` tests). If green: check
+Start Phase 16.7 (WASM-compatible inference) — see ROADMAP.md note: likely
+already works given NORU's include_bytes!-embedded weights and no OS calls,
+but hasn't been runtime-verified in an actual browser session yet. Read
+src/nnue/inference.rs and the wasm-pack build/deploy workflow fresh before
+touching anything.
+
+---
+
+Prior entry, superseded by the above once committed: check
 `test_evaluate_nnue_start_pos_bounded`'s actual value isn't near a scale
 extreme — if it looks implausible (near-zero always, or saturating), use
 `noru::network::NnueWeights::audit_against_fp32` to get an empirical

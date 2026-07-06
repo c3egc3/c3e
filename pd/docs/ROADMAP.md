@@ -253,19 +253,29 @@
              epoch-3 overfit). PHASE 16.5 COMPLETE.
              Trained network artifact: nnue-pet-dragon-h32-a256-e10
              (nnue_pet_dragon_quantized.bin, 481K).
-- [~] 16.6 — Integrate trained network into eval: BLEND chosen (D23), not
-             replace. src/nnue/inference.rs (NEW) loads embedded quantized
-             weights via include_bytes!, runs Accumulator::refresh() +
+- [x] 16.6 — Integrate trained network into eval: BLEND chosen (D23), not
+             replace. src/nnue/inference.rs loads embedded quantized weights
+             via include_bytes!, runs Accumulator::refresh() +
              noru::network::forward(), converts raw i32 to centipawns via
-             OUTPUT_SCALE(16)/400 (D14 inverse). eval::evaluate_blended()
-             (25% NNUE weight) wired into search via the single
-             alpha_beta::evaluate() delegation point; pure-HCE evaluate()
-             untouched. ⚠️ BLOCKED until Gokul uploads
-             nnue_pet_dragon_quantized.bin to src/nnue/weights/ — the
-             include_bytes! path must exist or CI fails to compile.
-             cp-scale formula UNVERIFIED against a real network (no weights
-             file existed when written) — verify once CI runs for real.
-- [ ] 16.7 — WASM-compatible inference (NORU is pure Rust)
+             OUTPUT_SCALE(16)/400 (D14 inverse) — verified correct against
+             the real weights file, no scale adjustment needed.
+             eval::evaluate_blended() (25% NNUE weight, D23) wired into
+             search via the alpha_beta::evaluate() delegation point;
+             pure-HCE evaluate() untouched. CI green, 320/320 tests passing.
+             Also fixed a pre-existing bug this exposed: info.time_allocated_ms
+             was never wired to the real TimeManager hard limit in
+             iterative_deepening(), so is_time_up()'s in-search abort was
+             dead code for every real search (D24). NNUE's heavier per-node
+             cost surfaced it via test_iterative_deepening_respects_time.
+- [ ] 16.7 — WASM-compatible inference (NORU is pure Rust) — NEXT SESSION
+             START POINT. NORU has no OS/filesystem calls (weights are
+             include_bytes!-embedded, not loaded from a path), so this may
+             already work with zero changes. Verify by checking the
+             wasm-pack/GitHub Pages deploy log for the eval-integration
+             commit — it already succeeded during 16.6, which is a good
+             sign, but confirm no console errors at runtime in the browser
+             (feature extraction / accumulator code hasn't been exercised
+             from JS yet, only from native `cargo test`).
 
 ---
 
