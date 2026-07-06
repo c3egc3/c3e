@@ -253,9 +253,18 @@
              epoch-3 overfit). PHASE 16.5 COMPLETE.
              Trained network artifact: nnue-pet-dragon-h32-a256-e10
              (nnue_pet_dragon_quantized.bin, 481K).
-- [ ] 16.6 — Integrate trained network into eval (replace HCE or blend).
-             NEXT SESSION START POINT. Read src/eval/mod.rs fresh before
-             touching anything.
+- [~] 16.6 — Integrate trained network into eval: BLEND chosen (D23), not
+             replace. src/nnue/inference.rs (NEW) loads embedded quantized
+             weights via include_bytes!, runs Accumulator::refresh() +
+             noru::network::forward(), converts raw i32 to centipawns via
+             OUTPUT_SCALE(16)/400 (D14 inverse). eval::evaluate_blended()
+             (25% NNUE weight) wired into search via the single
+             alpha_beta::evaluate() delegation point; pure-HCE evaluate()
+             untouched. ⚠️ BLOCKED until Gokul uploads
+             nnue_pet_dragon_quantized.bin to src/nnue/weights/ — the
+             include_bytes! path must exist or CI fails to compile.
+             cp-scale formula UNVERIFIED against a real network (no weights
+             file existed when written) — verify once CI runs for real.
 - [ ] 16.7 — WASM-compatible inference (NORU is pure Rust)
 
 ---

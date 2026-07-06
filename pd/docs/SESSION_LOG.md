@@ -7,6 +7,68 @@ Most recent session at TOP.
 
 ---
 
+## Session 33 — 2026-07-06 (Phase 16.6 NNUE eval integration — code only, pending weights upload)
+
+**Built:**
+- Read NORU 2.2.0's real inference API from docs.rs fresh (`network::NnueWeights`,
+  `network::Accumulator`, `network::forward`, `quant::OUTPUT_SCALE`) — the
+  trainer API (Session 29) doesn't cover inference, confirmed before writing
+  anything per the mandatory "read fresh" rule for a first-time code path.
+- `src/nnue/inference.rs` (NEW) — embeds the trained quantized network via
+  `include_bytes!`, lazily parses it once via `OnceLock`, runs
+  `Accumulator::refresh()` + `forward()` per call, converts the raw i32 to
+  centipawns via `OUTPUT_SCALE(16)` and `CP_TO_WINPROB_SCALE(400)` (inverse
+  of train_nnue.rs's own sigmoid(eval_cp/400) target formula, D14). 3 tests
+  (bounded, 1000-seed no-panic, determinism) — cannot actually run in CI
+  until the weights file exists (see blocker below).
+- `src/eval/mod.rs` (DELTA) — added `evaluate_blended()`: HCE + NNUE at a
+  conservative 25% NNUE weight (D23). Left `evaluate()` itself untouched so
+  its existing HCE-only test suite keeps validating HCE in isolation.
+- `src/search/alpha_beta.rs` (DELTA) — one-line change: the existing
+  `evaluate()` delegation wrapper now calls `crate::eval::evaluate_blended()`
+  instead of `crate::eval::evaluate()`. This is the only search-facing
+  change; no other call site needed touching.
+- `src/nnue/mod.rs` (DELTA) — `pub mod inference;`.
+
+**Decisions made:** D23 (new) — NNUE blend weight fixed at 0.25 pending real
+Elo testing, per Session 32's own handoff reasoning (val_loss=0.538 is not
+yet confident enough to justify a heavier weight or a full replace).
+
+**Bugs fixed:** N/A (new code, not yet compiled — see blocker).
+
+**⚠️ BLOCKING — nothing in this session's delta can compile yet:**
+`src/nnue/inference.rs` embeds the network via
+`include_bytes!("weights/nnue_pet_dragon_quantized.bin")`, and that file
+does not exist in the repo. Gokul must download
+`nnue_pet_dragon_quantized.bin` from the Session 32 training run's artifact
+page and upload it to exactly `src/nnue/weights/nnue_pet_dragon_quantized.bin`
+in the same commit as this session's code (481K, well under the 25MB
+repo-upload UI limit — D22's GitHub Releases workaround is not needed for a
+file this small). Without it, CI fails at compile time, not test time.
+
+**Test risk flagged (unverified):** the cp-scale conversion
+(`raw / OUTPUT_SCALE * 400`) is derived from NORU's documented API and
+train_nnue.rs's own target formula, not verified against a real forward
+pass — no weights file existed to test against while writing this. First
+real signal comes from CI's first green (or red) run once the weights file
+is uploaded.
+
+**Next session start point:**
+Confirm the weights file has been uploaded and CI is green (306 + existing
+NNUE-feature/delta tests + 3 new `nnue::inference` tests). If green: check
+`test_evaluate_nnue_start_pos_bounded`'s actual value isn't near a scale
+extreme — if it looks implausible (near-zero always, or saturating), use
+`noru::network::NnueWeights::audit_against_fp32` to get an empirical
+`inferred_output_scale` and correct `CP_TO_WINPROB_SCALE`/`OUTPUT_SCALE`
+math in `inference.rs`, rather than re-guessing. If genuinely looking
+reasonable: Phase 16.6 done, move to 16.7 (WASM-compatible inference —
+NORU is pure Rust so this may already work with zero changes; verify by
+checking the wasm-pack build log for the next deploy). If CI is red on a
+compile error unrelated to the missing-file case: read the actual error
+before touching inference.rs again.
+
+---
+
 ## Session 32 — 2026-07-05 (Phase 16.5 complete — 483k-row training run)
 
 **Built:**
