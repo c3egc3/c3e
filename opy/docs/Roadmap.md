@@ -1,5 +1,5 @@
 # OxyPy — Roadmap
-
+ 
 > **Doc 4 of 4** — companion docs: [Project_Architecture.md](./Project_Architecture.md) · [Decisions.md](./Decisions.md) · [SessionLog.md](./SessionLog.md)
 
 This is the **live, checkable task list** — the thing "Go" reads to figure out what's next. It tracks *everything* (infra, engine, testing, docs), not just search features. Architecture.md §4 and §8 remain the detailed technical/target reference; this file is the actionable, ordered, tickable version of that.
@@ -12,15 +12,15 @@ This is the **live, checkable task list** — the thing "Go" reads to figure out
 - [x] Draft initial Project_Architecture.md
 - [x] Establish 4-doc control system (Architecture, Decisions, Roadmap, SessionLog)
 - [x] Write CLAUDE_PROJECT_INSTRUCTIONS.md (cross-session continuity + delta protocol)
-- [ ] Create `g-c-3/OxyPy` repo structure (empty scaffolding, LICENSE file, .gitignore) — no README
-- [ ] Add GPLv3 LICENSE file + Stockfish attribution notice to engine repo
+- [x] Create `g-c-3/OxyPy` repo structure (empty scaffolding, LICENSE file, .gitignore) — no README
+- [x] Add GPLv3 LICENSE file + Stockfish attribution notice to engine repo
 
 ## Phase 1 — Engine Skeleton
-- [ ] `rust_engine_core` crate: empty bitboard module, builds cleanly
-- [ ] PyO3 bindings: minimal `hello`/`ping` round-trip Python ↔ Rust
-- [ ] `oxypy/main.py`: UCI shim responds correctly to `uci`, `isready`, `ucinewgame`, `quit`
-- [ ] Package as installable wheel locally in CI (no publish yet)
-- [ ] First GitHub Actions workflow: build wheel on push, no tests yet (nothing to test)
+- [x] `rust_engine_core` crate: empty bitboard module, builds cleanly
+- [x] PyO3 bindings: minimal `hello`/`ping` round-trip Python ↔ Rust
+- [x] `oxypy/main.py`: UCI shim responds correctly to `uci`, `isready`, `ucinewgame`, `quit`
+- [x] Package as installable wheel locally in CI (no publish yet)
+- [x] First GitHub Actions workflow: build wheel on push, no tests yet (nothing to test) 
 
 ## Phase 2 — Core Search Features (see Architecture §4 for detail)
 - [ ] Bitboard move generation (legal moves, all piece types)
