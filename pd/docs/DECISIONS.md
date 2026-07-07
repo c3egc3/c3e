@@ -349,3 +349,67 @@ Re-enabling any nonzero weight should wait for either (a) a retrained
 network with materially lower val_loss, or (b) rerunning match_runner at
 several weight values (5/10/15/20%) to find where it stops being net
 negative — don't re-raise the default from vibes a second time.
+
+
+## D26 — Sweep Existing match_runner Before Retraining or Architecture Changes (2026-07-07)
+
+**Decision**: For Phase 17.5 (bringing val_loss down / deciding whether any
+nonzero NNUE weight is usable), the first action is a 4-run sweep of the
+existing `match_runner` workflow — A=0% vs B={5,10,15,20}%, 40 games each,
+seed_start=0 — NOT a bigger Kaggle self-play run and NOT a hidden_size
+architecture change.
+
+**Why**: D25 only tested one point (25% weight, decisively bad). We don't
+yet know whether *all* nonzero weight is harmful (network problem, points at
+retraining) or only high weight is harmful (tuning problem, current network
+is fine at a lower default). The sweep uses infrastructure that already
+exists (Phase 17.2/17.3, zero new code) and answers this in one Actions
+session, before spending Kaggle time/compute on a guess.
+
+**Rejected (for now)**: Immediately rerunning bigger Kaggle self-play (the
+original 3000-game target, cut short to ~93 by queue delay in Session 30) —
+rejected until the sweep confirms the network itself is the bottleneck, not
+just the blend weight. Also rejected: bumping hidden_size before the sweep —
+same reasoning, don't change the model before knowing whether the model is
+actually the problem.
+
+**Revisit**: once the 4 match_results.txt artifacts are read (see
+SESSION_LOG.md Session 38 next-start-point for the exact decision branches).
+
+## D27 — No Safe Nonzero NNUE Weight at Current Network Quality; Retrain Before Re-Testing (2026-07-07)
+
+**Decision**: The D26 sweep (A=0% vs B=5/10/15/20%, 40 games each) showed
+every nonzero weight net-negative, including 5% (65.0% score, +107.5 Elo —
+not a marginal or noisy result). Conclusion: don't look for a "safe" low
+default: commit to retraining the network with substantially more self-play
+data before re-enabling any blend weight. NNUEWeight stays at 0% (D25).
+
+**Why**: If the problem were purely "25% overweights a decent-but-imperfect
+network," we'd expect the Elo gap to shrink smoothly toward ~0 as weight
+drops, with maybe 5% landing close to neutral. Instead 5% is still a
+large, clear loss — consistent with D23's original flag that val_loss=0.538
+is far from a confident predictor at *any* blend strength, not just at 25%.
+
+**Rejected**: Setting the default to some low nonzero value (e.g. 5%) anyway
+on the theory that "some signal is better than none" — rejected because the
+sweep shows 5% is actively harmful, not merely weak; a harmful-but-small
+signal is still harmful.
+
+**Next step**: Session 39 committed Gokul to running self-play in 4 smaller
+Kaggle batches (750 games each, different seeds) instead of one large
+attempt, specifically to avoid repeating the queue-delay shortfall that
+produced the current undertrained network (Session 30: ~93/3000 games
+actually completed). Once retrained, the match_runner sweep must be rerun
+before touching NNUEWeight's default — improved training data is not
+assumed to fix things until re-measured.
+
+**Revisit**: once the 4 match_results.txt artifacts are read (see
+SESSION_LOG.md Session 38 next-start-point for the exact decision branches).
+
+## D28 — SearchInfo.print_info Gate for Silent-Search Callers (2026-07-07)
+
+**Decision**: Added `SearchInfo.print_info: bool` (default `true`). `iterative_deepening()`'s UCI `info depth ...` println is now gated on it. `selfplay.rs` and `match_runner.rs` set it `false`; `main.rs`'s real UCI loop leaves it at the default, unchanged.
+
+**Why**: Kaggle self-play versions #7 and #9 (seeds 200/400) showed "Failed" despite completing all 750/750 games correctly — the actual crash was a `CellTimeoutError` in the *next* notebook cell, caused by `capture_output=True` trying to relay ~56,000 lines of UCI info-string stdout (10 depths × dozens of moves × 750 games) through Jupyter's IOPub channel, which papermill caps at a 4-second per-message timeout. The data generation itself never failed.
+
+**Rejected**: Working around it purely on the notebook side (e.g. not printing `result.stdout`) — rejected because the same unbounded stdout volume would still hit other consumers (GitHub Actions log truncation in `selfplay.yml`/`match_runner.yml`, slower subprocess pipes in general) and the actual defect (silent-search callers inheriting UCI-loop printing they never needed) is a one-line source fix, not a workaround.

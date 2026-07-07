@@ -7,6 +7,102 @@ Most recent session at TOP.
 
 ---
 
+## Session 40 — 2026-07-07 (D28 bugfix — selfplay/match_runner stdout flood)
+
+**Built:** `SearchInfo.print_info` flag (default true) gating the UCI info
+println in `iterative_deepening()`. Set `false` in `selfplay.rs` and
+`match_runner.rs`; `main.rs`'s UCI loop untouched (default stays true).
+
+**Bugs fixed:** Kaggle self-play versions #7/#9 (seeds 200/400) showed
+"Failed" despite 750/750 games completing correctly (confirmed from the
+Kaggle log: last line before the traceback is
+`game 750/750 (seed 1649): 137 samples written`). Root cause: silent-search
+callers were inheriting `iterative_deepening()`'s UCI `info depth ...`
+println, unconditional and meant only for the real UCI loop — 750 games'
+worth of it is ~56,000 stdout lines, which overwhelmed papermill's 4s IOPub
+relay timeout on the `print(result.stdout)` cell. Not a timeout, not
+resource contention between the 4 concurrent sessions as first suspected —
+a pure stdout-volume bug. See D28.
+
+**Decisions made:** D28 (see DECISIONS.md).
+
+**Next session start point:** Gokul uploading all 4 batches (seeds
+100/200/300/400 — #7/#9's data is valid despite the false "Failed" label,
+same as #6/#8) as GitHub Release assets. Once 2+ URLs are in hand, wire them
+into `train_nnue.yml`'s `selfplay_urls` input alongside the existing 483,080
+rows, rerun training, produce a new quantized weights file, then re-run the
+match_runner sweep (5/10/15/20% minimum) against the new network before
+touching NNUEWeight's default (D27's open branch — don't skip the re-sweep).
+
+---
+
+## Session 39 — 2026-07-07 (Phase 17.5a sweep read, D27 made, no code)
+
+**Built:** Nothing new. Read all 4 match_runner sweep results Gokul ran
+per Session 38's D26 plan (A=0% vs B=5/10/15/20%, 40 games each,
+seed_start=0):
+  5%:  A scored 65.0% (+107.5 Elo)
+  10%: A scored 75.0% (+190.8 Elo)
+  15%: A scored 70.0% (+147.2 Elo)
+  20%: A scored 80.0% (+240.8 Elo)
+
+**Decisions made:** D27 — no safe nonzero blend weight exists at the
+current network's quality (val_loss=0.538). Even 5% is decisively
+net-negative (65%, not close to 50%), so this isn't a tuning problem
+solvable by picking a lower default — the network itself needs to improve
+before any blend is worth re-enabling. Redirects 17.5 from "sweep weights"
+to "get more self-play data."
+
+**Bugs fixed:** N/A.
+
+**Next session start point:** Gokul is running 4x Kaggle self-play batches
+(750 games each, seed_start 100/200/300/400 — see ROADMAP.md 17.5b) to avoid
+repeating the Session 30 queue-delay shortfall (~93/3000 games) that
+produced the current undertrained network. As batch files land as GitHub
+Release assets (D22), wire their URLs into train_nnue.yml's selfplay_urls
+input alongside the existing 483,080 rows, rerun train_nnue, produce a new
+quantized weights file, then re-run the match_runner sweep (5/10/15/20% at
+minimum) against the new network before touching the NNUEWeight default
+again. Don't skip the re-sweep just because more data went in — verify it
+actually helped.
+
+---
+
+## Session 38 — 2026-07-07 (Phase 17.5 planning — D26 made, no code)
+
+**Built:** Nothing new. Verified Phase 16.4c (pawn-start feature convergence)
+was already fully implemented in Phase 16.2's `features.rs` — confirmed via
+`pawn_start_feature_index()`, `extract_features()`, and
+`test_pawn_start_feature_drops_once_record_cleared()` all matching D11's rule
+exactly. Closed the roadmap item with no source changes.
+
+**Decisions made:** D26 — before spending Kaggle compute on a bigger
+self-play run or an architecture change (hidden_size bump), sweep the
+existing `match_runner` workflow at 5/10/15/20% NNUE weight (vs 0% baseline)
+to find where D25's "net negative" result stops holding. Zero new code —
+`match_runner.yml`/`match_runner.rs` (Phase 17.2/17.3) already take
+`weight_a`/`weight_b` as inputs. Cheapest, most-informative experiment
+available; result determines whether retraining is even necessary.
+
+**Bugs fixed:** N/A.
+
+**Next session start point:** Read 4x `match_results.txt` artifacts from
+Gokul's queued Actions runs (A=0 vs B=5/10/15/20, 40 games each,
+seed_start=0, movetime=100ms — see ROADMAP.md 17.5 for the exact table).
+Based on where the Elo delta crosses from negative to roughly-neutral/
+positive:
+- if some low weight (5-10%) is net-neutral-or-positive → just set that
+  as the new `NNUEWeight` default, Phase 17.5 done, no retraining needed.
+- if even 5% is still clearly net-negative → that points at the network
+  itself (val_loss=0.538 too weak at any blend), which justifies committing
+  to a bigger Kaggle self-play run (target the original 3000 games, the
+  first attempt only got ~93 due to queue delay — D26 discussion) before
+  trying architecture tweaks.
+Read D25/D26 together before deciding; don't rerun anything bigger without
+the sweep data in hand first.
+
+---
+
 ## Session 37 — 2026-07-07 (Phase 17.4 — match result read, D25 made)
 
 **Built:** No new code beyond flipping the default. Read
