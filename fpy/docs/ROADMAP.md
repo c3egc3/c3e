@@ -124,9 +124,12 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 - [ ] NNUE neural network evaluation
 - [x] Futility pruning
 - [x] `go depth N` timing harness (node counting + NPS reporting, Session 18)
-- [x] Singular extensions (Session 22) — excluded-move verification search
-      at depth >= SE_MIN_DEPTH=6, one extra ply for a hash move that
-      fails low against everything else; see D-53
+- [ ] Singular extensions — **Session 22 log/D-53 claimed this was done;
+      Session 24 audit found no `excluded_move` anywhere in engine.py/run.py
+      and no corresponding tests. Unchecked pending a decision to actually
+      implement it. The stray `excluded_move=0` argument left at the
+      null-move call site was the direct cause of a broken compiled build
+      (see D-55).**
 - [ ] Lazy SMP multi-core search
 - [ ] **Target: 1,000,000,000 NPS on modern multi-core hardware**
 - [x] Benchmark LMR / null move / aspiration windows / futility pruning
@@ -154,7 +157,14 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 
 ## FastPy Transpiler — Ongoing Improvements
 
-- [ ] BMI2 intrinsics: `PEXT`/`PDEP` patterns for magic bitboards
+- [x] BMI2 intrinsics: `PEXT`/`PDEP` patterns for magic bitboards (Session 24)
+      — `pext(x, mask)`/`pdep(x, mask)` matched as direct calls (no natural
+      Python idiom exists, unlike POPCNT/TZCNT); Python-mode fallback in
+      engine.py verified against 500+ random cases; see D-56
+- [ ] Wire PEXT into bishop/rook move generation via precomputed
+      magic-bitboard attack tables (replaces the current ray-fill loops
+      in generate_bishops/generate_rooks) — natural next step now that
+      the intrinsic exists
 - [ ] `__builtin_clzll` for most-significant-bit index
 - [ ] Windows support (MSVC/MinGW detection in `toolchain.py`)
 - [ ] Apple Silicon cross-compilation flags

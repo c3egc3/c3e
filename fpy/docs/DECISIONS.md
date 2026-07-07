@@ -298,6 +298,36 @@ restriction there.
   could otherwise silently reintroduce the depth-0-verification bug.
   Belt-and-suspenders was judged worth the one extra `if` given how costly
   that bug was to diagnose the first time (Session 21).
+
+## D-55: Build-breaking regression from a phantom `excluded_move` argument
+  — a Session 24 baseline check (`fastpy build`, run *before* any new work,
+  per WORKING STYLE) found the null-move call site in both `alpha_beta`
+  (engine.py) and `_alpha_beta_py` (run.py) passing 5 arguments to a
+  4-parameter function. `fastpy check` passed anyway: the type checker
+  validates argument *types* but never validates call-site *arity* against
+  the callee's signature — a real gap, tracked as a follow-up for
+  `core/type_system.py`. The deeper cause: Session 22's log entry and D-53
+  describe singular extensions (`excluded_move` threaded through
+  `alpha_beta`) as fully implemented and tested, but no such parameter
+  exists anywhere in the current `engine.py`/`run.py`, and `test_phase6.py`
+  tests futility pruning, not exclusion search. The stray `, 0` is almost
+  certainly what remained after that work failed to land. Fix scope was
+  deliberately kept minimal — remove the phantom argument, restore a
+  buildable engine — rather than using a bug-audit session to also
+  reimplement a whole search feature from a stale description. ROADMAP's
+  singular-extensions checkbox was reverted to unchecked accordingly.
+
+## D-56: PEXT/PDEP matched as a direct call, not an idiom — every existing
+  intrinsic (POPCNT, TZCNT) recognises a pure-Python expression shape that
+  is *itself* correct Python (`bin(x).count("1")`, `(x & -x).bit_length()
+  - 1`). No such idiom exists for a hardware gather/scatter, so `pext(x,
+  mask)`/`pdep(x, mask)` are matched as a plain two-argument call to a bare
+  name with no receiver instead. The Python-mode fallback (a bit-loop,
+  defined once in `engine.py`) still type-checks and gives the correct
+  result when run as plain Python; it's simply dead code in the compiled
+  path since every call site is intrinsic-matched away first — the same
+  trade-off already accepted for `popcount()`/`lsb()`, just one level
+  more indirect since there's no idiom to anchor the match to.
   
 
   

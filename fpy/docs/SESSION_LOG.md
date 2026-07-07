@@ -4,45 +4,68 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
-## Session 23 — Adaptive NULL_MOVE_R
+## Session 24 — Fixed build-breaking regression + PEXT/PDEP intrinsics
 **Status:** COMPLETE ✅
 
-### What changed (g-c-3/fastpy-engine)
-- `engine.py`: new `null_move_r(depth)` helper tiers the null-move
-  reduction — R=2 below depth 6, R=3 at depth 6–9, R=4 at depth >= 10.
-  New constants `NULL_MOVE_R_MID=3`, `NULL_MOVE_R_HIGH=4`,
-  `NULL_MOVE_R_MID_DEPTH=6`, `NULL_MOVE_R_HIGH_DEPTH=10`. Call site now
-  computes `null_reduced_depth` and clamps it to a floor of 1 before the
-  verification search, defensively enforcing the Session 21/D-52
-  invariant regardless of constant tuning
-- `run.py`: `_alpha_beta_py` mirrors the same tiering and floor
-- `tests/test_phase5.py`: 7 new tests in `TestAdaptiveNullMoveR` — tier
-  boundary values, the min-depth case matching the old fixed R=2 exactly,
-  the floor invariant checked at every tier boundary, and an integration
-  test that a real search crosses the high tier (depth 10) and still
-  returns a legal move
+### Critical finding (before any new work)
+Baseline `fastpy build engine.py --optimize O3` **failed** — not caught by
+`fastpy check`, which only validates types, not call-site arity. Root cause:
+`alpha_beta`/`_alpha_beta_py`'s null-move call site passed a stray 5th
+argument (`, 0`) in both `engine.py` and `run.py`, but both functions are
+defined with 4 params.
 
-### Design notes
-- See D-54: tiered if/elif over named constants (matching
-  `futility_margin()`'s existing style), not a division-based formula —
-  no division anywhere else in `engine.py`
-- The floor clamp at the call site is intentionally redundant with the
-  tier-boundary math being individually safe — cheap insurance against
-  re-breaking the exact bug fixed in Session 21
+Bigger problem underneath: Session 22's log entry and D-53 describe
+**singular extensions** (`excluded_move` parameter, 9 new tests) as
+implemented — none of that exists in the actual repo. No `excluded_move`
+in `engine.py` or `run.py`; `test_phase6.py` tests futility pruning, not
+exclusion search. The stray `, 0` was very likely a leftover from that
+work never actually landing. Fixed the immediate break (removed the
+phantom argument) but deliberately did **not** reimplement singular
+extensions in the same session as a bug audit — that's a feature-scope
+decision, not a fix. ROADMAP checkbox reverted to unchecked; see D-55.
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`, `run.py`: removed the extra `0` argument from the null-move
+  `alpha_beta`/`_alpha_beta_py` call sites — restores a clean compiled build
+- `engine.py`: new `pext(x, mask)` / `pdep(x, mask)` BMI2 wrapper functions
+  in the BITBOARD UTILITIES section — Python-mode bit-loop fallbacks,
+  intrinsic-matched away in the compiled path
+- `tests/test_phase6.py`: 10 new tests in `TestPextPdep` — identity/empty
+  mask edge cases, 500-case random cross-check against a reference
+  implementation, the pext/pdep inverse property, and the
+  `result <= 2**popcount(mask) - 1` bound
+
+### What changed (g-c-3/fastpy)
+- `core/intrinsics.py`: new `PEXT`/`PDEP` pattern — matches a direct
+  2-argument call to a bare `pext`/`pdep` name (no receiver) rather than
+  an expression idiom, since no natural pure-Python one-liner exists for
+  a hardware gather/scatter (unlike POPCNT/TZCNT). See D-56
+- `core/emitter.py`: added `#include <immintrin.h>` for `_pext_u64`/
+  `_pdep_u64`
+- `tests/test_intrinsics.py`, `tests/conftest.py`: 11 new tests —
+  pipeline firing, direct mapper unit tests, wrong-arg-count and
+  wrong-shape non-matches
 
 ### Verification
-- `fastpy check engine.py` — zero errors; full `-O3 -march=native` build
-  succeeds
-- Full suite: **181/181 passing** (174 existing + 7 new), no regressions
+- `fastpy check engine.py` — zero errors; `fastpy build --optimize O3` —
+  succeeds (previously failing, see above)
+- fastpy: **182/182** passing (was 171)
+- fastpy-engine: **180/180** passing (was 168 failing→172 after the
+  arity fix, then +10 PEXT/PDEP tests → 180 passing)
+- `pext`/`pdep` correctness cross-checked against a from-scratch bit
+  reference implementation over 500+ random 64-bit inputs, plus the
+  inverse property `pdep(pext(x, mask), mask) == x & mask`
 
-### Next (ROADMAP — Phase 6, Elite Engine, still open)
+### Next (ROADMAP)
+- Decide whether to actually (re-)implement singular extensions
+- Wire `pext`/magic-bitboard attack tables into `generate_bishops`/
+  `generate_rooks`, replacing the ray-fill loops
 - NNUE neural network evaluation
 - Lazy SMP multi-core search
 
 ---
 
 ## Session 22 — Singular extensions implemented + D-52 stub fixed
-**Status:** COMPLETE ✅
 
 ### What changed (g-c-3/fastpy-engine)
 - `engine.py`: `alpha_beta` gains an `excluded_move: uint64` parameter
