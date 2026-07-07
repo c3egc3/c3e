@@ -23,7 +23,7 @@ This is the **live, checkable task list** — the thing "Go" reads to figure out
 - [x] First GitHub Actions workflow: build wheel on push, no tests yet (nothing to test) 
 
 ## Phase 2 — Core Search Features (see Architecture §4 for detail)
-- [ ] Bitboard move generation (legal moves, all piece types)
+- [x] Bitboard move generation (legal moves, all piece types)
 - [ ] Basic alpha-beta + iterative deepening
 - [ ] Transposition table (Zobrist hashing)
 - [ ] Move ordering: MVV-LVA, killer moves, history heuristic

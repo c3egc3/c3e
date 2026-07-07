@@ -20,6 +20,33 @@ Append-only. One entry per working session, **newest at the top**. This is the f
 
 ---
 
+## Session 2 — 2026-07-06
+
+**Started from:** `Continue` (previous session status was "done," so treated as `Go`)
+**Summary:** Implemented full legal move generation for all piece types, expanding the empty `bitboard.rs` stub into a module tree: `types` (Color/Piece/Square), `attacks` (knight/king/pawn formulas + ray-scanning sliding attacks for bishop/rook/queen — classical approach, not magic bitboards, since Phase 2's bar is correctness not speed), `board` (Board state, FEN parsing, `is_square_attacked`/`in_check`, copy-make `make_move`), `movegen` (pseudo-legal generation for every piece including castling/en passant/promotions, plus `legal_moves` filtering via copy-make + check detection), and `perft` (move-count correctness testing). Also added a `perft(fen, depth)` PyO3 binding in `lib.rs` alongside `ping`, as a low-cost byproduct that gives future CI sanity-testing (Phase 3) a hook to call into from Python.
+Correctness was verified, not assumed: built and ran the full test suite in a sandbox against three well-known standard perft positions (starting position, "Kiwipete," and "Position 3") at depths 1–4, all matching publicly documented node counts exactly. Also ran an ad-hoc depth-5 starting-position check (4,865,609 nodes, correct) for extra confidence before discarding that scratch test. One of my own hand-written unit tests (a pin test) initially failed — traced it to a wrong test FEN (bishop wasn't actually on the pin line), not a move-generation bug; fixed the test position and it passed. Also verified the wheel builds from the final deliverable files and that `rust_engine_core.perft(...)` is callable from Python end-to-end, including the FEN-error path raising `ValueError` correctly.
+No new Cargo dependencies were needed (everything is std + the existing `pyo3` dependency), so `Cargo.lock` is unchanged from last session.
+
+**Files touched:**
+- NEW: `rust_engine_core/src/bitboard/types.rs`
+- NEW: `rust_engine_core/src/bitboard/attacks.rs`
+- NEW: `rust_engine_core/src/bitboard/board.rs`
+- NEW: `rust_engine_core/src/bitboard/movegen.rs`
+- NEW: `rust_engine_core/src/bitboard/perft.rs`
+- DELTA: `rust_engine_core/src/bitboard.rs` (empty stub → module tree root)
+- DELTA: `rust_engine_core/src/lib.rs` (added `perft` PyO3 binding)
+- DELTA: `Roadmap.md` (Phase 2 bitboard move generation item checked off)
+
+**Decisions logged:** none this session — sliding-attack approach (classical ray-scanning, not magic bitboards) and copy-make (not make/unmake) were implementation choices made in service of the existing Phase 2 "correctness first" framing already implicit in Architecture.md §4, not new standing decisions. Flagging here in case the project director wants either formalized as a Decision entry; happy to add one on request.
+
+**Status at end of session:** done
+
+**If mid-task — exact resume point:** N/A
+
+**Next logical step (for "Go"):** Continue Roadmap Phase 2 — "Basic alpha-beta + iterative deepening" is the next unchecked item, and can now build directly on `bitboard::{Board, legal_moves, Move}` from this session.
+
+---
+
 ## Session 1 — 2026-07-06
 
 **Started from:** `Go`
