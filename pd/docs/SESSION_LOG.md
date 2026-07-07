@@ -7,6 +7,72 @@ Most recent session at TOP.
 
 ---
 
+## Session 35 — 2026-07-07 (Phase 17.1 — NNUE blend weight runtime-configurable)
+
+**Built:**
+- `src/eval/mod.rs` (DELTA) — `NNUE_BLEND_WEIGHT` const → `NNUE_BLEND_WEIGHT_PCT`
+  (process-global `AtomicU32`, Relaxed ordering, same benign-race reasoning
+  as the TT per D4). New `set_nnue_weight_pct()` / `nnue_weight()`.
+  `evaluate_blended()` now skips the NNUE forward pass entirely at weight 0.
+- `src/main.rs` (DELTA) — new UCI option `NNUEWeight` (spin, 0-100, default
+  25), wired into `cmd_setoption`.
+- 1 new test (`test_nnue_weight_setter_getter_and_blend_at_zero`) —
+  deliberately a single test function to avoid cross-test races on the
+  shared atomic; restores the 25% default before returning.
+
+**Decisions made:** None new — this directly implements the follow-up D23
+already flagged ("weight can be raised... once actual Elo testing... is
+available"), no new architectural call made.
+
+**Bugs fixed:** N/A.
+
+**Why this task:** Gokul asked "you decide" after Phase 16 closed. Chose
+this over Texel tuning (Phase 14, optional per D12, superseded in value by
+NNUE) or an undefined new feature — this is the smallest concrete
+prerequisite for the Elo testing that D23 itself says should happen before
+the blend weight is trusted further.
+
+**Next session start point:** Phase 17.2 — build the self-play match
+harness. Read `src/nnue/inference.rs`, `src/eval/mod.rs` (this session's
+delta), and `src/position/setup.rs` (Pet Dragon generator) fresh before
+writing it — needs to run two in-process searches with different
+`NNUEWeight` settings per game and tally results without needing a
+terminal (Rust binary run via a GitHub Actions workflow, not a UCI/GUI
+match runner Gokul would have to operate manually).
+
+---
+
+## Session 34 — 2026-07-07 (Phase 16.7 WASM compatibility — code audit, no changes)
+
+**Built:** Nothing new — this was a verification session. Read
+`src/nnue/inference.rs`, `Cargo.toml`, `src/lib.rs`, `src/nnue/mod.rs` fresh
+and traced the only WASM→NNUE call path (`search_from_fen` →
+`iterative_deepening` → `evaluate_blended` → `evaluate_nnue`). Confirmed:
+no OS/filesystem calls anywhere in that path, `std::sync::OnceLock` is
+wasm32-safe, `noru` has no `target_arch = "wasm32"` exclusion in
+Cargo.toml (only `pyrrhic-rs` is correctly gated out). Conclusion: the
+NNUE code is already WASM-compatible with zero changes required, matching
+the Session 33 handoff's own prediction.
+
+**Decisions made:** None new.
+
+**Bugs fixed:** None (no bug — nothing to fix).
+
+**Blocked on:** Gokul confirming in-browser at
+https://g-c-3.github.io/pet-dragon that a new game actually gets an engine
+reply (not stuck on "Engine thinking…") and, if reachable, no red console
+errors. This can't be verified from this session's tooling (no browser
+access) — genuinely needs a human eyeball on the live page.
+
+**Next session start point:** If Gokul confirms the browser check is
+clean, mark ROADMAP 16.7 `[x]` and move to 16.4c (pawn-start feature
+convergence design) or Phase 14 (Texel tuning, optional) per D12 — decide
+which based on current Elo appetite. If Gokul reports the engine hangs or
+throws a console error, read that exact error before touching any NNUE
+code — do not guess at a fix blind.
+
+---
+
 ## Session 33 — 2026-07-06 (Phase 16.6 NNUE eval integration — code only, pending weights upload)
 
 **Built:**

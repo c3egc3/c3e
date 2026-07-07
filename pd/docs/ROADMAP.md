@@ -267,15 +267,28 @@
              iterative_deepening(), so is_time_up()'s in-search abort was
              dead code for every real search (D24). NNUE's heavier per-node
              cost surfaced it via test_iterative_deepening_respects_time.
-- [ ] 16.7 — WASM-compatible inference (NORU is pure Rust) — NEXT SESSION
-             START POINT. NORU has no OS/filesystem calls (weights are
-             include_bytes!-embedded, not loaded from a path), so this may
-             already work with zero changes. Verify by checking the
-             wasm-pack/GitHub Pages deploy log for the eval-integration
-             commit — it already succeeded during 16.6, which is a good
-             sign, but confirm no console errors at runtime in the browser
-             (feature extraction / accumulator code hasn't been exercised
-             from JS yet, only from native `cargo test`).
+- [x] 16.7 — WASM-compatible inference. Session 34 code audit: `inference.rs`
+             has zero OS/filesystem calls, `OnceLock` is wasm32-safe, `noru`
+             has no wasm32 exclusion in Cargo.toml, and the only WASM→NNUE
+             call path (search_from_fen → evaluate_blended → evaluate_nnue)
+             is clean. No code changes made or needed. BLOCKED ONLY on
+             Gokul confirming in-browser at https://g-c-3.github.io/pet-dragon
+             that the engine replies with a move and no console errors —
+             mark [x] once confirmed.
+
+---
+
+## Phase 17 — Elo A/B Testing Infrastructure ⏳
+- [x] 17.1 — NNUE blend weight made runtime-configurable via UCI
+             `NNUEWeight` option (spin, 0-100, default 25 = D23). Replaces
+             the compile-time `NNUE_BLEND_WEIGHT` const. weight=0 skips the
+             NNUE forward pass entirely (pure-HCE arm pays zero NNUE cost).
+- [ ] 17.2 — Self-play match harness: run N games between two `NNUEWeight`
+             configurations (e.g. 0 vs 25) using the existing Pet Dragon
+             position generator, report win/loss/draw and simple Elo delta.
+- [ ] 17.3 — GitHub Actions workflow (workflow_dispatch) to run 17.2 at
+             scale and post results as a build artifact — no terminal
+             needed, consistent with every other phase.
 
 ---
 
