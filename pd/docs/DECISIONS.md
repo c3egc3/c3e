@@ -332,4 +332,20 @@ change, same session).
 real wiring bug — would have hidden a genuine time-management defect rather
 than fixing it.
 
+## D25 — NNUE blend weight dropped to 0% default (2026-07-07)
 
+Phase 17.4 match: Engine A (0% NNUE) vs Engine B (25% NNUE, D23's fixed
+default), 20 games, 100ms/move, colors alternated. Result: A scored 87.5%
+(17 wins, 2 losses, 1 draw), **+338 Elo** in favor of pure HCE. This is a
+large, unambiguous gap — the trained network (val_loss=0.538, already
+flagged in D23 as not yet confident) is actively harmful at 25% weight,
+not merely under-contributing.
+
+Decision: `NNUEWeight` UCI option default changed 25 → 0 (src/eval/mod.rs,
+src/main.rs). The blend mechanism itself (Phase 17.1) stays — `NNUEWeight`
+remains a live, settable option, so this isn't a rollback of Phase 16-17
+work, just a correction of the default now that real Elo data exists.
+Re-enabling any nonzero weight should wait for either (a) a retrained
+network with materially lower val_loss, or (b) rerunning match_runner at
+several weight values (5/10/15/20%) to find where it stops being net
+negative — don't re-raise the default from vibes a second time.

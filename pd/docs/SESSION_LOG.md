@@ -7,6 +7,33 @@ Most recent session at TOP.
 
 ---
 
+## Session 37 — 2026-07-07 (Phase 17.4 — match result read, D25 made)
+
+**Built:** No new code beyond flipping the default. Read
+`match_results.txt` from the Actions artifact (A=0% NNUE vs B=25% NNUE,
+20 games): A scored 87.5%, +338 Elo. Decisive enough to act on immediately
+rather than wait for more samples.
+
+**Decisions made:** D25 — `NNUEWeight` default dropped 25% → 0% in
+`src/eval/mod.rs` and `src/main.rs` (UCI option string). The Phase 17.1
+mechanism (runtime-configurable weight) stays; only the default moved.
+
+**Bugs fixed:** N/A — not a bug, a training-quality finding. The network's
+val_loss (0.538) was already flagged in D23 as not confident; this match
+is the first real evidence of how much that mattered in practice.
+
+**Next session start point:** Phase 17.5 — improving NNUE training quality
+before attempting to re-enable a nonzero blend weight. Options to weigh:
+more self-play games (Phase 16.4a's `selfplay.rs` binary already exists,
+just needs a bigger run), more training epochs, or reconsidering the
+16.4c pawn-start feature convergence question (still open, see D11) since
+that could be part of why val_loss plateaued where it did. Read
+`docs/DECISIONS.md` D9/D11/D23/D25 together before deciding which lever
+to pull — don't just rerun selfplay bigger without first checking whether
+the feature-convergence issue is a bigger lever.
+
+---
+
 ## Session 36 — 2026-07-07 (Phase 17.2/17.3 — Elo A/B match harness)
 
 **Built:**

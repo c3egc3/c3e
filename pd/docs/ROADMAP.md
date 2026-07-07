@@ -303,8 +303,12 @@
              for num_games/weight_a/weight_b/movetime_ms/seed_start, uploads
              match_results.txt as a build artifact. Mirrors selfplay.yml's
              convention exactly.
-- [ ] 17.4 — Run the actual match (0% vs 25%, then wider configs) and use
-             the result to decide whether D23's 25% blend weight should move.
+- [x] 17.4 — Ran 0% vs 25%, 20 games/100ms/move: A (0%) scored 87.5%,
+             +338 Elo. Default weight dropped to 0% (D25). NNUE blend
+             mechanism stays available as a UCI option for future retests.
+- [ ] 17.5 — Improve NNUE training (more/better self-play data, more epochs,
+             or architecture tweaks) to bring val_loss down from 0.538
+             before attempting to re-enable any nonzero blend weight.
 
 ---
 
