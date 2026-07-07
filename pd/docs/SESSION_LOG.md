@@ -7,7 +7,45 @@ Most recent session at TOP.
 
 ---
 
+## Session 36 — 2026-07-07 (Phase 17.2/17.3 — Elo A/B match harness)
+
+**Built:**
+- `src/bin/match_runner.rs` (NEW) — plays engine-vs-engine matches between
+  two `NNUEWeight` configs. Colors alternate per game; separate TT per
+  color-per-game (correctness requirement — see ROADMAP note). Reports
+  W/L/D and a standard logistic Elo diff, undefined case handled explicitly
+  (0%/100% score → "undefined" string, not a crash or bogus infinity).
+  5 unit tests (Elo formula edges, outcome-translation both color
+  assignments, one real short-game smoke test).
+- `.github/workflows/match_runner.yml` (NEW) — workflow_dispatch, mirrors
+  `selfplay.yml`'s exact structure (Rust toolchain, cache, build, run,
+  upload artifact). Default config: A=0% (pure HCE) vs B=25% (D23 default).
+
+**Decisions made:** None new — this is the concrete Elo-testing mechanism
+D23 already called for.
+
+**Bugs fixed:** N/A.
+
+**Next session start point:** Phase 17.4 — actually trigger the workflow
+(Gokul: Actions tab → "Elo A/B Match" → Run workflow, defaults are fine for
+a first pass) and read `match_results.txt` from the run artifact. If A
+(pure HCE) scores meaningfully above 50%, that's a signal the 25% NNUE
+weight may be net-negative given the network's still-modest val_loss
+(0.538) — don't change `eval::set_nnue_weight_pct`'s default without
+reading the actual result first, no guessing which way it went.
+
+---
+
 ## Session 35 — 2026-07-07 (Phase 17.1 — NNUE blend weight runtime-configurable)
+
+**Post-session CI check:** Deploy to GitHub Pages run #261 (commit 83b1da7)
+showed "Cancelled", not failed — confirmed via run detail page: `Build WASM
+& Web` passed green (26s), `Deploy` was cancelled with reason "Canceling
+since a higher priority waiting request for pag[es]…" — i.e. the immediate
+follow-up commit's deploy pre-empted it, normal GitHub Pages single-flight
+concurrency, not a code issue. No fix needed. Separately flagged: Node.js 20
+deprecation warning on the same run — logged in ROADMAP.md Housekeeping,
+not urgent.
 
 **Built:**
 - `src/eval/mod.rs` (DELTA) — `NNUE_BLEND_WEIGHT` const → `NNUE_BLEND_WEIGHT_PCT`

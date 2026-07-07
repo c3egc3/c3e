@@ -278,17 +278,33 @@
 
 ---
 
+## Housekeeping ⚠️
+- [ ] `.github/workflows/*.yml` — GitHub Actions Node.js 20 is deprecated
+      (flagged on Build & Release run #262 for commit 83b1da7). Low priority,
+      not blocking; bump the actions' Node version whenever a workflow file
+      is next touched for another reason.
+
+---
+
+
 ## Phase 17 — Elo A/B Testing Infrastructure ⏳
 - [x] 17.1 — NNUE blend weight made runtime-configurable via UCI
              `NNUEWeight` option (spin, 0-100, default 25 = D23). Replaces
              the compile-time `NNUE_BLEND_WEIGHT` const. weight=0 skips the
              NNUE forward pass entirely (pure-HCE arm pays zero NNUE cost).
-- [ ] 17.2 — Self-play match harness: run N games between two `NNUEWeight`
-             configurations (e.g. 0 vs 25) using the existing Pet Dragon
-             position generator, report win/loss/draw and simple Elo delta.
-- [ ] 17.3 — GitHub Actions workflow (workflow_dispatch) to run 17.2 at
-             scale and post results as a build artifact — no terminal
-             needed, consistent with every other phase.
+- [x] 17.2 — src/bin/match_runner.rs (auto-discovered by Cargo, no Cargo.toml
+             change). Plays N games between Engine A/B (different NNUEWeight
+             configs), alternating colors each game to cancel first-move
+             advantage. Separate TT per color-per-game (never shared between
+             differently-weighted evaluators — a frozen TT score is only
+             valid for the evaluator that produced it). Reports W/L/D +
+             standard logistic Elo diff from Engine A's perspective.
+- [x] 17.3 — .github/workflows/match_runner.yml — workflow_dispatch inputs
+             for num_games/weight_a/weight_b/movetime_ms/seed_start, uploads
+             match_results.txt as a build artifact. Mirrors selfplay.yml's
+             convention exactly.
+- [ ] 17.4 — Run the actual match (0% vs 25%, then wider configs) and use
+             the result to decide whether D23's 25% blend weight should move.
 
 ---
 
