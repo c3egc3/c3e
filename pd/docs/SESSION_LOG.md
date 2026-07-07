@@ -7,6 +7,72 @@ Most recent session at TOP.
 
 ---
 
+## Session 42 — 2026-07-07 (Phase 17.5b complete — val_loss improved)
+
+**Built:** Nothing new — read the completed train_nnue.yml run log Gokul
+uploaded. Confirmed: 286,659 total rows loaded cleanly (0 malformed rows
+skipped from any of the 4 Kaggle batches or the lichess file — the old
+1-byte stub correctly caught by load_rows()'s malformed-line handling, as
+designed). Training ran all 10 epochs without incident.
+
+**Bugs fixed:** N/A.
+
+**Decisions made:** None new — D29 not needed yet, holding until the
+re-sweep result determines whether this network actually changes the
+NNUEWeight default question.
+
+**Result:** val_loss improved 0.53776 → 0.51661 (best epoch moved from 8/10
+to 5/10). Train/val divergence after epoch 5 (train_loss keeps dropping to
+0.49199 by epoch 10, val_loss creeps back to 0.52431) shows the underlying
+small-dataset overfit pattern is still present — this is a better floor, not
+a fixed problem. Notably, total row count (286,659) was LOWER than the
+previous run (483,080) despite far more actual self-play games (3000 vs the
+earlier run's uncertain ~93-game estimate) — avg rows/game dropped a lot,
+unexplained, not investigated, flagged for awareness only since val_loss
+still improved regardless.
+
+**Next session start point:** Gokul is (1) replacing
+src/nnue/weights/nnue_pet_dragon_quantized.bin with the new trained network
+(artifact nnue-pet-dragon-h32-a256-e10, run 28865459160) — this is a real
+code-affecting change since Phase 16.6 embeds it via include_bytes!, confirm
+build.yml stays green after the commit — then (2) re-running the exact D27
+match_runner sweep (5/10/15/20% vs 0%, 40 games each, seed_start=0) against
+the new network. Compare against D27's baseline numbers (5%: A 65%/+107.5
+Elo, 10%: A 75%/+190.8, 15%: A 70%/+147.2, 20%: A 80%/+240.8) — if any
+weight flips to net-neutral-or-better, that becomes the new NNUEWeight
+default candidate (write D29 at that point). If all 4 are still clearly
+negative even with the improved network, that's a stronger signal the
+architecture (hidden_size=32) or feature set needs revisiting next, not just
+more data again.
+
+---
+
+## Session 41 — 2026-07-07 (Phase 17.5b triggered — retraining wired, no code)
+
+**Built:** Nothing new — train_nnue.yml's `selfplay_urls` input already
+supported everything needed. Wired in the 4 Kaggle batch URLs (seeds
+100/200/300/900, uploaded as GitHub user-attachment links rather than formal
+Releases — functionally identical, both resolve to signed S3 URLs the
+workflow's `curl -sL` step follows fine). Held epochs/hidden_size/lr/etc at
+the same values as the 483k-row baseline run so "more data" is the only
+changed variable, per D26/D27's one-lever-at-a-time approach.
+
+**Bugs fixed:** N/A.
+
+**Decisions made:** None new.
+
+**Next session start point:** Read the new run's val_loss from the Actions
+log / uploaded artifact, compare against the 0.53776 baseline (D23/Session
+32). If meaningfully lower: produce the new quantized weights, then re-run
+the match_runner sweep (5/10/15/20% minimum, same as D27's sweep) against
+the NEW network before touching NNUEWeight's default. If val_loss barely
+moved despite ~30x more self-play games (93→~3000): that's a real signal
+worth investigating before just throwing more data at it again — reread
+D9/D10/D14 together (feature set / training data blend) for whether
+something structural is capping quality, not just data volume.
+
+---
+
 ## Session 40 — 2026-07-07 (D28 bugfix — selfplay/match_runner stdout flood)
 
 **Built:** `SearchInfo.print_info` flag (default true) gating the UCI info
@@ -27,8 +93,9 @@ a pure stdout-volume bug. See D28.
 **Decisions made:** D28 (see DECISIONS.md).
 
 **Next session start point:** Gokul uploading all 4 batches (seeds
-100/200/300/400 — #7/#9's data is valid despite the false "Failed" label,
-same as #6/#8) as GitHub Release assets. Once 2+ URLs are in hand, wire them
+100/200/300/900 — #7/#9's data is valid despite the false "Failed" label,
+same as #6/#8) as GitHub Release assets. All 4 now completed and uploaded.
+Wire them
 into `train_nnue.yml`'s `selfplay_urls` input alongside the existing 483,080
 rows, rerun training, produce a new quantized weights file, then re-run the
 match_runner sweep (5/10/15/20% minimum) against the new network before

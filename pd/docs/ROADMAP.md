@@ -236,11 +236,13 @@
              then 50000/50000 full run, 0 parse failures both times.
              Full run: 9,999,801 lines read, lichess_sample.txt = 9.6M,
              50000 rows). PHASE 16.4b COMPLETE.
-- [ ] 16.4c — Pawn start feature convergence design:
-             Features become 0 as pawns leave starting squares.
-             Network naturally transitions to standard-chess-like eval
-             in middlegame/endgame without switching logic.
-             See DECISIONS.md for full rationale.
+- [x] 16.4c — Pawn start feature convergence design: CONFIRMED already
+             implemented in Phase 16.2's features.rs, not a separate task.
+             pawn_start_feature_index() + extract_features() enforce D11's
+             rule exactly (feature drops the instant pawn_starts.started_here()
+             is false). test_pawn_start_feature_drops_once_record_cleared()
+             covers it directly. No code changes made — verification only
+             (Session 38).
 - [x] 16.5a — train_nnue.rs first run succeeded; added best-val-checkpoint
              tracking (session 30).
 - [x] 16.5b — Kaggle 3000-game self-play run (~93 actual games after queue
@@ -287,7 +289,7 @@
 ---
 
 
-## Phase 17 — Elo A/B Testing Infrastructure ⏳
+## Phase 17 — Elo A/B Testing & NNUE Retraining ⏳
 - [x] 17.1 — NNUE blend weight made runtime-configurable via UCI
              `NNUEWeight` option (spin, 0-100, default 25 = D23). Replaces
              the compile-time `NNUE_BLEND_WEIGHT` const. weight=0 skips the
@@ -306,9 +308,32 @@
 - [x] 17.4 — Ran 0% vs 25%, 20 games/100ms/move: A (0%) scored 87.5%,
              +338 Elo. Default weight dropped to 0% (D25). NNUE blend
              mechanism stays available as a UCI option for future retests.
-- [ ] 17.5 — Improve NNUE training (more/better self-play data, more epochs,
-             or architecture tweaks) to bring val_loss down from 0.538
-             before attempting to re-enable any nonzero blend weight.
+- [x] 17.5a — D26 sweep complete (Session 39). A=0% vs B={5,10,15,20}%,
+            40 games each, seed_start=0. ALL four net-negative for B:
+              5%:  A 65.0% (+107.5 Elo)
+              10%: A 75.0% (+190.8 Elo)
+              15%: A 70.0% (+147.2 Elo)
+              20%: A 80.0% (+240.8 Elo)
+            No safe low weight exists — even 5% is decisively bad, not
+            noise. Conclusion (D27): the network itself is the bottleneck,
+            not the blend ratio. Retraining is required before any nonzero
+            weight is viable again.
+- [x] 17.5b — Retrain with more self-play data. COMPLETE (Session 42).
+            286,659 total rows (236,659 self-play across 4 Kaggle batches,
+            750 games each seeds 100/200/300/900, + 50,000 lichess).
+            Result: val_loss 0.53776 → 0.51661 (best epoch 5/10, was epoch
+            8/10 before). Real improvement, not noise — though train/val
+            divergence after epoch 5 shows the small-dataset overfit
+            pattern persists, just with a better floor. Artifact
+            nnue-pet-dragon-h32-a256-e10 (run 28865459160, artifact ID
+            8137571554) uploaded successfully.
+- [~] 17.5c — Embed new quantized weights (replace
+            src/nnue/weights/nnue_pet_dragon_quantized.bin, compiled in via
+            include_bytes! per Phase 16.6 — a real code change, build.yml
+            must stay green) then re-run the D27 match_runner sweep
+            (5/10/15/20% vs 0%, 40 games each, seed_start=0) against the
+            NEW network to see if any nonzero weight is now net-positive or
+            net-neutral. Triggered by Gokul, awaiting results.
 
 ---
 
