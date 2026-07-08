@@ -184,20 +184,19 @@
             Colab — that was rejected in D19 before this ROADMAP note was
             last updated), Kaggle only as fallback if Actions' 6-hour job
             ceiling becomes a real constraint.
-- [~] 14.2 — texel_gen.rs + texel_gen.yml built (Session 50), modeled
-            directly on selfplay.rs's verified game loop. Output:
-            `<FEN>|<game_result>` per line. Sampling policy: skip first 12
-            plies (random Pet Dragon starts are noisier than classic chess
-            openings), skip positions where side-to-move is in check
-            (Texel tuning fits STATIC eval, tactical positions distort
-            that), sample every 4th eligible ply thereafter. Audit of
-            eval/*.rs confirmed ~970 tunable parameters, all currently
-            compile-time consts — 14.3 will need a separate, parallel
-            tunable-eval path (flat weight vector in, doesn't touch the
-            real evaluate() used by search) rather than modifying
-            evaluate() itself. AWAITING Gokul: apply the 2 new files,
-            confirm build green, run a smoke-test generation (default
-            20 games), confirm output looks sane before scaling up.
+- [~] 14.2 — Smoke test PASSED (Session 51): 20 games -> 292 samples
+            (~14.6/game), clean run, no errors, result values (0/0.5/1)
+            correct and correctly oriented per-sample. Confirmed the
+            extended-FEN pawn-start suffix round-trips correctly (D11).
+            SCALING ISSUE FOUND: at ~4.3s/game, a real tuning-sized dataset
+            (10,000+ games) would take 16+ hours — well past the 6-hour
+            Actions job ceiling (D19/D20). Not a future concern, real for
+            the first production run. Fix: 3 batched Actions runs (3500
+            games each, seed_start 1000/2000/3000, ~10,500 games total,
+            ~150k samples) — same batching pattern as the original
+            self-play data collection, still GitHub-Actions-only per D20
+            (no Kaggle trigger condition met). AWAITING Gokul to run and
+            upload all 3 batches as Release assets.
 - [ ] 14.3 — Run tuning via GitHub Actions (texel_tune.yml, per D19) —
             gradient descent (or similar local-search optimizer) minimizing
             sigmoid-scaled prediction error against the 14.2 game database.

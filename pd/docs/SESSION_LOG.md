@@ -7,6 +7,31 @@ Most recent session at TOP.
 
 ---
 
+## Session 51 — 2026-07-08 (14.2 validated, production batching planned)
+
+**Built:** Nothing new — read the smoke-test Actions log + output data.
+
+**Bugs fixed:** N/A.
+
+**Decisions made:** None new — straightforward scaling calculation
+(4.3s/game observed rate implies 10,000+ games needed for a real tuning
+dataset would exceed Actions' 6-hour ceiling in one run), resolved via the
+same batching pattern already established for self-play data, not a new
+architectural choice.
+
+**Next session start point:** Gokul running 3 batches (3500 games each,
+seed_start 1000/2000/3000) via texel_gen.yml, uploading each as a GitHub
+Release asset. Once 1+ batch URLs are available, 14.3 can start: design the
+parallel tunable-eval function (flat weight vector, mirrors evaluate()'s
+logic across material.rs/tables.rs/mobility.rs/pawns.rs/king_safety.rs/
+open_lines.rs — ~970 parameters per the Session 50 audit) plus the
+gradient-descent optimizer and texel_tune.yml workflow (GitHub Actions
+per D19). Don't necessarily wait for all 3 batches to build/test 14.3's
+optimizer logic — a single batch's worth of data is enough to validate the
+tuner mechanically works before committing to the full 3-batch dataset.
+
+---
+
 ## Session 50 — 2026-07-08 (14.2 built — Texel tuning data generator)
 
 **Built:** `texel_gen.rs` + `texel_gen.yml` (Phase 14.2). Modeled directly
