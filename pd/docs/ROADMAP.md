@@ -327,13 +327,24 @@
             pattern persists, just with a better floor. Artifact
             nnue-pet-dragon-h32-a256-e10 (run 28865459160, artifact ID
             8137571554) uploaded successfully.
-- [~] 17.5c — Embed new quantized weights (replace
-            src/nnue/weights/nnue_pet_dragon_quantized.bin, compiled in via
-            include_bytes! per Phase 16.6 — a real code change, build.yml
-            must stay green) then re-run the D27 match_runner sweep
-            (5/10/15/20% vs 0%, 40 games each, seed_start=0) against the
-            NEW network to see if any nonzero weight is now net-positive or
-            net-neutral. Triggered by Gokul, awaiting results.
+- [x] 17.5c — Embed + re-sweep COMPLETE (Session 43). Result is the
+            OPPOSITE of hoped for — every weight got worse, not better:
+              5%:  A 67.5% (+127.0), was 65.0% (+107.5)
+              10%: A 80.0% (+240.8), was 75.0% (+190.8)
+              15%: A 78.8% (+227.6), was 70.0% (+147.2)
+              20%: A 90.0% (+381.7), was 80.0% (+240.8)
+            val_loss improved (0.53776 -> 0.51661) but game strength at
+            every blend point got monotonically worse. D29: pausing the
+            "more data" lever — tried twice now with the same
+            better-loss/worse-Elo pattern both times. NNUEWeight stays 0%.
+- [ ] 17.5d — Direct calibration diagnostic (no Kaggle/training needed).
+            New eval_diag.rs + eval_diag.yml print HCE vs raw NNUE vs 100%
+            blended eval for positions with an unambiguous correct answer
+            (start pos, queen up/down, trivial pawn endgames). Checks
+            whether the network's raw output is sane on cases with a known
+            right answer, rather than only inferring calibration quality
+            from aggregate Elo results. Awaiting Gokul to trigger and
+            report output.
 
 ---
 

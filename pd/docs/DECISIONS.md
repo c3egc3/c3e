@@ -413,3 +413,68 @@ SESSION_LOG.md Session 38 next-start-point for the exact decision branches).
 **Why**: Kaggle self-play versions #7 and #9 (seeds 200/400) showed "Failed" despite completing all 750/750 games correctly — the actual crash was a `CellTimeoutError` in the *next* notebook cell, caused by `capture_output=True` trying to relay ~56,000 lines of UCI info-string stdout (10 depths × dozens of moves × 750 games) through Jupyter's IOPub channel, which papermill caps at a 4-second per-message timeout. The data generation itself never failed.
 
 **Rejected**: Working around it purely on the notebook side (e.g. not printing `result.stdout`) — rejected because the same unbounded stdout volume would still hit other consumers (GitHub Actions log truncation in `selfplay.yml`/`match_runner.yml`, slower subprocess pipes in general) and the actual defect (silent-search callers inheriting UCI-loop printing they never needed) is a one-line source fix, not a workaround.
+
+
+## D29 — Pause the Data-Volume Lever; val_loss Improving ≠ Game Strength Improving (2026-07-07)
+
+**Decision**: After retraining with ~3x the self-play games (Session 42:
+val_loss 0.53776 -> 0.51661), the re-swept match_runner results got WORSE
+at every single blend weight, not better (5/10/15/20% all moved further
+net-negative, consistently). Stop feeding more self-play data into training
+as the default response to a bad Elo result — it's now failed to help twice
+in the same direction. Pivot to a direct eval-calibration diagnostic
+(17.5d, eval_diag.rs) before any further training runs.
+
+**Why**: A lower BCE loss on the training/validation distribution is not
+the same claim as "better evaluation quality on positions search actually
+visits." The consistent, monotonic worsening across all 4 weight points
+(not scattered/noisy) suggests the network is becoming more *confident*
+without becoming more *correct* in the ways that matter for move selection
+— and a confidently-wrong eval poisons alpha-beta pruning/move-ordering
+more than a mild one does. Verified this isn't a simple scale bug: the
+cp<->logit constant (400.0) and OUTPUT_SCALE are consistent between
+train_nnue.rs and inference.rs.
+
+**Rejected**: Immediately queuing an even-bigger self-play run — rejected
+because the pattern (better loss, worse Elo) already repeated once; a third
+attempt at the same lever without understanding why the first two failed
+would be guessing, not debugging.
+
+**Revisit**: once eval_diag.rs's output is read (Session 43 next-start-point
+lays out the two branches: quantization bug vs deeper feature/target
+formulation issue in D9/D10/D14).
+
+## D30 — NNUE Output Clamp; Root Cause is Unregularized Logit Magnitude, Not Feature Design (2026-07-07)
+
+**Decision**: Added `NNUE_EVAL_CLAMP_CP = 1500` in `inference.rs`, applied
+to every `evaluate_nnue()` call before blending. Tightened
+`test_evaluate_nnue_start_pos_bounded`'s bound from the old `< 5000` (which
+never caught this) to `<= NNUE_EVAL_CLAMP_CP`, and added a dedicated clamp
+test.
+
+**Why**: `eval_diag.rs` (17.5d) showed the Session 42 network scoring the
+symmetric start position at +2425cp (should be ~0) and a single queen swing
+at ~4000-4500cp (HCE: ~976cp) — a raw fp32 logit around 6-16, meaning the
+network expresses near-100% certainty at trivially non-decided positions.
+All 5 test cases agreed with HCE on *sign*, ruling out a feature-design or
+scale-constant bug (checked: `CP_TO_WINPROB_SCALE=400.0` matches between
+`train_nnue.rs` and `inference.rs`). The pattern matches classic BCE
+overconfidence: with no weight regularization, gradient descent has no
+penalty for pushing output-layer weights toward unbounded magnitude on
+training examples it can cleanly separate, and loss (val_loss) keeps
+improving even as the raw output becomes progressively less sane. This
+directly explains D29's paradox (better val_loss, worse Elo at every blend
+weight): a more confidently-extreme eval corrupts alpha-beta pruning more
+than a mild one does, regardless of whether its *sign* is usually right.
+
+**Rejected**: Assuming this needed another retraining cycle before testing
+— rejected because clamping is a one-file, no-Kaggle-needed change that
+tests the hypothesis directly; a retrain-first approach would have cost
+another hour+ round trip to learn the same thing.
+
+**Revisit**: once the clamp-only re-sweep result comes back. If it
+meaningfully improves the 5/10/15/20% numbers, the long-term fix is weight
+decay in `train_nnue.rs` (the clamp is a safety net, not a substitute for
+training a properly-scaled network). If it doesn't move much, the problem
+is deeper than raw magnitude and D9/D10/D14 (feature/target design) need
+the harder look Session 43 flagged as the fallback branch.

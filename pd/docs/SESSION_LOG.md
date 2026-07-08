@@ -7,6 +7,89 @@ Most recent session at TOP.
 
 ---
 
+## Session 44 — 2026-07-07 (Phase 17.5e — root cause found, clamp added)
+
+**Built:** `NNUE_EVAL_CLAMP_CP` constant + clamp applied in
+`evaluate_nnue()` (inference.rs). Tightened the existing start-pos sanity
+test (was `< 5000`, passed the actual bug trivially) to enforce the new
+clamp ceiling directly, added a dedicated clamp-enforcement test.
+
+**Bugs fixed:** Root cause of D29's paradox found via `eval_diag.rs`'s
+output: the Session 42 network scores the symmetric start position at
++2425cp (should be ~0) and a single queen swing at ~4000-4500cp (HCE:
+~976cp) — raw logits around 6-16, i.e. near-100% confidence at positions
+that plainly aren't decided. This is unregularized BCE weight blowup, not a
+feature-design or scale-constant bug (verified `CP_TO_WINPROB_SCALE`
+matches between train/inference, and all 5 eval_diag cases agreed with HCE
+on sign). Cause: no weight regularization in train_nnue.rs's training loop
+lets output-layer weights grow unbounded while still lowering loss. Fix:
+clamp the symptom in inference (cheap, no retrain needed to test); the
+underlying training-side fix (weight decay) is follow-up work for the next
+retrain, not applied yet.
+
+**Decisions made:** D30 (see DECISIONS.md).
+
+**Next session start point:** Gokul applying the inference.rs delta,
+confirming build.yml green, then re-running the same match_runner sweep
+(5/10/15/20% vs 0%, 40 games, seed_start=0) — no Kaggle/retraining needed
+for this test. Compare against D27/17.5c's numbers. If clamping closes most
+of the gap: D30 confirmed, next actual training run should add weight decay
+to train_nnue.rs before generating more self-play data. If it barely moves:
+miscalibration is deeper than magnitude, re-read D9/D10/D14 (feature/target
+formulation) next, and consider whether the K+P vs K / queen-swing
+eval_diag cases hint at anything feature-specific despite the sign
+agreement (e.g. check per-feature weight magnitudes directly rather than
+only aggregate output).
+
+---
+
+## Session 43 — 2026-07-07 (Phase 17.5c/d — retrain made things WORSE, new diagnostic)
+
+**Built:** `src/bin/eval_diag.rs` + `.github/workflows/eval_diag.yml`
+(Phase 17.5d) — prints HCE vs raw NNUE vs 100%-blended eval for 5 hand-picked
+positions with an unambiguous correct evaluation (start pos ~0, White
+up/down a queen, K+P vs K both directions). No training/Kaggle needed, pure
+Actions run, checks calibration directly instead of only inferring it from
+aggregate match_runner Elo.
+
+**Bugs fixed:** N/A.
+
+**Decisions made:** D29 (see DECISIONS.md) — pausing the self-play-data-
+volume lever after two rounds of the same paradox: val_loss improves,
+in-game strength at every blend weight gets worse. Pivoting to a direct
+eval-output diagnostic before any further training runs.
+
+**Result (17.5c sweep against the Session 42 retrained network):** ALL FOUR
+weight points got monotonically WORSE than D27's baseline, not better:
+  5%:  A 67.5% (+127.0 Elo), was 65.0% (+107.5)
+  10%: A 80.0% (+240.8 Elo), was 75.0% (+190.8)
+  15%: A 78.8% (+227.6 Elo), was 70.0% (+147.2)
+  20%: A 90.0% (+381.7 Elo), was 80.0% (+240.8)
+This is the opposite of what improved val_loss (0.53776 -> 0.51661) should
+produce, and consistent in direction across all 4 points — not sampling
+noise. Checked the blend implementation (eval/mod.rs's evaluate_blended)
+and the cp<->logit scale constants (OUTPUT_SCALE, CP_TO_WINPROB_SCALE=400.0)
+— both train_nnue.rs and inference.rs agree on scale, ruling out a simple
+constant mismatch. Leading hypothesis: the network is fitting its BCE
+training target more confidently (lower loss) without that confidence
+reflecting genuinely better evaluation quality on the specific tactical
+positions alpha-beta search visits — a more confidently-wrong eval hurts
+move ordering/pruning more than a milder one. Not confirmed — that's what
+17.5d's diagnostic is for.
+
+**Next session start point:** Read eval_diag's output from Gokul. If HCE
+and NNUE disagree on sign for the queen-up/queen-down cases (or NNUE is
+flat/saturated across all 5 positions), that's confirmed miscalibration —
+next step is inspecting the quantization step (noru::quant, an external
+crate dependency, not in this repo — may need to check its source via
+crates.io/docs.rs) for a fp32-to-quantized conversion bug specific to this
+network's weight distribution. If eval_diag looks sane (correct signs,
+plausible magnitudes) on all 5 cases, the miscalibration is more subtle
+(only shows up on real search-visited positions) and D9/D10/D14 (feature
+design + target formulation) need a harder look instead.
+
+---
+
 ## Session 42 — 2026-07-07 (Phase 17.5b complete — val_loss improved)
 
 **Built:** Nothing new — read the completed train_nnue.yml run log Gokul
