@@ -269,22 +269,31 @@
              iterative_deepening(), so is_time_up()'s in-search abort was
              dead code for every real search (D24). NNUE's heavier per-node
              cost surfaced it via test_iterative_deepening_respects_time.
-- [x] 16.7 — WASM-compatible inference. Session 34 code audit: `inference.rs`
-             has zero OS/filesystem calls, `OnceLock` is wasm32-safe, `noru`
-             has no wasm32 exclusion in Cargo.toml, and the only WASM→NNUE
-             call path (search_from_fen → evaluate_blended → evaluate_nnue)
-             is clean. No code changes made or needed. BLOCKED ONLY on
-             Gokul confirming in-browser at https://g-c-3.github.io/pet-dragon
-             that the engine replies with a move and no console errors —
-             mark [x] once confirmed.
+- [x] 16.7 — WASM-compatible inference. CONFIRMED (Session 47) — Gokul
+             visited https://g-c-3.github.io/pet-dragon, engine replies with
+             a move cleanly. Also note: Gokul directly edited web/index.html
+             on main ("more dynamic") outside the normal delta workflow —
+             confirmed still working live, synced into context (1521 lines
+             as of Session 47). Future sessions: treat web/index.html as
+             current/live, not stale, and re-fetch before any delta against
+             it since it wasn't authored/reviewed by Claude.
 
 ---
 
 ## Housekeeping ⚠️
-- [ ] `.github/workflows/*.yml` — GitHub Actions Node.js 20 is deprecated
-      (flagged on Build & Release run #262 for commit 83b1da7). Low priority,
-      not blocking; bump the actions' Node version whenever a workflow file
-      is next touched for another reason.
+- [x] `.github/workflows/*.yml` — Node.js 20 deprecation, PARTIALLY resolved
+      (Session 47). Bumped across all 7 workflow files: actions/checkout
+      v4→v6, actions/upload-artifact v4→v6, actions/download-artifact
+      v4→v7 (all confirmed Node24-native as of this session). Left
+      unchanged, no upstream fix available yet as of Session 47:
+      actions/configure-pages@v4, actions/upload-pages-artifact@v3,
+      actions/deploy-pages@v4 (deploy.yml — GitHub hasn't shipped a Node24
+      major yet), softprops/action-gh-release@v2 (build.yml's release job —
+      confirmed no Node24-compatible release exists upstream; consider
+      replacing with a direct `gh release` CLI step in a future session if
+      the warning becomes blocking rather than cosmetic).
+      Swatinem/rust-cache@v2 needed no change — it's a floating major tag
+      that already picked up Node24 support upstream (v2.9.0).
 
 ---
 
@@ -337,14 +346,49 @@
             every blend point got monotonically worse. D29: pausing the
             "more data" lever — tried twice now with the same
             better-loss/worse-Elo pattern both times. NNUEWeight stays 0%.
-- [ ] 17.5d — Direct calibration diagnostic (no Kaggle/training needed).
-            New eval_diag.rs + eval_diag.yml print HCE vs raw NNUE vs 100%
-            blended eval for positions with an unambiguous correct answer
-            (start pos, queen up/down, trivial pawn endgames). Checks
-            whether the network's raw output is sane on cases with a known
-            right answer, rather than only inferring calibration quality
-            from aggregate Elo results. Awaiting Gokul to trigger and
-            report output.
+- [x] 17.5d — Direct calibration diagnostic COMPLETE. eval_diag.rs +
+            eval_diag.yml built (Session 44), then CORRECTED (Session 45,
+            D32) after Gokul caught that the original test cases used a
+            classic-chess-layout FEN — astronomically rare under Pet
+            Dragon's real random rank-1/2 generator (setup.rs), so it was
+            testing an out-of-distribution input. Rewritten to use
+            Position::generate_with_seed(N), the same generator selfplay.rs/
+            match_runner.rs actually use, giving a trustworthy in-distribution
+            read for the first time.
+- [x] 17.5e — Root cause found (D30, Session 44): unregularized BCE weight
+            blowup, not feature design. Confirmed via corrected eval_diag:
+            even real in-distribution positions (seed=2, seed=3) were fully
+            saturating at whatever clamp ceiling was in place. Fix: added
+            NNUE_EVAL_CLAMP_CP=1500 in inference.rs (safety net) — measured
+            Elo improvement at 10%/20% weight even with 0.0001 weight_decay
+            (too weak to fix the root cause but clamp alone helped).
+- [x] 17.5f — Real regularization (D33, Session 46): weight_decay raised to
+            0.01 (1e-4 confirmed insufficient — seed=2/3 still saturated
+            at the clamp with it), plus global-norm gradient clipping
+            (grad_clip_norm=1.0) added as a second, more direct mechanism.
+            Result: val_loss held steady (0.51636, matching/slightly
+            beating the unregularized retrain) WHILE calibration improved
+            substantially (seed=2: 1500→375, seed=3: 1500→50, K+P: 1225→225
+            — see eval_diag.rs output). Confirms regularization fixed the
+            calibration problem without trading away fit quality.
+- [x] 17.6 — PHASE 17.5 PARKED (D34, Session 46). Final re-sweep against
+            the clamped+regularized network: avg opponent score 70.3% (5%:
+            66.2%, 10%: 68.8%, 15%: 66.2%, 20%: 80.0%) — statistically
+            indistinguishable from clamp-only's 70.0% average. Despite real,
+            measured calibration improvement (eval_diag), Elo impact hasn't
+            moved beyond the ~70-72% band across 4 independent attempts
+            (original network, 3x-data retrain, clamp, clamp+regularization).
+            That consistency across otherwise-different fixes points at
+            hidden_size=32 being too small to learn anything HCE's hand-
+            crafted eval doesn't already capture — a structural ceiling, not
+            a magnitude/calibration bug. NNUEWeight stays 0% (default,
+            unchanged since D25). Parking further NNUE tuning at this scale;
+            revisit only with a meaningfully bigger hidden_size (128+,
+            bigger Kaggle job) as a deliberate separate effort, not
+            incremental tuning. Everything built in 17.5a-f stays permanent:
+            the clamp is a safety net worth keeping regardless of weight,
+            weight_decay/grad_clip_norm are now correct defaults for any
+            future NNUE training, eval_diag.rs is a reusable diagnostic tool.
 
 ---
 

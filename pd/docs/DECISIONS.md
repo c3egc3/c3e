@@ -478,3 +478,63 @@ decay in `train_nnue.rs` (the clamp is a safety net, not a substitute for
 training a properly-scaled network). If it doesn't move much, the problem
 is deeper than raw magnitude and D9/D10/D14 (feature/target design) need
 the harder look Session 43 flagged as the fallback branch.
+
+## D33 — Stronger Weight Decay + Gradient Clipping (2026-07-08)
+
+**Decision**: Raised `train_nnue.rs`'s `weight_decay` default 100x
+(1e-4 → 0.01) and added global-norm gradient clipping (`grad_clip_norm`,
+default 1.0), applied to the whole gradient including biases, before every
+Adam step.
+
+**Why**: The corrected in-distribution `eval_diag` (D32) showed
+`weight_decay=0.0001` did essentially nothing — real Pet Dragon random
+starts (seed=2, seed=3) were still fully saturating at the clamp ceiling.
+Weight decay alone only pulls weights toward zero passively each step;
+gradient clipping directly caps the update that causes a blowup in the
+first place, a standard complementary pairing.
+
+**Result**: val_loss held steady (0.51636, best epoch 4/10 — matching or
+slightly beating every unregularized attempt) while calibration improved
+substantially (seed=2: 1500→375, seed=3: 1500→50, K+P: 1225→225). Confirms
+the fix worked exactly as intended: better-behaved output without trading
+away fit quality.
+
+**Rejected**: Weight decay alone without clipping, or a smaller decay bump
+— rejected because 1e-4 was already shown insufficient, and clipping
+addresses the mechanism (unbounded per-batch updates) more directly than
+decay's passive shrinkage alone.
+
+## D34 — Park Phase 17.5 NNUE Tuning at hidden_size=32 (2026-07-08)
+
+**Decision**: After 4 independent fix attempts (original network, 3x
+self-play data retrain, output clamp, clamp+regularization) all landing in
+the same ~70-72% average-opponent-score band on the match_runner sweep,
+stop iterating on NNUE tuning at the current `hidden_size=32` scale.
+NNUEWeight stays 0% (unchanged since D25). The clamp, weight_decay, and
+grad_clip_norm defaults all stay — they're correct regardless, just not
+sufficient alone to make blending worthwhile yet.
+
+**Why**: D30's clamp and D33's regularization were both real, verified
+fixes — eval_diag confirms genuinely better calibration each time, not
+placebo changes. Yet the final sweep (5/10/15/20%: 66.2/68.8/66.2/80.0%,
+avg 70.3%) is statistically indistinguishable from clamp-only's 70.0%
+average, and both are in the same range as the very first D27 sweep
+(72.5% average) despite completely different underlying networks. That
+consistency across genuinely different interventions is the signal: the
+ceiling isn't calibration or data volume anymore (both were real problems,
+both got fixed), it's most likely that `hidden_size=32` is too small to
+learn positional understanding beyond what HCE's hand-crafted tables
+already encode — so blending in a well-calibrated-but-not-more-informed
+network still doesn't out-predict HCE where it matters for search.
+
+**Rejected**: Continuing to tune hyperparameters (lr, lambda, epochs) at
+the current architecture — rejected because the pattern across 4 attempts
+with materially different fixes each landing in the same band is stronger
+evidence of a structural ceiling than of an undiscovered hyperparameter.
+Also rejected: reverting the clamp/regularization work — rejected because
+both are real, measured improvements and correct defaults for whenever
+NNUE work resumes, regardless of today's Elo verdict.
+
+**Revisit**: only via a deliberately bigger architecture (hidden_size=128+),
+treated as a fresh, separately-scoped effort (bigger Kaggle training job,
+new session budget) — not as an incremental extension of this arc.

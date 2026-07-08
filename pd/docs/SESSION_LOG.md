@@ -7,6 +7,100 @@ Most recent session at TOP.
 
 ---
 
+## Session 48 — 2026-07-08 (Housekeeping — Node.js 20 deprecation bump)
+
+**Built:** Bumped GitHub Actions across all 7 workflow files:
+actions/checkout v4→v6, actions/upload-artifact v4→v6,
+actions/download-artifact v4→v7 (searched web for current release status
+first — confirmed each is genuinely Node24-native now, not guessed).
+Left actions/configure-pages, actions/upload-pages-artifact,
+actions/deploy-pages (deploy.yml), and softprops/action-gh-release
+(build.yml) unchanged — confirmed no Node24-compatible release exists
+upstream for any of these yet. Swatinem/rust-cache@v2 needed no change,
+already a floating tag that picked up Node24 support (v2.9.0) on its own.
+
+**Bugs fixed:** N/A — cosmetic deprecation warning, not a functional break
+(GitHub already force-runs everything on Node24 regardless since June 2,
+2026, per D-series research this session; the warning is about the
+action's *declared* runtime metadata lagging, not actual execution).
+
+**Decisions made:** None new — straightforward dependency bump, not an
+architectural decision.
+
+**Next session start point:** Confirm all 7 workflows still run green
+after this bump (next push exercises build.yml/deploy.yml automatically;
+spot-check the manual-trigger ones — eval_diag.yml, lichess_sample.yml,
+match_runner.yml, selfplay.yml, train_nnue.yml — whenever convenient).
+No other open ROADMAP items as of this session; check with Gokul on
+priorities for what's next (Phase 18+, or revisiting Phase 14's optional
+Texel tuning, or a future hidden_size=128+ NNUE attempt per D34's
+"revisit" note).
+
+---
+
+## Session 47 — 2026-07-08 (16.7 confirmed, web/index.html synced)
+
+**Built:** Nothing new from Claude. Confirmed 16.7 (WASM engine responds
+in-browser at https://g-c-3.github.io/pet-dragon). Gokul independently
+edited `web/index.html` directly on GitHub ("more dynamic" — no further
+detail given), confirmed still working live. Pulled the current version
+(1521 lines) to keep context in sync since it wasn't authored or reviewed
+here.
+
+**Bugs fixed:** N/A.
+
+**Decisions made:** None.
+
+**Next session start point:** Check ROADMAP.md Housekeeping section
+(Node.js 20 deprecation in workflow files — low priority, easy win) and
+confirm nothing else is open before considering Phase 17/18+ scope. If
+Gokul wants to review/extend web/index.html further, re-fetch it fresh
+first (don't assume the version in this session's context if significant
+time has passed) since it's now maintained partly outside the normal
+delta flow.
+
+---
+
+## Session 46 — 2026-07-08 (Phase 17.5 PARKED — final verdict, D33/D34)
+
+**Built:** Nothing new — read the weight_decay=0.01 + grad_clip_norm=1.0
+retrain's val_loss log and the corrected eval_diag output, then the final
+4-run match_runner sweep against that network.
+
+**Bugs fixed:** N/A this session (D30's clamp + D33's regularization were
+built in prior sessions this same arc).
+
+**Decisions made:** D33 (raise weight_decay 100x, add grad_clip_norm — see
+DECISIONS.md), D34 (park Phase 17.5).
+
+**Result:** val_loss 0.51636 (best epoch 4/10) — matches/slightly beats
+every prior attempt, confirming regularization didn't cost fit quality.
+eval_diag showed real calibration improvement: seed=2 raw eval 1500→375,
+seed=3 1500→50 (vs HCE's 10), K+P case 1225→225 (vs HCE's 113) — no longer
+saturating at the clamp on typical in-distribution positions. BUT the final
+sweep (5/10/15/20% vs 0%, 40 games each) averaged 70.3% opponent score —
+statistically indistinguishable from clamp-only's 70.0%, and in the same
+~70-72% band every one of the 4 independent fix attempts has landed in
+(original network, 3x-data retrain, clamp-only, clamp+regularization).
+That consistency despite genuinely different, real fixes each time points
+at hidden_size=32 itself being the ceiling — not calibration, not data
+volume. D34: parking further NNUE tuning at this scale. NNUEWeight stays
+0% (unchanged since D25). Everything built stays permanent value regardless
+(clamp, regularization defaults, eval_diag.rs tool).
+
+**Next session start point:** Move off Phase 17.5 entirely. Next concrete
+item: 16.7's WASM confirmation (mobile-doable — visit
+https://g-c-3.github.io/pet-dragon, confirm engine responds with a move).
+After that, check ROADMAP.md Housekeeping section (Node.js 20 deprecation
+in workflow files — low priority, quick win whenever a workflow is next
+touched) and Phase 14 (OPTIONAL Texel tuning — explicitly skippable, already
+skipped in favor of NNUE per original roadmap notes) for what's actually
+still open. A future hidden_size=128+ NNUE attempt is a real option later,
+but treat it as a deliberate new effort (bigger Kaggle job, fresh session
+budget) — not something to slide back into via "just one more tweak."
+
+---
+
 ## Session 44 — 2026-07-07 (Phase 17.5e — root cause found, clamp added)
 
 **Built:** `NNUE_EVAL_CLAMP_CP` constant + clamp applied in
