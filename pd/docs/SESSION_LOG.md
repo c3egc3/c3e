@@ -7,6 +7,35 @@ Most recent session at TOP.
 
 ---
 
+## Session 50 — 2026-07-08 (14.2 built — Texel tuning data generator)
+
+**Built:** `texel_gen.rs` + `texel_gen.yml` (Phase 14.2). Modeled directly
+on `selfplay.rs`'s already-verified game loop (same random-start generator
+per D32, same mate/stalemate/repetition/max-plies handling, same silent
+search per D28) but with a different sampling target: raw
+`<FEN>|<game_result>` pairs instead of NNUE feature vectors + search-eval
+labels. Sampling skips the first 12 plies and any in-check position, then
+takes every 4th eligible ply — standard Texel tuning practice (fit static
+eval, not tactics; avoid near-duplicate consecutive positions).
+
+**Bugs fixed:** N/A.
+
+**Decisions made:** None new — audit-driven design, not an open question
+(confirmed via eval/*.rs audit: ~970 tunable parameters, all currently
+compile-time consts, so 14.3 needs a separate tunable-eval path rather
+than modifying the real evaluate()).
+
+**Next session start point:** Gokul applies both new files, confirms
+build green, runs a smoke-test generation (default 20 games) to confirm
+output looks sane, then scales up to a real tuning-sized run. Once that
+data exists, 14.3 starts: design the parallel tunable-eval function
+(flat weight vector, mirrors evaluate()'s logic across material.rs/
+tables.rs/mobility.rs/pawns.rs/king_safety.rs/open_lines.rs) plus the
+gradient-descent optimizer and texel_tune.yml workflow (GitHub Actions
+per D19, not Colab/Kaggle unless D20's trigger conditions are met).
+
+---
+
 ## Session 49 — 2026-07-08 (Phase 13 closed, 10.3 skipped, Phase 14 decided+scoped)
 
 **Built:** Nothing new — pure planning/decision session.

@@ -174,8 +174,8 @@
 
 ---
 
-## Phase 14 — Texel Tuning (Optional) ⏳
 ## Phase 14 — Texel Tuning ⏳
+
 - [x] 14.1 — DECIDED (Session 49): proceed. Phase 13 is complete and Phase
             17.5's NNUE work is parked at NNUEWeight=0% (D34) — HCE is the
             actual shipped evaluation right now, so tuning it directly
@@ -184,17 +184,20 @@
             Colab — that was rejected in D19 before this ROADMAP note was
             last updated), Kaggle only as fallback if Actions' 6-hour job
             ceiling becomes a real constraint.
-- [ ] 14.2 — NEXT SESSION START POINT. Generate Pet Dragon game database for
-            tuning: a new binary (likely texel_gen.rs, modeled on
-            selfplay.rs's game loop but NOT its output — Texel tuning needs
-            raw (FEN, game_result) pairs sampled through each game, not
-            search-eval targets like the NNUE pipeline uses). Needs: (1) HCE
-            weight tables in eval/ made programmatically tunable (read/write,
-            not just compile-time constants) — audit eval/material.rs,
-            eval/tables.rs, eval/mobility.rs etc. for current structure
-            first, (2) the sampling/output format for the tuning database,
-            (3) confirm no existing self-play output can be repurposed
-            before building a new generator from scratch (check first).
+- [~] 14.2 — texel_gen.rs + texel_gen.yml built (Session 50), modeled
+            directly on selfplay.rs's verified game loop. Output:
+            `<FEN>|<game_result>` per line. Sampling policy: skip first 12
+            plies (random Pet Dragon starts are noisier than classic chess
+            openings), skip positions where side-to-move is in check
+            (Texel tuning fits STATIC eval, tactical positions distort
+            that), sample every 4th eligible ply thereafter. Audit of
+            eval/*.rs confirmed ~970 tunable parameters, all currently
+            compile-time consts — 14.3 will need a separate, parallel
+            tunable-eval path (flat weight vector in, doesn't touch the
+            real evaluate() used by search) rather than modifying
+            evaluate() itself. AWAITING Gokul: apply the 2 new files,
+            confirm build green, run a smoke-test generation (default
+            20 games), confirm output looks sane before scaling up.
 - [ ] 14.3 — Run tuning via GitHub Actions (texel_tune.yml, per D19) —
             gradient descent (or similar local-search optimizer) minimizing
             sigmoid-scaled prediction error against the 14.2 game database.
