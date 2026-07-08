@@ -184,22 +184,24 @@
             Colab — that was rejected in D19 before this ROADMAP note was
             last updated), Kaggle only as fallback if Actions' 6-hour job
             ceiling becomes a real constraint.
-- [~] 14.2 — Smoke test PASSED (Session 51): 20 games -> 292 samples
-            (~14.6/game), clean run, no errors, result values (0/0.5/1)
-            correct and correctly oriented per-sample. Confirmed the
-            extended-FEN pawn-start suffix round-trips correctly (D11).
-            SCALING ISSUE FOUND: at ~4.3s/game, a real tuning-sized dataset
-            (10,000+ games) would take 16+ hours — well past the 6-hour
-            Actions job ceiling (D19/D20). Not a future concern, real for
-            the first production run. Fix: 3 batched Actions runs (3500
-            games each, seed_start 1000/2000/3000, ~10,500 games total,
-            ~150k samples) — same batching pattern as the original
-            self-play data collection, still GitHub-Actions-only per D20
-            (no Kaggle trigger condition met). AWAITING Gokul to run and
-            upload all 3 batches as Release assets.
-- [ ] 14.3 — Run tuning via GitHub Actions (texel_tune.yml, per D19) —
-            gradient descent (or similar local-search optimizer) minimizing
-            sigmoid-scaled prediction error against the 14.2 game database.
+- [x] 14.2 — COMPLETE. All 4 batches run + uploaded (smoke test + 3
+            production batches, seeds 1000/2000/3000): 147,867 total
+            samples. Result distribution: 62,841 losses / 5,332 draws /
+            79,694 wins (stm-perspective) — win/loss imbalance is expected
+            (not a bug, see Session 52 chat), draw rarity (~3.6%) reflects
+            shallow 100ms searches, also expected. Data validated and ready.
+- [~] 14.3 — Architecture audit COMPLETE (Session 52, D35): confirmed HCE
+            is fully linear-in-weights across all 6 eval submodules, ~970
+            tunable parameters, exactly one clamp nonlinearity (king
+            safety's MAX_KING_DANGER, handled like a standard ML clip).
+            Full implementation plan documented in D35. NOT YET BUILT.
+            NEXT SESSION START POINT: build TexelFeatures + TunableWeights
+            + predict() + the self-consistency test (step 4 of D35's plan)
+            FIRST, verify it passes, only then write the actual gradient-
+            descent optimizer + texel_tune.yml. Do not skip the self-
+            consistency test or write the optimizer before it's green —
+            it's the only safety net against a silently-wrong feature
+            extraction at this scale.
 - [ ] 14.4 — Update weights in eval/ files with tuned values. Build.yml must
             stay green; consider an eval_diag.rs-style sanity check specific
             to HCE (start pos ~0, known material swings roughly right) given

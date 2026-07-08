@@ -7,6 +7,38 @@ Most recent session at TOP.
 
 ---
 
+## Session 52 — 2026-07-08 (14.2 complete, 14.3 architecture audit — D35)
+
+**Built:** Nothing new — this was a design/audit session. Validated all 4
+Texel data batches (147,867 samples total). Read all ~2000 lines of
+eval/*.rs in full to determine whether HCE could be tuned via efficient
+gradient descent or would need slower coordinate descent.
+
+**Bugs fixed:** N/A. Also fixed, unrelated: a duplicate `build:` job key in
+build.yml (introduced during the Node.js 20 deprecation delta application)
+that was causing every recent build.yml run to fail at the YAML-parse stage
+(0 jobs created) — caught because the Actions UI fell back to showing the
+raw file path instead of "Build & Release". Confirmed fixed via GitHub API
+(jobs list went from empty to test/build/bench/release). Also found and
+fixed a session-numbering gap (Session 45 was skipped in the original
+sequence) via a direct audit of SESSION_LOG.md's session numbers.
+
+**Decisions made:** D35 (full Texel tuning architecture — see
+DECISIONS.md). Confirmed HCE is linear-in-weights, ~970 parameters, one
+clamp nonlinearity (king safety), full 6-step implementation plan
+documented.
+
+**Next session start point:** Build D35's steps 1-4 (TexelFeatures struct,
+TunableWeights struct, predict() dot-product function, and — critically —
+the self-consistency test comparing predict() against the real evaluate()
+on many random positions). Do NOT write the gradient-descent optimizer or
+texel_tune.yml until the self-consistency test is green — it's the only
+way to catch a silently-wrong feature extraction, since there's no other
+verification signal (no val_loss curve, no eval_diag-equivalent) available
+until real tuning runs produce results.
+
+---
+
 ## Session 51 — 2026-07-08 (14.2 validated, production batching planned)
 
 **Built:** Nothing new — read the smoke-test Actions log + output data.
@@ -175,6 +207,19 @@ skipped in favor of NNUE per original roadmap notes) for what's actually
 still open. A future hidden_size=128+ NNUE attempt is a real option later,
 but treat it as a deliberate new effort (bigger Kaggle job, fresh session
 budget) — not something to slide back into via "just one more tweak."
+
+---
+
+## Session 45 — 2026-07-07 (NUMBERING GAP — retroactively documented, Session 55)
+
+**Note added retroactively (Session 55, 2026-07-08):** this number was
+skipped in the original sequence — the corrected eval_diag work (D32) and
+the weight_decay=0.01 + grad_clip_norm addition (D33) happened in this
+window but got folded into the Session 44 and Session 46 entries without
+their own log entry ever using this number. Content-wise nothing is lost
+(D32/D33 are both fully documented in DECISIONS.md and referenced
+correctly from Session 46's entry) — this entry exists only to close the
+numbering gap Gokul caught by inspection. No new content to log here.
 
 ---
 

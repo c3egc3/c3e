@@ -538,3 +538,63 @@ NNUE work resumes, regardless of today's Elo verdict.
 **Revisit**: only via a deliberately bigger architecture (hidden_size=128+),
 treated as a fresh, separately-scoped effort (bigger Kaggle training job,
 new session budget) — not as an incremental extension of this arc.
+
+## D35 — Texel Tuning Architecture: HCE is Linear-in-Weights (2026-07-08)
+
+**Decision**: Full audit of all 6 eval/*.rs submodules + mod.rs's TEMPO
+confirmed HCE is entirely linear-in-weights (~970 tunable parameters).
+Tuning approach: extract a per-position FEATURE VECTOR once (counts/
+indicators derived from board state), then fit via efficient gradient
+descent (logistic-regression style dot-product) against the 147,867-sample
+game database (14.2), NOT expensive per-parameter coordinate descent or
+re-running full evaluate() thousands of times per position.
+
+**Audit findings by module**:
+- material.rs, tables.rs (PST), pawns.rs, open_lines.rs: pure sum of
+  (board-derived count/boolean feature × tunable const), tapered by a
+  per-position phase scalar (phase itself, from PHASE_WEIGHTS, is NOT
+  tunable — standard practice, phase weights are structural).
+- mobility.rs, king_safety.rs's ATTACKER_WEIGHT: table lookups indexed by
+  a clamped count (e.g. `mobility.min(8)`) — one-hot bucket selection,
+  still linear-in-weights (exactly one table entry active per position).
+- ONE genuine nonlinearity: king_safety.rs's `.min(MAX_KING_DANGER)` value
+  clamp on the danger term — handled like any ML clip/ReLU (zero gradient
+  when clamped, pass-through otherwise).
+
+**Implementation plan (NOT YET BUILT — next session)**:
+1. `TexelFeatures` struct: one field per tunable parameter (or array field
+   for table-shaped ones — PST tables, mobility tables, PASSED_PAWN_BONUS,
+   ATTACKER_WEIGHT), extracted from a Position in one pass, mirroring each
+   submodule's board-scanning logic exactly.
+2. `TunableWeights` struct: same shape as TexelFeatures but holding f64
+   weight values, initialized FROM the current consts (so default weights
+   reproduce current behavior exactly).
+3. `predict(&features, &weights) -> f64`: the dot-product "tunable eval",
+   replacing the real evaluate()'s hardcoded consts with the weight struct.
+4. CRITICAL SAFETY NET: a self-consistency test that runs BOTH evaluate()
+   (real, fast, const-based) and predict(extract(pos), &default_weights)
+   on many random Pet Dragon positions (Position::generate_with_seed) and
+   asserts EXACT agreement. This must pass before any tuning work is
+   trusted — it's the only way to verify the feature extraction faithfully
+   mirrors 2000+ lines of existing eval logic without being able to
+   compile-check by hand at this scale.
+5. Only after step 4 passes: gradient descent optimizer (sigmoid-scaled
+   error against game results, same K/lambda-style scaling reasoning as
+   D14's NNUE target, batched across the 147,867-sample database from
+   14.2) + texel_tune.yml (GitHub Actions per D19).
+6. Tuned weights get formatted back into the same s(mg,eg)/array literal
+   syntax already used in eval/*.rs and applied as a delta.
+
+**Why staged this way**: HCE bugs are much harder to catch than NNUE bugs
+were — there's no val_loss curve, no eval_diag-style sanity check readily
+available until the tuner exists, and a subtly wrong feature extraction
+would silently corrupt every tuning result with no error at any point.
+The self-consistency test (step 4) is the load-bearing safety mechanism
+and must be built and verified before writing a single line of the actual
+optimizer.
+
+**Rejected**: Writing the full ~800+ line feature extractor in the same
+session as the audit — rejected due to session length/fatigue risk on a
+piece of code with no compiler available to catch mistakes and no
+intermediate verification possible until the whole thing (all 6 modules)
+is complete enough to run the self-consistency test.
