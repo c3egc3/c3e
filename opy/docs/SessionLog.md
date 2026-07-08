@@ -20,6 +20,34 @@ Append-only. One entry per working session, **newest at the top**. This is the f
 
 ---
 
+## Session 3 — 2026-07-08
+
+**Started from:** `Continue` (previous session status was "done," so treated as `Go`)
+**Summary:** Implemented basic alpha-beta search with iterative deepening (negamax form, no move ordering/TT/quiescence yet — those are the next Roadmap items). Added `eval.rs`, a deliberately minimal material-count evaluator so the search has a leaf-node score to work with; explicitly labeled as a placeholder for the future NNUE integration item, not something to tune. Added the supporting plumbing needed to actually drive this from UCI: `Board::to_fen` (position serialization, previously only `from_fen` existed), `Move::to_uci` / `find_legal_move` (UCI long-algebraic move formatting/parsing against the legal move list), and two new PyO3 bindings — `apply_uci_move(fen, move) -> fen` and `best_move(fen, max_depth, movetime_ms) -> (move_uci, score)`. Wired `position` (startpos/fen + moves) and `go` (depth/movetime) into `oxypy/main.py` so the engine is actually playable end-to-end via UCI, not just internally tested Rust code — this wasn't strictly named on the Roadmap line item but the alpha-beta work is otherwise dead code with no way to invoke it.
+Verified real correctness, not just "it compiles": ran the full test suite (22 tests) including a confirmed Fool's-Mate checkmate position (cross-checked with the engine's own `legal_moves`/`in_check` before writing the assertion, after an initial hand-picked FEN turned out not to actually be checkmate), a hanging-queen capture test, a short-time-budget test that doesn't panic, and two `to_fen` round-trip tests (startpos + Kiwipete). Built the real wheel via maturin and piped realistic UCI sequences (`uci`/`isready`/`position ... moves ...`/`go depth N`/`go movetime N`) through the actual shim end-to-end, confirming correct `bestmove` output including for a completed-checkmate position (`bestmove 0000`, per UCI convention).
+While testing, discovered that an illegal/malformed move sent via `position ... moves ...` crashes the whole shim process with an uncaught Python exception (traceback on stderr, but the process dies) -- a real regression risk introduced by adding move-parsing this session, and in tension with D0.13. Added a minimal try/except boundary around command dispatch as a stopgap (errors to stderr, process keeps running) rather than building out the full "isolated debug log" that's explicit Roadmap Phase 3 scope; flagged in case the project director wants that pulled forward instead.
+No new Cargo dependencies were needed; `Cargo.lock` is unchanged.
+
+**Files touched:**
+- NEW: `rust_engine_core/src/eval.rs`
+- NEW: `rust_engine_core/src/search.rs`
+- DELTA: `rust_engine_core/src/bitboard.rs` (re-export `find_legal_move`, `Color`/`Piece`/`ALL_PIECES`)
+- DELTA: `rust_engine_core/src/bitboard/board.rs` (added `to_fen`)
+- DELTA: `rust_engine_core/src/bitboard/movegen.rs` (added `Move::to_uci`, `find_legal_move`)
+- DELTA: `rust_engine_core/src/lib.rs` (added `apply_uci_move`, `best_move` PyO3 bindings)
+- DELTA: `oxypy/main.py` (`position`/`go` handling, time-control parsing, error boundary)
+- DELTA: `Roadmap.md` (Phase 2 alpha-beta/iterative-deepening item checked off)
+
+**Decisions logged:** none formalized this session -- the error-boundary stopgap (partial D0.13 compliance ahead of full Phase 3 logging infra) and material-eval-as-placeholder framing are implementation choices in service of existing decisions/roadmap items, not new standing ones. Flagging both in case the project director wants either formalized. Also flagging the D0.9-vs-actual-practice tension noted above (see this session's summary) for the director's attention -- not resolved unilaterally.
+
+**Status at end of session:** done
+
+**If mid-task — exact resume point:** N/A
+
+**Next logical step (for "Go"):** Roadmap Phase 2 — "Transposition table (Zobrist hashing)" is the next unchecked item, followed by "Move ordering: MVV-LVA, killer moves, history heuristic." Either would meaningfully improve on this session's no-ordering, no-TT search. Zobrist hashing is listed first and is also a prerequisite for move-ordering techniques that use TT-stored best moves, so it's the more natural next step.
+
+---
+
 ## Session 2 — 2026-07-06
 
 **Started from:** `Continue` (previous session status was "done," so treated as `Go`)
