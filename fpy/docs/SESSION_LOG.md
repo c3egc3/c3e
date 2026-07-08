@@ -4,7 +4,91 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
-## Session 24 — Fixed build-breaking regression + PEXT/PDEP intrinsics
+## Session 24 — Fixed build-breaking regression, PEXT/PDEP intrinsics, real singular extensions
+**Status:** COMPLETE ✅
+
+### Critical finding (before any new work)
+Baseline `fastpy build engine.py --optimize O3` **failed** — not caught by
+`fastpy check`, which only validates types, not call-site arity. Root cause:
+`alpha_beta`/`_alpha_beta_py`'s null-move call site passed a stray 5th
+argument (`, 0`) in both `engine.py` and `run.py`, but both functions were
+defined with 4 params.
+
+Bigger problem underneath: Session 22's log entry and D-53 describe
+**singular extensions** (`excluded_move` parameter, 9 new tests) as
+implemented — none of that existed in the actual repo. No `excluded_move`
+anywhere in `engine.py`/`run.py`; `test_phase6.py` tested futility pruning,
+not exclusion search. The stray `, 0` was almost certainly what remained
+after that work never actually landed.
+
+Fixed the immediate build break first (removed the phantom argument,
+verified a clean build), then — at Gokul's request — implemented singular
+extensions for real in the same session. See D-55 (the regression) and
+D-57 (the actual design) in DECISIONS.md.
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`, `run.py`: removed the extra `0` argument from the null-move
+  call sites — restores a clean compiled build
+- `engine.py`: `alpha_beta()` gained a required 5th parameter,
+  `excluded_move: uint64`. FastPy has no default-argument support (parser
+  ignores `ast.arguments.defaults` entirely — confirmed while investigating
+  this), so every call site needed updating explicitly, including the
+  root call in `find_best_move()`. New constants: `SE_MIN_DEPTH=6`,
+  `SE_TT_DEPTH_MARGIN=3`, `SE_VERIFY_REDUCTION=3`, `SE_MARGIN_PER_DEPTH=2`,
+  `SE_EXTENSION_PLIES=1`. New `tt_probe_raw()` helper — fetches a TT
+  entry's raw depth/score/bound-flag without the usability filtering
+  `tt_probe()` does, needed for the hash-move qualification check
+- `run.py`: mirrored the same logic in `_alpha_beta_py()`. Unlike
+  `engine.py`, plain Python *does* support default arguments, so
+  `excluded_move=0` is a default here (kept every pre-existing 4-arg
+  test call site working without edits) — engine.py still requires it
+  explicitly at every call site
+- `engine.py`: new `pext(x, mask)` / `pdep(x, mask)` BMI2 wrapper
+  functions in the BITBOARD UTILITIES section — Python-mode bit-loop
+  fallbacks, intrinsic-matched away in the compiled path
+- `tests/test_phase6.py`: 5 new tests in `TestSingularExtensions` (excluded
+  move can't raise the score, TT probe/store both skipped during an
+  exclusion search — verified via node-count and TT-untouched checks, a
+  forced-single-reply edge case, and an SE_MIN_DEPTH+1 smoke test on a
+  sparse K+R vs K endgame — the startpos version of this test took over
+  two minutes in pure Python, so switched to a low-branching-factor
+  position); 10 new tests in `TestPextPdep`
+
+### What changed (g-c-3/fastpy)
+- `core/intrinsics.py`: new `PEXT`/`PDEP` pattern — matches a direct
+  2-argument call to a bare `pext`/`pdep` name (no receiver) rather than
+  an expression idiom, since no natural pure-Python one-liner exists for
+  a hardware gather/scatter (unlike POPCNT/TZCNT). See D-56
+- `core/emitter.py`: added `#include <immintrin.h>` for `_pext_u64`/
+  `_pdep_u64`
+- `tests/test_intrinsics.py`, `tests/conftest.py`: 11 new tests —
+  pipeline firing, direct mapper unit tests, wrong-arg-count and
+  wrong-shape non-matches
+
+### Verification
+- `fastpy check engine.py` — zero errors; `fastpy build --optimize O3` —
+  succeeds
+- fastpy: **182/182** passing (was 171)
+- fastpy-engine: **185/185** passing (was 168, several of which failed on
+  the arity bug at baseline)
+- `pext`/`pdep` correctness cross-checked against a from-scratch bit
+  reference implementation over 500+ random 64-bit inputs, plus the
+  inverse property `pdep(pext(x, mask), mask) == x & mask`
+- Singular extensions: verified the excluded-move search never raises the
+  score versus the unrestricted search, that TT probe/store are both
+  skipped during an exclusion search (node-count and direct TT-array
+  checks), and that a search reaching SE_MIN_DEPTH+1 still terminates
+  correctly
+
+### Next (ROADMAP)
+- Wire `pext`/magic-bitboard attack tables into `generate_bishops`/
+  `generate_rooks`, replacing the ray-fill loops
+- NNUE neural network evaluation
+- Lazy SMP multi-core search
+
+---
+
+## Session 23 — Fixed build-breaking regression + PEXT/PDEP intrinsics
 **Status:** COMPLETE ✅
 
 ### Critical finding (before any new work)

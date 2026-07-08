@@ -309,13 +309,11 @@ restriction there.
   `core/type_system.py`. The deeper cause: Session 22's log entry and D-53
   describe singular extensions (`excluded_move` threaded through
   `alpha_beta`) as fully implemented and tested, but no such parameter
-  exists anywhere in the current `engine.py`/`run.py`, and `test_phase6.py`
-  tests futility pruning, not exclusion search. The stray `, 0` is almost
-  certainly what remained after that work failed to land. Fix scope was
-  deliberately kept minimal — remove the phantom argument, restore a
-  buildable engine — rather than using a bug-audit session to also
-  reimplement a whole search feature from a stale description. ROADMAP's
-  singular-extensions checkbox was reverted to unchecked accordingly.
+  existed anywhere in `engine.py`/`run.py` at the time, and `test_phase6.py`
+  tested futility pruning, not exclusion search. The stray `, 0` is almost
+  certainly what remained after that work failed to land. Superseded by
+  D-57 — singular extensions were implemented for real in the same
+  session, once the build was confirmed clean again.
 
 ## D-56: PEXT/PDEP matched as a direct call, not an idiom — every existing
   intrinsic (POPCNT, TZCNT) recognises a pure-Python expression shape that
@@ -328,8 +326,31 @@ restriction there.
   path since every call site is intrinsic-matched away first — the same
   trade-off already accepted for `popcount()`/`lsb()`, just one level
   more indirect since there's no idiom to anchor the match to.
-  
 
-  
-
-  
+## D-57: Singular extensions — real design, replacing the fictional D-53
+  — `alpha_beta(board, depth, alpha, beta, excluded_move)` gained a
+  required 5th parameter rather than an optional one: FastPy's parser
+  ignores `ast.arguments.defaults` entirely (confirmed by reading
+  `core/parser.py::_parse_function` while diagnosing D-55), so default
+  arguments were never a real option and every call site — including
+  `find_best_move()`'s root loop — needed the extra `0` explicitly.
+  `excluded_move=0` means "normal search"; non-zero means this call IS
+  the exclusion-search itself, verifying whether the TT's hash move is
+  singular. Qualification (checked once per node, only when
+  `excluded_move == 0` and `depth >= SE_MIN_DEPTH`): the hash move must
+  come from a TT entry that is not an UPPER bound, whose own stored depth
+  is within `SE_TT_DEPTH_MARGIN` of the current depth, and whose score is
+  clear of the mate-score threshold in both directions — a shallow, stale,
+  fail-low, or mate-adjacent entry isn't trustworthy enough to spend a
+  whole extra search verifying. The verification search itself runs on
+  the *same* `board` (not negated — the move hasn't been made yet) at
+  `depth - 1 - SE_VERIFY_REDUCTION`, with a null window just below
+  `tt_score - SE_MARGIN_PER_DEPTH * depth`. If that search fails low
+  (can't even reach the lowered bar), nothing else comes close to the
+  hash move, so it's judged singular and gets `SE_EXTENSION_PLIES` extra
+  ply when it's actually played in this node's own move loop. Both the TT
+  probe at entry and the TT store at exit are skipped whenever
+  `excluded_move != 0` — an exclusion search explores a strict subset of
+  this node's real moves, so its score doesn't represent a full search of
+  the position and must not be trusted by (or overwrite) the shared TT
+  entry for it.

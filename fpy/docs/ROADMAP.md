@@ -124,12 +124,11 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 - [ ] NNUE neural network evaluation
 - [x] Futility pruning
 - [x] `go depth N` timing harness (node counting + NPS reporting, Session 18)
-- [ ] Singular extensions — **Session 22 log/D-53 claimed this was done;
-      Session 24 audit found no `excluded_move` anywhere in engine.py/run.py
-      and no corresponding tests. Unchecked pending a decision to actually
-      implement it. The stray `excluded_move=0` argument left at the
-      null-move call site was the direct cause of a broken compiled build
-      (see D-55).**
+- [x] Singular extensions (Session 24) — excluded-move verification search
+      at depth >= SE_MIN_DEPTH=6, one extra ply for a hash move that
+      fails low against everything else. Re-implemented from scratch;
+      the Session 22 log/D-53 description of this was never actually
+      committed to the code (see D-55). See D-57 for the real design.
 - [ ] Lazy SMP multi-core search
 - [ ] **Target: 1,000,000,000 NPS on modern multi-core hardware**
 - [x] Benchmark LMR / null move / aspiration windows / futility pruning
@@ -157,7 +156,27 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 
 ## FastPy Transpiler — Ongoing Improvements
 
-- [x] BMI2 intrinsics: `PEXT`/`PDEP` patterns for magic bitboards (Session 24)
+- [ ] **PRIORITY (next session): call-site arity checking in `core/type_system.py`**
+      — `fastpy check` currently validates argument *types* but never
+      validates argument *count* against a function's own signature.
+      This is what let the Session 22→24 regression through: a 5-argument
+      call to a 4-parameter `alpha_beta()` type-checked clean and only
+      failed at C++ compile time (see D-55). Fix: in the type checker's
+      call-expression handling, look up the callee's `IRFunction` param
+      list and assert `len(call.args) == len(callee.params)` (or the
+      correct count for method calls with a receiver) before/alongside
+      the existing per-argument type checks; emit a `TypeCheckError` with
+      the call site and the expected vs. actual count. Needs test
+      coverage for too-few args, too-many args, and (once/if defaults are
+      ever supported) optional-arg boundaries.
+- [ ] BMI2 intrinsics: `PEXT`/`PDEP` patterns for magic bitboards (Check completion status)
+      — `pext(x, mask)`/`pdep(x, mask)` matched as direct calls (no natural
+      Python idiom exists, unlike POPCNT/TZCNT); Python-mode fallback in
+      engine.py verified against 500+ random cases; see D-56
+- [ ] Wire PEXT into bishop/rook move generation via precomputed
+      magic-bitboard attack tables (replaces the current ray-fill loops
+      in generate_bishops/generate_rooks) — natural next step now that
+      the intrinsic exists (Session 24)
       — `pext(x, mask)`/`pdep(x, mask)` matched as direct calls (no natural
       Python idiom exists, unlike POPCNT/TZCNT); Python-mode fallback in
       engine.py verified against 500+ random cases; see D-56
