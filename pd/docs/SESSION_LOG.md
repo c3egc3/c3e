@@ -7,6 +7,29 @@ Most recent session at TOP.
 
 ---
 
+## Session 49 — 2026-07-08 (Phase 13 closed, 10.3 skipped, Phase 14 decided+scoped)
+
+**Built:** Nothing new — pure planning/decision session.
+
+**Bugs fixed:** N/A.
+
+**Decisions made:** Phase 14 (Texel tuning) proceeds — HCE is the actual
+shipped eval now that NNUE is parked (D34), so this is the highest-leverage
+remaining strength work. 10.3 (Arena/BanksiaGUI/CuteChess verification)
+permanently skipped — desktop-only tools, Gokul is mobile-only, no path
+forward without that constraint changing.
+
+**Next session start point:** 14.2 — build the Texel tuning game-database
+generator. First step is an audit, not code: read eval/material.rs,
+eval/tables.rs, eval/mobility.rs, eval/pawns.rs, eval/king_safety.rs,
+eval/open_lines.rs to see how tunable (or not) the current weight
+constants are — Texel tuning needs to read/write these programmatically,
+which may require restructuring some of them from compile-time consts into
+a loadable/mutable weight struct before any tuning binary can work against
+them. Do that audit first, then design texel_gen.rs's output format.
+
+---
+
 ## Session 48 — 2026-07-08 (Housekeeping — Node.js 20 deprecation bump)
 
 **Built:** Bumped GitHub Actions across all 7 workflow files:

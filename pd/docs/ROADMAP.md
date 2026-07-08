@@ -120,7 +120,11 @@
 ## Phase 10 — GitHub Actions Release Pipeline ✅
 - [x] 10.1 — Build release binaries for Windows/macOS/Linux in build.yml
 - [x] 10.2 — GitHub Releases page with download links
-- [ ] 10.3 — Verify binaries work with Arena, BanksiaGUI, CuteChess (manual step)
+- [SKIPPED] 10.3 — Verify binaries work with Arena, BanksiaGUI, CuteChess.
+             Decided permanently blocked (Session 49) — these are desktop
+             GUI apps, Gokul is mobile-only (D-series core rule). No path
+             to doing this without a desktop machine becoming available.
+             Not revisiting unless that constraint changes.
 
 ---
 
@@ -150,7 +154,7 @@
 
 ---
 
-## Phase 13 — Search Improvements ⏳
+## Phase 13 — Search Improvements ✅ COMPLETE
 - [x] 13.1 — Wire Probcut into alpha_beta.rs (defined in pruning.rs)
 - [x] 13.2 — Wire CorrectionHistory into eval (defined in pruning.rs)
 - [x] 13.3 — Singular extensions (Build #136 green)
@@ -171,16 +175,34 @@
 ---
 
 ## Phase 14 — Texel Tuning (Optional) ⏳
-- [ ] 14.1 — OPTIONAL PHASE — skip if going straight to NNUE (Phase 16)
-            Texel tuning improves HCE quality and therefore NNUE training data
-            quality, but borrowed weights are sufficient for initial NNUE training.
-            Decide after Phase 13 is complete.
-            texel_tune.yml (GitHub Actions, per D19) — optimise HCE weights via
-            gradient descent. Kaggle is the fallback only if this phase is
-            revisited and Actions' time budget proves insufficient (D20).
-- [ ] 14.2 — Generate Pet Dragon game database for tuning
-- [ ] 14.3 — Run tuning on Google Colab (free GPU)
-- [ ] 14.4 — Update weights in eval/ files with tuned values
+## Phase 14 — Texel Tuning ⏳
+- [x] 14.1 — DECIDED (Session 49): proceed. Phase 13 is complete and Phase
+            17.5's NNUE work is parked at NNUEWeight=0% (D34) — HCE is the
+            actual shipped evaluation right now, so tuning it directly
+            improves real playing strength, unlike further NNUE work. Per
+            D19/D20: GitHub Actions is the default execution path (NOT
+            Colab — that was rejected in D19 before this ROADMAP note was
+            last updated), Kaggle only as fallback if Actions' 6-hour job
+            ceiling becomes a real constraint.
+- [ ] 14.2 — NEXT SESSION START POINT. Generate Pet Dragon game database for
+            tuning: a new binary (likely texel_gen.rs, modeled on
+            selfplay.rs's game loop but NOT its output — Texel tuning needs
+            raw (FEN, game_result) pairs sampled through each game, not
+            search-eval targets like the NNUE pipeline uses). Needs: (1) HCE
+            weight tables in eval/ made programmatically tunable (read/write,
+            not just compile-time constants) — audit eval/material.rs,
+            eval/tables.rs, eval/mobility.rs etc. for current structure
+            first, (2) the sampling/output format for the tuning database,
+            (3) confirm no existing self-play output can be repurposed
+            before building a new generator from scratch (check first).
+- [ ] 14.3 — Run tuning via GitHub Actions (texel_tune.yml, per D19) —
+            gradient descent (or similar local-search optimizer) minimizing
+            sigmoid-scaled prediction error against the 14.2 game database.
+- [ ] 14.4 — Update weights in eval/ files with tuned values. Build.yml must
+            stay green; consider an eval_diag.rs-style sanity check specific
+            to HCE (start pos ~0, known material swings roughly right) given
+            how much Phase 17.5 benefited from exactly that kind of direct
+            diagnostic rather than relying on aggregate metrics alone.
 
 ---
 
