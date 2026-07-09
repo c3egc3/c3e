@@ -206,7 +206,19 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       `fastpy check` on `engine.py` against the freshly-pulled repo
       *before* trusting any prior session's "fixed" claim, not just at
       baseline. See D-61.
-- [ ] Windows support (MSVC/MinGW detection in `toolchain.py`)
+- [x] Windows support (MSVC/MinGW detection in `toolchain.py`) (Session 28) —
+      four backends detected: g++/clang++ (MinGW, GCC dialect), clang-cl
+      (MSVC dialect, Clang underneath), cl (true MSVC). Windows search
+      order prefers g++ → clang++ → clang-cl → cl because the emitter's
+      POPCNT/TZCNT/LZCNT patterns always emit GCC/Clang `__builtin_*`
+      calls regardless of target — only true cl.exe can't compile those.
+      `compile_cpp()` pre-flight-rejects that combination with a clear
+      message instead of invoking cl.exe and failing with undeclared-
+      identifier errors; verified end-to-end with a fake `cl` script on
+      PATH that would mark itself as invoked if the check failed to stop
+      it first. `.exe` suffix auto-added to output paths on Windows.
+      52 new tests in `tests/test_toolchain.py` — previously zero
+      coverage existed for this module. See D-63.
 - [ ] Apple Silicon cross-compilation flags
 - [ ] Better parse error messages (highlight offending source line)
 - [ ] Multi-file compilation support

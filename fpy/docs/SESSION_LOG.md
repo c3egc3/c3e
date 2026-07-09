@@ -4,6 +4,96 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 28 — Windows support: MSVC/MinGW/clang-cl detection in toolchain.py
+**Status:** COMPLETE ✅
+
+### Baseline re-check
+Confirmed Session 27's deltas actually landed on `main` for all 5 touched
+files (2 in fastpy, 2 in fastpy-engine, plus docs) by re-pulling each from
+`raw.githubusercontent.com` and grepping for the specific new symbols
+(`_match_msb`, `MSB_SOURCE`, `def msb`, `TestBitboardUtils`, `D-62`) —
+all present. CI green on GitHub Actions for fastpy (#47). No repeat of
+the Sessions 24–26 commit-didn't-land pattern.
+
+### What changed (g-c-3/fastpy) — `core/toolchain.py`
+Previously GCC/Clang-only. Now detects four backends:
+- **g++ / clang++** — native or MinGW-w64, GCC command-line dialect.
+- **clang-cl** — LLVM's Clang with an MSVC-compatible driver. MSVC flag
+  dialect, but Clang underneath — understands the same `__builtin_*`
+  calls g++/clang++ do.
+- **cl** — true MSVC. MSVC flag dialect, and does *not* understand
+  GCC/Clang builtins.
+
+Windows detection order: g++ → clang++ → clang-cl → cl. Deliberate, not
+arbitrary — `core/intrinsics.py` unconditionally emits GCC/Clang-style
+`__builtin_popcountll` / `__builtin_ctzll` / `__builtin_clzll` for the
+POPCNT/TZCNT/LZCNT chess patterns (the emitter has no target-compiler
+awareness by design — CORE RULE 5). g++/clang++/clang-cl all handle
+that; true cl.exe doesn't.
+
+Added:
+- `_compiler_stem` / `_uses_msvc_dialect` / `_is_true_msvc` — dialect
+  detection, deliberately not using `pathlib.Path` for the separator
+  split (`Path` only treats `\` as a separator when actually running on
+  Windows, which would break testing Windows-shaped paths from this
+  Linux dev sandbox).
+- `MSVC_BASE_FLAGS` / `MSVC_OPT_FLAGS` — MSVC-dialect equivalents of the
+  existing GCC flag sets. `-march=native` has no MSVC equivalent; `/O3`
+  maps to `/O2 /arch:AVX2` (closest available match for the BMI2 codegen
+  FastPy's magic bitboards need).
+- `MSVC_INCOMPATIBLE_BUILTINS` + `_msvc_incompatible_builtins_used()` —
+  pre-flight check in `compile_cpp()`: if the selected compiler is true
+  MSVC and the source contains any of the three GCC-only builtins,
+  return `ok=False` with a clear explanatory message *before* invoking
+  the compiler, rather than a wall of C2065 undeclared-identifier errors.
+  `_pext_u64`/`_pdep_u64` are deliberately excluded from this list — both
+  GCC/Clang and real MSVC support them identically via `<immintrin.h>`.
+- `_build_command()` — branches on dialect (`-o` vs `/Fe:`, etc.).
+- `_resolve_output_path()` — adds `.exe` on Windows if missing, for any
+  of the four backends.
+- `find_compiler()` / `compiler_version()` updated for the new candidate
+  list and cl.exe's lack of `--version` support (it prints its banner to
+  stderr on a no-arg invocation instead).
+
+### Tests — `tests/test_toolchain.py` (new file, 52 tests)
+This module had **zero** test coverage before this session. New coverage:
+flag-set sanity, dialect detection (including case/path-separator edge
+cases), MSVC-incompatible-builtin detection, command-building for both
+dialects, output-path `.exe` resolution, compiler auto-detection on this
+real machine, and — the one that actually proves the pre-flight check
+does what it claims — an end-to-end `compile_cpp()` call with a **fake
+executable named `cl`** placed on `PATH`. The fake script writes a marker
+to stderr and exits 1 if it's ever actually invoked; the test asserts
+that marker is *absent* for incompatible source (proving the pre-flight
+check stopped execution before the compiler ran) and *present* for
+compatible source (proving the check isn't just rejecting `cl` outright).
+Also added real end-to-end compiles on this machine's actual g++/clang++,
+including one that compiles the exact `__builtin_popcountll` /
+`__builtin_ctzll` / `__builtin_clzll` shapes `core/intrinsics.py` emits,
+runs the binary, and checks the results — a regression guard that these
+patterns aren't just "recognised as MSVC-incompatible in the abstract"
+but actually compile and execute correctly on real GCC/Clang.
+
+Full fastpy suite: 251/251 passing (199 + 52 new). fastpy-engine
+untouched this session, still 196/196.
+
+### Known limitation (see D-63)
+True MSVC (cl.exe) cannot compile `engine.py`'s emitted C++ as-is, because
+`popcount()`/`lsb()`/`msb()` all trigger the GCC-builtin patterns. This is
+architectural, not a bug — fixing it would mean the emitter branching on
+target compiler, which conflicts with CORE RULE 5 (emitter does zero
+analysis) unless that's handled as a separate post-emission pass. Not
+attempted this session; flagged as a possible future item if real MSVC
+support (vs. MinGW/clang-cl) is ever required.
+
+### Next session
+- Apple Silicon cross-compilation flags (next unchecked ongoing-improvement).
+- Better parse error messages.
+- Multi-file compilation support.
+- `match` statement support.
+
+---
+
 ## Session 27 — Baseline verified genuinely clean; shipped LZCNT/MSB intrinsic
 **Status:** COMPLETE ✅
 

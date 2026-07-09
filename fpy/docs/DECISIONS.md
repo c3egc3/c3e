@@ -483,3 +483,26 @@ restriction there.
   the hand-built mapper unit test passed — a reminder that a unit test
   built directly from IR nodes can miss what the real parser actually
   produces for the "obvious" case.
+
+## D-63: Windows support targets MinGW GCC/Clang and clang-cl as the
+  supported path; true MSVC (cl.exe) is detected and given a working
+  flag-translation layer, but is explicitly NOT expected to compile
+  `engine.py` as emitted today. Reason: `core/intrinsics.py`'s
+  POPCNT/TZCNT/LZCNT patterns emit hard-coded GCC/Clang `__builtin_*`
+  calls with no target-compiler parameter anywhere in the call chain —
+  by CORE RULE 5 ("the emitter does zero analysis"), giving it compiler
+  awareness would mean either violating that rule or adding a distinct
+  post-emission translation pass, neither of which was in scope for a
+  toolchain-detection task. Rather than let a user pick `cl.exe` and
+  discover this via a wall of C2065 undeclared-identifier errors,
+  `compile_cpp()` pre-flight-scans emitted source for the three
+  incompatible builtins and rejects early with a message that names the
+  actual problem and the three ways around it (MinGW, clang-cl, WSL).
+  clang-cl was deliberately included as a fourth backend specifically
+  because it sidesteps this whole problem — same MSVC flag dialect
+  cl.exe users already have installed via Visual Studio, but Clang
+  underneath, so the exact same `__builtin_*` calls just work. If native
+  cl.exe support for these three patterns is ever wanted, the correct
+  fix is a target-compiler-aware translation step *after* emission, not
+  inside `core/intrinsics.py` itself — keeps the "emitter does zero
+  analysis" rule intact while still solving the problem elsewhere.
