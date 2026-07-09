@@ -172,6 +172,17 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       the existing `ZK_TABLE_INIT` pattern. Algorithm verified offline
       against 20,000 random occupancies before being ported to FastPy;
       startpos perft(5) = 4,865,609 exact match post-wiring. See D-59.
+- [x] `__builtin_clzll` for MSB index (Session 27) — new LZCNT intrinsic
+      pattern (`x.bit_length() - 1` → `(63 - __builtin_clzll(x))`) in
+      `core/intrinsics.py`, tried after TZCNT in `_match_binop` so the two
+      never collide. Handles both parser encodings of `obj.bit_length()`
+      (bare-name receiver vs. sub-expression receiver). `engine.py` gained
+      an `msb()` utility mirroring `lsb()`'s shape; verified against
+      Python's own `bit_length()-1` on 100k+ random 64-bit values plus
+      edge cases (0, single low/high bit, multi-bit). Not yet wired into
+      any move-gen caller — it's a general utility, ready for whichever
+      future feature needs a most-significant-bit index (e.g. a
+      most-valuable-piece scan). See D-62.
 - [x] Isolate the Kiwipete perft bug (Session 26) — **not a real bug.**
       `run.py`'s `_parse_fen`/`_perft_py` give perft(1)=48, perft(2)=2039,
       perft(3)=97862 against Kiwipete — exact matches to the known-correct
@@ -195,11 +206,6 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       `fastpy check` on `engine.py` against the freshly-pulled repo
       *before* trusting any prior session's "fixed" claim, not just at
       baseline. See D-61.
-- [ ] Wire PEXT into bishop/rook move generation via precomputed
-      magic-bitboard attack tables (replaces the current ray-fill loops
-      in generate_bishops/generate_rooks) — natural next step now that
-      the intrinsic exists
-- [ ] `__builtin_clzll` for most-significant-bit index
 - [ ] Windows support (MSVC/MinGW detection in `toolchain.py`)
 - [ ] Apple Silicon cross-compilation flags
 - [ ] Better parse error messages (highlight offending source line)

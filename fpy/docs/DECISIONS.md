@@ -467,4 +467,19 @@ restriction there.
   finding a discrepancy between SESSION_LOG.md's account and the live
   `main` branch should immediately downgrade confidence in *any* other
   claim from that same uncommitted session (e.g. D-60's investigation),
-  not just the specific file where the mismatch was caught.
+
+## D-62: LZCNT/MSB pattern matches on func-string suffix for the bare-name
+  case, not on a receiver field — because the parser doesn't give it one.
+  `core/parser.py`'s `visit_Call` only populates `IRCall.receiver` when
+  the method's object is itself a non-`IRName` expression (e.g.
+  `(x & -x).bit_length()`); for a bare variable (`board.bit_length()`) it
+  instead folds the name straight into `func` as `"board.bit_length"` and
+  leaves `receiver=None`. TZCNT never had to handle this because its
+  fixed shape requires a BinOp receiver by definition. MSB is intentionally
+  permissive (any receiver, not just `(x & -x)`), so it has to handle both
+  parser encodings: strip `".bit_length"` off `func` when it's not the
+  `"<expr>.bit_length"` sentinel, otherwise emit `receiver`. Caught by the
+  first pipeline test run (`test_msb_with_named_variable`) failing while
+  the hand-built mapper unit test passed — a reminder that a unit test
+  built directly from IR nodes can miss what the real parser actually
+  produces for the "obvious" case.

@@ -4,6 +4,70 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 27 — Baseline verified genuinely clean; shipped LZCNT/MSB intrinsic
+**Status:** COMPLETE ✅
+
+### Baseline re-check (per D-61 process)
+Freshly pulled all three repos via `curl`/tarball. `ast.parse()` clean on
+`run.py` and `engine.py`. No duplicate top-level defs (`pop_lsb`/`pext`/
+`pdep` each defined once). `fastpy check engine.py`: zero errors.
+`fastpy build engine.py --optimize O3`: compiles clean. Test suites:
+fastpy 192/192, fastpy-engine 188/188 — both match SESSION_LOG's Session
+26 account exactly. Re-ran the Kiwipete perft check directly via `run.py`'s
+own `_parse_fen`/`_perft_py`: 48/2039/97862, exact match. **First session
+in four (24-27) where the baseline claim actually held** — no repeat of
+the commit-didn't-land pattern this time.
+
+### What changed (g-c-3/fastpy)
+- `core/intrinsics.py`: new LZCNT pattern — `x.bit_length() - 1` →
+  `(63 - __builtin_clzll(x))`. Added as `_match_msb`, tried after
+  `_match_tzcnt` in `_match_binop` so the two patterns can't collide
+  (TZCNT's receiver is always the specific `(x & -x)` shape; MSB is
+  the permissive fallback for everything else). Had to handle both of
+  the parser's `obj.bit_length()` encodings — bare-name receiver
+  (`func="board.bit_length"`, `receiver=None`) and sub-expression
+  receiver (`func="<expr>.bit_length"`, `receiver=<expr>`) — the first
+  pipeline test run caught this when the bare-name case fell through
+  silently. Registered in `PATTERN_REGISTRY` as `LZCNT`.
+- `tests/conftest.py` / `tests/test_intrinsics.py`: `MSB_SOURCE` fixture,
+  `TestMsbPattern` (6 tests: pipeline fire, no-bit_length-in-output, named
+  variable, wrong-subtracted-value non-match, TZCNT-still-wins-on-its-shape
+  collision guard, direct mapper unit test), plus one `TestPatternRegistry`
+  registration check. 199/199 fastpy tests passing (192 + 7 new).
+
+### What changed (g-c-3/fastpy-engine)
+- `engine.py`: new `msb()` bitboard utility, same shape as `lsb()`
+  (0-guard, then the intrinsic-triggering expression). `fastpy check`
+  zero errors, `fastpy build --optimize O3` clean, emitted C++ confirmed
+  to contain `(63 - __builtin_clzll(board))`.
+- `tests/test_move_gen.py`: new `TestBitboardUtils` (8 tests) — `msb()`
+  against known edge cases (0, bit 0, bit 63, multi-bit), 2,000 random
+  values cross-checked against Python's own `bit_length()-1`, plus two
+  regression guards confirming `lsb()`/`popcount()` are undisturbed.
+  196/196 fastpy-engine tests passing (188 + 8 new).
+- Also ran an ad hoc 100,000-random-value correctness check on `msb()`
+  in Python mode before committing to the permanent test suite (not
+  itself a committed artifact, just extra confidence beyond the 2,000
+  in the permanent regression test).
+
+### Docs
+- `ROADMAP.md`: checked off the MSB task; deleted a stale duplicate
+  "Wire PEXT..." bullet that was never checked off when the real PEXT
+  work landed in Session 25 (see D-59) — same line, still unchecked,
+  sitting further down the ongoing-improvements list.
+
+### Next session
+- Resume ROADMAP's ongoing-improvements list: Windows support in
+  `toolchain.py`, Apple Silicon cross-compile flags, better parse error
+  messages, multi-file compilation, `match` statement support.
+- `msb()` is a general utility, not yet called from anywhere in
+  `engine.py` — next feature needing a most-valuable-piece or highest-
+  square scan can use it directly.
+- Continue the D-61 baseline-verification discipline every session
+  regardless of how many sessions in a row it comes back clean.
+
+---
+
 ## Session 26 — Kiwipete bug closed: it was never real. Third commit-didn't-land indentation regression, fixed.
 **Status:** COMPLETE ✅
 
