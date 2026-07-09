@@ -7,6 +7,63 @@ Most recent session at TOP.
 
 ---
 
+## Session 53 — 2026-07-09 (14.3 steps 1-4 built — self-consistency GREEN)
+
+**Built:** `src/texel/mod.rs`, `src/texel/features.rs`, `src/texel/weights.rs`,
+`src/texel/predict.rs` (all NEW) — D35's steps 1-4. `TexelFeatures` extracts
+a per-position feature summary (diffs for simple additive terms; raw
+per-bucket/per-side components for PST, mobility, and king safety, where a
+plain diff would lose which table entry applies). `TunableWeights::default()`
+copies every current eval/*.rs const verbatim (material, all 6 PST tables,
+mobility tables, pawn penalties, king safety weights, open-lines bonuses,
+tempo). `predict()` recomputes the score via the same arithmetic
+`crate::eval::evaluate()` uses (packed s(mg,eg) tapering via the existing
+`taper()` helper, same king-safety bucket/clamp/phase-scaling logic) but
+pulling constants from `weights` instead of hardcoded arrays.
+
+**Verification (before presenting, per working-style rules):** cloned the
+real repo via codeload, dropped the 4 new files in, installed rustc/cargo
+via apt (no cargo available in-sandbox otherwise), ran `cargo check --lib`
+(clean) and `cargo test --lib` — 325/325 passing (322 pre-existing + 3 new).
+The 3 self-consistency tests cover hand-picked FENs (material swings, pure
+endgame phase=0, king-exposed middlegame), a 500-seed
+`Position::generate_with_seed` sweep, and a 30-seed x 6-ply mid-game sweep
+(deterministic move selection, no RNG dependency) — `predict()` matched
+`evaluate()` bit-exact in every case, zero mismatches.
+
+**Bugs fixed:** N/A — new code, self-consistency test passed on first
+attempt (no iteration needed; extraction logic was written as a careful
+line-by-line mirror of each eval/*.rs submodule specifically to avoid
+needing a fix-the-mismatch cycle at this scale, per D35's own caution about
+that risk).
+
+**Decisions made:** None new — this is D35's plan executed, not a new
+architectural call.
+
+**Test risk flagged:** local verification used rustc/cargo 1.75 (apt,
+Ubuntu 24 default) rather than whatever `dtolnay/rust-toolchain` resolves
+to latest-stable in CI — had to temporarily strip the `criterion`
+dev-dependency locally (edition2024 requirement in a newer transitive dep
+exceeds 1.75's cargo) to run `cargo test`; this was NOT committed, only used
+for local verification. CI runs on the real toolchain and the real
+Cargo.toml, so this is not expected to cause a discrepancy, but it's the one
+part of this session's verification that wasn't against the exact CI
+environment — worth a normal green-build confirmation like any other
+session, not skipped just because local tests passed.
+
+**Next session start point:** D35 step 5 — the gradient-descent optimizer.
+Sigmoid-scaled error against game results (same K/lambda-style scaling
+reasoning as D14's NNUE target), batched across the 147,867-sample database
+from 14.2, output `TunableWeights` in a mutable f64-friendly form (current
+`TunableWeights` uses i64/i32 to guarantee exact self-consistency this
+session — the optimizer will need a parallel f64 or a documented
+conversion). Then `texel_tune.yml` (GitHub Actions per D19). Remember
+`MAX_KING_DANGER`'s clamp needs zero gradient when clamped, pass-through
+otherwise (D35's one nonlinearity) — don't let the optimizer silently
+backprop through it as if smooth.
+
+---
+
 ## Session 52 — 2026-07-08 (14.2 complete, 14.3 architecture audit — D35)
 
 **Built:** Nothing new — this was a design/audit session. Validated all 4

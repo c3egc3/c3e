@@ -190,18 +190,24 @@
             79,694 wins (stm-perspective) — win/loss imbalance is expected
             (not a bug, see Session 52 chat), draw rarity (~3.6%) reflects
             shallow 100ms searches, also expected. Data validated and ready.
-- [~] 14.3 — Architecture audit COMPLETE (Session 52, D35): confirmed HCE
-            is fully linear-in-weights across all 6 eval submodules, ~970
-            tunable parameters, exactly one clamp nonlinearity (king
-            safety's MAX_KING_DANGER, handled like a standard ML clip).
-            Full implementation plan documented in D35. NOT YET BUILT.
-            NEXT SESSION START POINT: build TexelFeatures + TunableWeights
-            + predict() + the self-consistency test (step 4 of D35's plan)
-            FIRST, verify it passes, only then write the actual gradient-
-            descent optimizer + texel_tune.yml. Do not skip the self-
-            consistency test or write the optimizer before it's green —
-            it's the only safety net against a silently-wrong feature
-            extraction at this scale.
+- [~] 14.3 — Architecture audit COMPLETE (Session 52, D35). Steps 1-4 BUILT
+            AND GREEN (Session 53): src/texel/features.rs (TexelFeatures +
+            extract_features(), mirrors all 6 eval submodules exactly),
+            src/texel/weights.rs (TunableWeights + Default matching current
+            consts verbatim), src/texel/predict.rs (predict() dot-product
+            function + the self-consistency test). Self-consistency test
+            (the load-bearing safety net) is GREEN: predict() matches
+            evaluate() bit-exact across hand-picked FENs, a 500-seed Pet
+            Dragon sweep, and a mid-game-after-moves sweep (30 seeds x 6
+            plies). Full suite 325/325 (322 prior + 3 new).
+            NEXT SESSION START POINT: step 5 — gradient descent optimizer
+            (sigmoid-scaled error against game results, D14-style K/lambda
+            scaling, batched across the 147,867-sample database from 14.2)
+            + texel_tune.yml (GitHub Actions per D19). MAX_KING_DANGER's
+            clamp (src/texel/weights.rs) needs zero gradient when clamped,
+            pass-through otherwise — the one nonlinearity D35 flagged.
+            After that: step 6, format tuned weights back into eval/*.rs's
+            s(mg,eg)/array literal syntax as a delta.
 - [ ] 14.4 — Update weights in eval/ files with tuned values. Build.yml must
             stay green; consider an eval_diag.rs-style sanity check specific
             to HCE (start pos ~0, known material swings roughly right) given
