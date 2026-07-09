@@ -7,6 +7,76 @@ Most recent session at TOP.
 
 ---
 
+## Session 54 — 2026-07-09 (14.3 step 5 built — gradient descent optimizer)
+
+**Built:** `src/texel/weights_f64.rs`, `src/texel/predict_f64.rs` (both
+NEW), `src/bin/texel_tune.rs` (NEW), `.github/workflows/texel_tune.yml`
+(NEW) — D35's step 5. `TunableWeightsF64` mirrors `TunableWeights`'
+exact shape with `S{mg,eg}: f64` pairs instead of packed i64, plus
+flatten/unflatten for a fixed-order flat parameter vector (964 scalars,
+matches D35's ~970 estimate). `predict_and_accumulate_grad` does the
+forward pass and gradient accumulation in one call, mirrored term-for-term
+against `predict_f64` (a straight f64 port of Session 53's `predict()`);
+king safety's `MAX_KING_DANGER` clamp gets zero gradient on
+`attacker_weight[idx]` when clamped, full gradient otherwise, per D35.
+`texel_tune.rs`: loads `<FEN>|<result>` lines (texel_gen.rs's exact
+format), runs a coarse-then-fine K line search, then plain Adam gradient
+descent (Kingma & Ba 2014, hand-rolled — noru's `AdamState` is tied to
+NNUE's own tensor shapes, not reusable for a flat HCE vector) over
+shuffled minibatches, writes tuned weights in `s(mg,eg)`/array-literal
+syntax matching `weights.rs`'s own format. `texel_tune.yml` mirrors
+`train_nnue.yml`'s three-source data pattern (Run ID / committed path /
+Release URL, D19/D22).
+
+**Verification (before presenting):** cloned the real repo, dropped the
+files in, `cargo check --lib --bins` clean. `cargo test --lib` initially
+caught a REAL bug (see below) — after the fix, full suite 329/329 (322 +
+3 Session 53 + 4 new: grad-vs-forward cross-check on hand-picked FENs, a
+200-seed Pet Dragon sweep, an f64-vs-integer-predict sanity bound, and the
+flatten/unflatten + default-conversion round-trip). Also ran the actual
+binaries end-to-end: `texel_gen` generated a real 559-sample dataset (40
+games, seed 5000), `texel_tune` trained on it for 8 epochs — K line search
+found 2.589 (had to widen the search range from 0-2 to 0-4 after the first
+smoke-test run hit the original boundary), loss fell every single epoch
+(0.042636 -> 0.017032), output file parses back into `weights.rs`'s own
+literal format cleanly. This was a mechanical smoke test on self-generated
+data, NOT the real 14.2 production database — that's next session's job.
+
+**Bugs fixed:** `TunableWeightsF64`'s `S::from(packed_i64)` initially
+called `crate::eval::material::mg()` directly to decode a single literal
+weight — but `mg()`/`taper()` are only valid decoders of an ACCUMULATED
+SUM of many `s(mg,eg)` terms (the addition-based packing scheme relies on
+borrow/carry cancelling out across a full sum); applied to one unsummed
+term with a negative `eg`, `mg()` silently returns `mg - 1`. Fix: keep
+`eg()` (exact for a single term — a low-32-bit reinterpret has no borrow
+issue) and derive the true `mg` via `(packed - eg) >> 32` instead, which
+is an exact division by construction of `s()`. Caught by the
+flatten/unflatten round-trip test (`test_flatten_unflatten_roundtrip_and_
+default_conversion`) failing on real PST table values — exactly the kind
+of silent, scale-dependent bug D35 built these tests to catch. `predict.rs`
+and `weights.rs` (Session 53) were never at risk from this — they only
+ever decode from accumulated sums, never a single term, which is correct
+usage of the same trick.
+
+**Decisions made:** None new — D35's plan executed as written. Widening
+the K search range (0-2 -> 0-4) is a parameter tweak based on smoke-test
+evidence, not an architectural decision.
+
+**Next session start point:** Run `texel_tune.yml` for real against the
+actual 14.2 production database (147,867 samples — find the GitHub
+Release asset URLs or Run IDs for the smoke-test + seed-1000/2000/3000
+batches; `api.github.com`'s unauthenticated rate limit blocked looking
+these up directly this session, so they need to come from Gokul or a
+future session with fresh rate-limit headroom). Start with a short run
+(~10-20 epochs) against the real data first to sanity-check loss trends
+before committing to a long run — the smoke test only proves the mechanism
+works, not that 147k real samples will behave the same way. Then D35 step
+6: sanity-check the tuned numbers (a small HCE-specific diagnostic, in the
+spirit of `eval_diag.rs`, would help here and doesn't exist yet), then
+write the `eval/*.rs` delta from `texel_weights_tuned.txt`'s output.
+
+---
+
 ## Session 53 — 2026-07-09 (14.3 steps 1-4 built — self-consistency GREEN)
 
 **Built:** `src/texel/mod.rs`, `src/texel/features.rs`, `src/texel/weights.rs`,

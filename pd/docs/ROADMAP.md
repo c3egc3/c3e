@@ -190,24 +190,39 @@
             79,694 wins (stm-perspective) — win/loss imbalance is expected
             (not a bug, see Session 52 chat), draw rarity (~3.6%) reflects
             shallow 100ms searches, also expected. Data validated and ready.
-- [~] 14.3 — Architecture audit COMPLETE (Session 52, D35). Steps 1-4 BUILT
-            AND GREEN (Session 53): src/texel/features.rs (TexelFeatures +
-            extract_features(), mirrors all 6 eval submodules exactly),
-            src/texel/weights.rs (TunableWeights + Default matching current
-            consts verbatim), src/texel/predict.rs (predict() dot-product
-            function + the self-consistency test). Self-consistency test
-            (the load-bearing safety net) is GREEN: predict() matches
-            evaluate() bit-exact across hand-picked FENs, a 500-seed Pet
-            Dragon sweep, and a mid-game-after-moves sweep (30 seeds x 6
-            plies). Full suite 325/325 (322 prior + 3 new).
-            NEXT SESSION START POINT: step 5 — gradient descent optimizer
-            (sigmoid-scaled error against game results, D14-style K/lambda
-            scaling, batched across the 147,867-sample database from 14.2)
-            + texel_tune.yml (GitHub Actions per D19). MAX_KING_DANGER's
-            clamp (src/texel/weights.rs) needs zero gradient when clamped,
-            pass-through otherwise — the one nonlinearity D35 flagged.
-            After that: step 6, format tuned weights back into eval/*.rs's
-            s(mg,eg)/array literal syntax as a delta.
+- [~] 14.3 — Steps 1-5 of D35's plan BUILT AND GREEN.
+            Session 53: TexelFeatures/TunableWeights/predict() +
+            self-consistency test (bit-exact vs evaluate()).
+            Session 54: step 5 — src/texel/weights_f64.rs (f64 weight
+            vector, flatten/unflatten), src/texel/predict_f64.rs (f64
+            forward pass + fused gradient accumulation, king-safety clamp
+            gets zero gradient per D35), src/bin/texel_tune.rs (K line
+            search + Adam gradient descent over the flattened parameter
+            vector, writes tuned weights in ready-to-paste s(mg,eg)
+            syntax), .github/workflows/texel_tune.yml (mirrors
+            train_nnue.yml's run_id/paths/urls three-source pattern).
+            Verified end-to-end on a real 559-sample dataset (40 games,
+            self-generated via texel_gen this session, NOT the 14.2
+            production data): K line search found 2.589, loss fell every
+            epoch (0.0426 -> 0.0170 over 8 epochs), output file parses
+            back into weights.rs's own literal format cleanly. Full suite
+            329/329 (322 + 3 Session 53 + 4 Session 54).
+            NEXT SESSION START POINT: run texel_tune.yml FOR REAL against
+            the actual 14.2 production database (147,867 samples across
+            the smoke-test + 3 seed-1000/2000/3000 batches — find their
+            GitHub Release asset URLs or Run IDs and wire them into
+            data_run_id/data_paths/data_urls). Start with a short run
+            (~10-20 epochs) to sanity-check loss trends on the real data
+            before committing to a long run. Once satisfied: step 6 —
+            read texel_weights_tuned.txt's output, sanity-check the
+            tuned numbers aren't wild outliers (a diagnostic like
+            eval_diag.rs's start-pos/material-swing checks, run through
+            the tuned weights before touching eval/*.rs, is worth building
+            here — no such check exists yet for HCE specifically), then
+            write the eval/*.rs delta (material.rs, tables.rs,
+            mobility.rs, pawns.rs, king_safety.rs, open_lines.rs, mod.rs's
+            TEMPO) replacing the current hand-picked Ethereal-derived
+            constants with the tuned ones. Build.yml must stay green.
 - [ ] 14.4 — Update weights in eval/ files with tuned values. Build.yml must
             stay green; consider an eval_diag.rs-style sanity check specific
             to HCE (start pos ~0, known material swings roughly right) given
