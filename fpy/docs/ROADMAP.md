@@ -156,27 +156,18 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 
 ## FastPy Transpiler — Ongoing Improvements
 
-- [ ] **PRIORITY (next session): call-site arity checking in `core/type_system.py`**
-      — `fastpy check` currently validates argument *types* but never
-      validates argument *count* against a function's own signature.
-      This is what let the Session 22→24 regression through: a 5-argument
-      call to a 4-parameter `alpha_beta()` type-checked clean and only
-      failed at C++ compile time (see D-55). Fix: in the type checker's
-      call-expression handling, look up the callee's `IRFunction` param
-      list and assert `len(call.args) == len(callee.params)` (or the
-      correct count for method calls with a receiver) before/alongside
-      the existing per-argument type checks; emit a `TypeCheckError` with
-      the call site and the expected vs. actual count. Needs test
-      coverage for too-few args, too-many args, and (once/if defaults are
-      ever supported) optional-arg boundaries.
-- [ ] BMI2 intrinsics: `PEXT`/`PDEP` patterns for magic bitboards (Check completion status)
-      — `pext(x, mask)`/`pdep(x, mask)` matched as direct calls (no natural
-      Python idiom exists, unlike POPCNT/TZCNT); Python-mode fallback in
-      engine.py verified against 500+ random cases; see D-56
-- [ ] Wire PEXT into bishop/rook move generation via precomputed
-      magic-bitboard attack tables (replaces the current ray-fill loops
-      in generate_bishops/generate_rooks) — natural next step now that
-      the intrinsic exists (Session 24)
+- [x] Call-site arity checking in `core/type_system.py` (Session 25) — the
+      type checker now walks every expression tree (call args, receivers,
+      conditions, iterables, assignment values, return values) and
+      validates each `IRCall`'s arg count against the callee's own param
+      list; free functions matched by name, methods matched by name across
+      all classes. Verified against injected too-many/too-few-arg repros
+      of the exact D-55 shape; zero false positives on the real engine.py.
+      10 new tests in `TestCallSiteArity`. See D-58.
+- [ ] **PRIORITY (next session): wire PEXT into bishop/rook move generation**
+      via precomputed magic-bitboard attack tables (replaces the current
+      ray-fill loops in generate_bishops/generate_rooks) — natural next
+      step now that the intrinsic exists; see D-56 (Session 24)
       — `pext(x, mask)`/`pdep(x, mask)` matched as direct calls (no natural
       Python idiom exists, unlike POPCNT/TZCNT); Python-mode fallback in
       engine.py verified against 500+ random cases; see D-56

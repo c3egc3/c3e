@@ -4,6 +4,67 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 25 — Fixed a second build-breaking regression, shipped call-site arity checking
+**Status:** COMPLETE ✅
+
+### Critical finding (before any new work)
+Baseline check again found the repo broken — same pattern as Session 24: docs
+said the last session ended clean, but neither `run.py` nor `engine.py` had
+actually been re-verified after commit.
+
+- `run.py` line 209: a stray 8-space indent in front of
+  `def _alpha_beta_py(...)` broke Python syntax entirely (`ast.parse` failed
+  with "unexpected indent"). Fix: dedent the line.
+- `engine.py`: `pop_lsb` was defined three times and `pext`/`pdep` twice each
+  (lines 470–530 were a verbatim duplicate of 416–468). `fastpy check` passed
+  clean regardless — it type-checks each function independently and never
+  scans for duplicate top-level definitions — but `fastpy build` failed with
+  C++ redefinition errors. Fix: deleted the duplicate block.
+
+Both fixed, then verified: 185/185 fastpy-engine tests, 182/182 fastpy tests,
+clean `fastpy build engine.py --optimize O3`. See D-58.
+
+### What changed (g-c-3/fastpy)
+- `core/type_system.py`: implemented the arity checker flagged as PRIORITY in
+  ROADMAP.md. `check_module()` now pre-registers every free function's and
+  method's param count before checking any body (so forward references work).
+  A new `_walk_expr_for_calls()` recurses through every expression shape
+  (`IRCall` args/receiver, `IRBinOp`, `IRUnaryOp`, `IRCompare`, `IRBoolOp`,
+  `IRAttribute`, `IRSubscript`, `IRTuple`, `IRIfExp`) and is hooked into every
+  statement type that carries an expression: assignment values, aug-assign
+  values, return values, if/while conditions, for-loop iterables, and bare
+  expression statements. `_check_call_arity()` matches free functions by
+  exact name and methods by name-only lookup across all classes (no static
+  class binding available at the call site), flagging a mismatch only when
+  the arg count matches none of the candidates for that method name — avoids
+  false positives on same-named methods with different signatures. Unknown
+  names (builtins, `bin(x).count("1")`-style idioms) are silently skipped.
+- `tests/test_type_system.py`: added `TestCallSiteArity` — 10 new tests
+  covering too-many/too-few args on free functions and methods, correct-arity
+  passes, forward-reference calls, zero-arg methods, builtin calls (must not
+  be flagged), and calls nested inside other calls' arguments and inside
+  if-conditions.
+
+### Verification
+- Injected the exact D-55 regression shape (phantom 6th arg to `alpha_beta`
+  at a real call site) into a copy of `engine.py` — caught: `expected 5
+  arguments, got 6`.
+- Injected a too-few-args variant (dropped `alpha_beta`'s `excluded_move`
+  arg) — caught: `expected 5 arguments, got 4`.
+- Injected a phantom arg into a real `board.white_pieces()` method call site
+  — caught: `expected 0 arguments, got 1`.
+- Ran the checker against the real, unmodified `engine.py` — zero errors
+  (no false positives from method calls, `pext`/`pdep` free-function calls,
+  or `bin(x).count("1")`-style builtin idioms).
+- `fastpy` suite: 192/192 passing (182 existing + 10 new).
+- `fastpy-engine` suite: 185/185 passing, unaffected by either fix.
+
+### Next session
+- PRIORITY: wire PEXT into bishop/rook move generation via precomputed
+  magic-bitboard attack tables — see ROADMAP.md and D-56.
+
+---
+
 ## Session 24 — Fixed build-breaking regression, PEXT/PDEP intrinsics, real singular extensions
 **Status:** COMPLETE ✅
 

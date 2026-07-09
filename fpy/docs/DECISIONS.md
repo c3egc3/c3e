@@ -354,3 +354,32 @@ restriction there.
   this node's real moves, so its score doesn't represent a full search of
   the position and must not be trusted by (or overwrite) the shared TT
   entry for it.
+
+## D-58: Two more build-breaking regressions found at Session 25 baseline
+  check, plus the arity checker itself, matching D-55's pattern exactly —
+  the repo was broken on `main` despite the prior session's log claiming a
+  clean, verified state. `run.py` had a stray indent in front of
+  `_alpha_beta_py`'s `def` line (pure syntax error, `ast.parse` failure);
+  `engine.py` had `pop_lsb` defined three times and `pext`/`pdep` twice
+  each — a verbatim 61-line block duplicated in place. Neither was caught
+  by `fastpy check`, for two different reasons: the syntax error is outside
+  FastPy's scope entirely (it's a Python-mode file), and the duplicate
+  definitions type-check fine per-function since nothing in the checker
+  scans for duplicate top-level names — Python itself silently accepts
+  redefinition (last one wins), and it was only `fastpy build`'s C++
+  emission that surfaced it as a redefinition error. Both fixed by
+  deletion, not rewrite. On the arity checker itself: methods are matched
+  by name only, not by (class, name) pair, because `IRCall.func` for a
+  dotted call like `board.method()` carries no static type information
+  about what `board` is — the type checker doesn't do full inference, so
+  there's no way to know which class's `method` is being called. This
+  means two classes could each define a same-named method with different
+  arities and a wrong-arity call to one would go unflagged if its count
+  happened to match the other's signature. Accepted as a known false-
+  negative rather than false-positive risk: today's codebase (BoardState)
+  has exactly one class, so this doesn't bite in practice, and flagging
+  correct calls because of an unrelated class's method of the same name
+  would be strictly worse. Revisit if/when a second class with overlapping
+  method names is introduced — at that point the receiver's declared type
+  (from `IRParam`/`IRAssign` annotations) would need to be tracked through
+  to the call site to disambiguate.
