@@ -5,6 +5,48 @@ changed (that's Sessions.md).
 
 ---
 
+### D8 — NNUE: out of scope for now, optional future addition
+**Date:** 2026-07-10
+Confirmed with Gokul: NNUE evaluation is not part of the current work.
+The existing classical evaluation (eval.cpp — hand-written PSTs and
+heuristics) stays as the working evaluation function. NNUE is a large,
+separate undertaking (training data, network format, inference code)
+that only makes sense to revisit once the base engine is proven
+functionally correct. No action taken now beyond noting this.
+
+### D7 — Remove Syzygy/Fathom tablebase integration entirely (for now)
+**Date:** 2026-07-10
+Context: Gokul reported the engine worked correctly against
+Fairy-Stockfish before adding the Syzygy tablebase ("C lib") files, and
+stopped responding at all afterward — but wasn't fully certain of the
+sequence, and doesn't recall why the files were added originally. Given
+free hand to decide the architecture, decision: **remove the tablebase
+code from Rogue Dragon entirely for now** (syzygy.cpp/.h, tbprobe.c/.h,
+tbchess.c, tbconfig.h, stdendian.h, plus the SyzygyPath/SyzygyProbeLimit
+UCI options and their call sites in search.cpp/uci.cpp).
+
+Reasoning:
+- It's ~4,100 lines (28% of the codebase) of vendored third-party C —
+  the largest single source of build/linkage complexity in the project.
+- Tablebase initialization scanning a misconfigured filesystem path is
+  a very plausible, concrete explanation for a total non-response hang.
+- It's genuinely optional — tablebases only ever activate at 6-7 pieces
+  or fewer on the board; they add late-endgame precision, nothing else.
+  They have no bearing on whether the engine works, plays legally, or
+  respects the variant's rules.
+- Stated goal is "a purely functional working custom variant chess
+  engine" first — tablebases don't serve that goal.
+- Not a permanent loss: Fathom is a well-known public-domain library,
+  cleanly re-addable later from its own source if wanted, once the core
+  engine is proven correct.
+
+Confirmed via direct experiment: built the engine with tbprobe.c
+excluded entirely and re-ran the mate-in-1 repro (see Roadmap 🔴) — bug
+reproduced byte-for-byte identically (same nodes, same score, same PV).
+This proves that specific bug is unrelated to tablebase code, and
+supports debugging the core search/movegen without the TB code as a
+confound.
+
 ### D6 — Insufficient-material draw detection: implement natively
 **Date:** 2026-07-10
 The JS prototype delegated this check to an external library (`chess.js`)

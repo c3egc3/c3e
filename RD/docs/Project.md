@@ -59,9 +59,7 @@ This split matters for how each file gets debugged — see the table below.
 | searchthread.h | 161 | Per-thread search state (Lazy SMP prep) | native |
 | uci.h/.cpp | 41/833 | UCI protocol handler, option state, thread orchestration | ported |
 | main.cpp | 79 | Entry point, subsystem init order | ported |
-| syzygy.h/.cpp | 118/372 | Syzygy tablebase integration (native build only) | native |
-| tbprobe.h/.c, tbchess.c, tbconfig.h | 399/2715/1049/28 | Fathom (vendored, public-domain Syzygy probing library) | **third-party — do not rename to "rogue"** |
-| stdendian.h | 285 | Endianness macros (vendored gist) | **third-party — do not rename** |
+| ~~syzygy.h/.cpp, tbprobe.h/.c, tbchess.c, tbconfig.h, stdendian.h~~ | ~4,100 | Syzygy tablebase integration — **removed (D7)**, optional future re-add | n/a |
 
 ## Notable design points
 
@@ -81,6 +79,12 @@ This split matters for how each file gets debugged — see the table below.
   C++ code.** The JS prototype delegated this to an external library
   (`chess.js`); nothing fills that role here. Decision: implement
   natively (see Decisions.md).
+- **Syzygy/Fathom tablebase integration has been removed** (D7) —
+  optional endgame-precision feature, not needed for a functional
+  engine, and a plausible source of a reported total-hang bug.
+  Re-addable later from Fathom's own upstream source if wanted.
+- **NNUE is out of scope for now** (D8). Classical eval (eval.cpp)
+  remains the working evaluation function.
 
 ## Build
 

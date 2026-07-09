@@ -38,15 +38,31 @@ Newest entry first.
 - Tested GitHub connector write access — failed (403) on both target
   repos; delivery workflow set to manual copy-paste / upload instead
   (D5).
-- Wrote first drafts of all four docs (this session).
+- Wrote first drafts of all four docs.
+- Gokul provided crucial context: the engine worked correctly against
+  Fairy-Stockfish before the Syzygy tablebase ("C lib") files were
+  added, and stopped responding entirely afterward (though not fully
+  certain of the exact sequence).
+- Tested this directly: rebuilt the engine with tbprobe.c excluded
+  entirely and re-ran the mate-in-1 repro. **Bug reproduced byte-for-
+  byte identically** — proves that specific bug is not caused by the
+  tablebase code.
+- Given free hand on architecture, decided (D7) to remove the Syzygy/
+  Fathom tablebase integration entirely for now (~4,100 lines, 28% of
+  the codebase) — optional feature, plausible source of the separate
+  "no response at all" symptom, not needed for a functional engine.
+  Also confirmed (D8) NNUE is out of scope, existing classical eval
+  stays, revisit both only after the core engine is proven correct.
+- Updated all four docs to reflect this.
 
 **Left off at:** Docs written, not yet uploaded to
-`c3egc3/c3e` → `RD/docs/`. Next session should start with the
-mate-in-1 bug investigation (top of Roadmap) once docs are confirmed
-uploaded.
+`c3egc3/c3e` → `RD/docs/`. Tablebase removal decided but not yet
+executed in code.
 
-**Next session should start with:** Investigating the mate-in-1 bug —
-isolate whether it's a check/legality detection issue in board.cpp or a
-mate-scoring issue in search.cpp. Suggest starting with a minimal
-reproduction (a FEN of the exact position, tested directly, rather than
-via the move sequence) to narrow it down faster.
+**Next session should start with:** Two things queued, in this order:
+1. Execute the tablebase removal (Roadmap 🟣 section — mechanical, low
+   risk, shrinks the codebase before the harder work).
+2. Investigate the mate-in-1 bug — now confirmed isolated to core
+   search/movegen/board logic. Suggest starting with a minimal FEN
+   reproduction of the exact position (rather than the move sequence)
+   to narrow it down faster.

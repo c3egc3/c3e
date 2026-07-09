@@ -10,12 +10,25 @@ checked yet."
       Repro: `position startpos moves e2e4 e7e5 g1f3 b8c6 f1b5 a7a6` then
       `go depth 10`. At depth 3 the engine reports `score mate 1` for
       `f3e5` (Nxe5) — this is the standard Ruy Lopez / Morphy Defense
-      position, there is no mate anywhere near it. Likely cause: check
-      detection, mate-scoring, or legality bug in search.cpp or
-      board.cpp's `isAttackedBy`/`inCheck`. **Top priority — this is a
-      correctness bug that would make the engine actively unsafe to
-      trust in any real game**, not just weak play. Needs isolated
-      investigation next session.
+      position, there is no mate anywhere near it. **Confirmed isolated
+      from the tablebase code**: reproduced byte-for-byte identically
+      (same nodes/score/PV) in a build with tbprobe.c excluded entirely
+      — so this is a core search/eval/legality bug, not TB corruption.
+      Likely cause: check detection, mate-scoring, or legality bug in
+      search.cpp or board.cpp's `isAttackedBy`/`inCheck`. **Top
+      priority — this is a correctness bug that would make the engine
+      actively unsafe to trust in any real game**, not just weak play.
+      Needs isolated investigation next session.
+- [ ] **Investigate "engine stopped responding entirely" report.**
+      Gokul reported total non-response after adding the Syzygy
+      tablebase files, tested against Fairy-Stockfish (separate symptom
+      from the mate-in-1 bug above — not yet reproduced directly).
+      Leading theory: `syzygyInit()` given a `SyzygyPath` pointing at a
+      missing/malformed directory, called via `setoption`, possibly by
+      the test harness/GUI automatically. Moot for Rogue Dragon going
+      forward since the TB code is being removed entirely (D7), but
+      worth a mental note in case the same class of bug (unguarded
+      filesystem/init call hanging) exists elsewhere.
 
 ## 🟡 Confirmed gaps (not bugs — missing features)
 
@@ -58,10 +71,20 @@ reference (ported files) or a test suite (native files):
 - [ ] search.cpp — Lazy SMP multi-threaded correctness unverified
       (searchthread.h groundwork exists but hasn't been stress-tested
       with Threads > 1).
-- [ ] Syzygy tablebase probing (tbprobe.c/syzygy.cpp) — untested in
-      this pass.
 - [ ] zobrist.cpp — should be a direct diff against the JS reference's
       `_zrand()` output; not yet done.
+
+## 🟣 Tablebase removal (decided, not yet done — D7)
+
+- [ ] Remove from build: syzygy.cpp, syzygy.h, tbprobe.c, tbprobe.h,
+      tbchess.c, tbconfig.h, stdendian.h.
+- [ ] Remove UCI options: SyzygyPath, SyzygyProbeLimit.
+- [ ] Remove call sites: root probe + interior-node probe in
+      search.cpp, TB init in uci.cpp's setoption handler.
+- [ ] Remove from CMakeLists.txt: conditional tbprobe.c target_sources
+      block and its EXISTS check/compile definitions.
+- [ ] Confirm engine still builds clean and passes the same repro tests
+      afterward.
 
 ## ⬜ Renaming pass (not started)
 
@@ -70,8 +93,8 @@ reference (ported files) or a test suite (native files):
 - [ ] UCI subcommand `position c3 <fen>` → `position rogue <fen>`.
 - [ ] CMakeLists.txt: `project(C3Engine ...)` and `add_executable(c3engine ...)`
       → `rogue` naming.
-- [ ] Exception: leave Fathom (tbprobe.*, tbchess.c, tbconfig.h) and
-      stdendian.h untouched — third-party vendored code (D2).
+- [ ] (No third-party-naming exception needed anymore — Fathom/
+      stdendian.h are being removed entirely per D7, not kept.)
 - [ ] Decide: do the rename *before* or *after* the mate-in-1 bug is
       fixed? (Recommend: after — renaming now makes diffing against the
       JS reference for the bug hunt slightly more friction, no benefit
