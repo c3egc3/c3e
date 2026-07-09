@@ -164,13 +164,27 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       all classes. Verified against injected too-many/too-few-arg repros
       of the exact D-55 shape; zero false positives on the real engine.py.
       10 new tests in `TestCallSiteArity`. See D-58.
-- [ ] **PRIORITY (next session): wire PEXT into bishop/rook move generation**
-      via precomputed magic-bitboard attack tables (replaces the current
-      ray-fill loops in generate_bishops/generate_rooks) — natural next
-      step now that the intrinsic exists; see D-56 (Session 24)
-      — `pext(x, mask)`/`pdep(x, mask)` matched as direct calls (no natural
-      Python idiom exists, unlike POPCNT/TZCNT); Python-mode fallback in
-      engine.py verified against 500+ random cases; see D-56
+- [x] Wire PEXT into bishop/rook move generation (Session 25) —
+      `generate_bishops`/`generate_rooks`/`generate_queens` now do a single
+      PEXT + array lookup instead of four ray-fill loops each. Tables built
+      once via `init_magic_tables()`, lazily guarded by `MAGIC_INIT[0]` at
+      the single move-gen chokepoint (`generate_all_moves()`), mirroring
+      the existing `ZK_TABLE_INIT` pattern. Algorithm verified offline
+      against 20,000 random occupancies before being ported to FastPy;
+      startpos perft(5) = 4,865,609 exact match post-wiring. See D-59.
+- [ ] **PRIORITY (next session): Kiwipete perft is badly wrong** —
+      perft(2) = 429 vs. expected 2,039 on
+      `r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1`,
+      and a deeper search crashes with a negative shift count (a king
+      bitboard going empty mid-recursion — something is generating or
+      applying an illegal king-losing move). **Confirmed present in the
+      pre-Session-25 code too — not caused by the PEXT change.** Never
+      caught because no test exercises Kiwipete despite D-51 naming it the
+      standard benchmark. Likely in castling generation given Kiwipete's
+      both-sides-both-rights setup, but unconfirmed — needs isolation
+      before fixing. Add a Kiwipete perft test to `test_move_gen.py`
+      regardless of root cause, so this never regresses silently again.
+      See D-60.
 - [ ] Wire PEXT into bishop/rook move generation via precomputed
       magic-bitboard attack tables (replaces the current ray-fill loops
       in generate_bishops/generate_rooks) — natural next step now that

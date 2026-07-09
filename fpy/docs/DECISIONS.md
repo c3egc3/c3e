@@ -383,3 +383,53 @@ restriction there.
   method names is introduced — at that point the receiver's declared type
   (from `IRParam`/`IRAssign` annotations) would need to be tracked through
   to the call site to disambiguate.
+
+## D-59: PEXT magic bitboards use lazy-init + a global BSS array, not a
+  literal-initialized const table — FastPy's global-array declaration
+  (`uint64[N] = []`) only supports zero-initialisation; there's no IR/
+  emitter support for a literal-initialized global array of computed
+  values, and `engine.py` may contain no top-level imperative code to
+  compute one at "load time" either (CORE RULE 6). `init_zk_table()`
+  already established the working pattern for this exact constraint —
+  declare a zero-init global, fill it once via an explicit function, guard
+  the call with a `[1]`-array flag checked at the relevant chokepoint. PEXT
+  tables follow it exactly: `ROOK_ATTACK_TABLE`/`BISHOP_ATTACK_TABLE` start
+  zeroed, `init_magic_tables()` fills them via `pdep()` subset enumeration,
+  and `MAGIC_INIT[0]` gates the one-time call. The guard lives in
+  `generate_all_moves()` rather than inside `rook_attacks()`/
+  `bishop_attacks()` themselves (which would also work, just re-checked on
+  every single sliding-piece lookup instead of once per move-gen call) —
+  `generate_all_moves()` is the one chokepoint every move-gen path already
+  routes through (perft, alpha_beta, find_best_move's root), so it's the
+  cheapest correct place to put a single branch. Table sizes (102400 rook,
+  5248 bishop) are the standard exact totals for this construction — sum
+  over 64 squares of 2^popcount(relevant_mask) — not the classical "fancy
+  magic" fixed-shift table size, since PEXT indexing has no collisions and
+  needs no slack. Verified via a from-scratch offline Python simulation
+  (same pdep-subset-enumeration + pext-lookup logic) against 20,000 random
+  occupancies before any FastPy code was written, and again post-wiring via
+  startpos perft(5) = 4,865,609 (exact match, ~5M leaf nodes).
+
+## D-60: Kiwipete perft bug — found, not yet fixed, confirmed pre-existing
+  Session 25's PEXT verification pass included a Kiwipete perft check as
+  an extra correctness stress test (Kiwipete is far more blocker-dense
+  than the startpos suite the existing tests cover, so it exercises
+  sliding-piece attack computation much harder). It failed badly:
+  perft(2) = 429 vs. the well-known expected value 2,039, and depth 3
+  crashes with a negative shift count — a king bitboard reaching 0 mid-
+  recursion, which means some move being generated or applied is letting a
+  king be captured/discarded illegally. Re-ran the identical check against
+  a copy of `engine.py` from before this session's changes (with only the
+  Session 25 `run.py` syntax-error fix applied, nothing else) and got the
+  same 429 — so this is unrelated to PEXT and has been silently present
+  for an unknown number of prior sessions. D-51 named Kiwipete "the
+  standard non-startpos benchmark/test" but no test ever actually
+  exercises it — `test_move_gen.py`'s perft coverage is startpos-only.
+  Most likely area: castling generation, since Kiwipete is the canonical
+  position with both sides holding both castling rights and pieces
+  adjacent to both rook start squares, and the node-count gap is far too
+  large to be one piece type's move gen. Not investigated further this
+  session — flagged as next session's priority in ROADMAP.md rather than
+  chased under an unrelated task's scope. A Kiwipete perft regression test
+  should be added to `test_move_gen.py` once fixed, so a gap this size
+  can never again go uncaught.

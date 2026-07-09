@@ -59,9 +59,44 @@ clean `fastpy build engine.py --optimize O3`. See D-58.
 - `fastpy` suite: 192/192 passing (182 existing + 10 new).
 - `fastpy-engine` suite: 185/185 passing, unaffected by either fix.
 
+### Next session (continued in the same Session 25)
+- Wired PEXT into bishop/rook/queen move generation. Added
+  `ROOK_ATTACK_TABLE[102400]` / `BISHOP_ATTACK_TABLE[5248]` (exact standard
+  totals — sum over all 64 squares of 2^popcount(relevant_mask)), plus
+  per-square `ROOK_MASKS`/`BISHOP_MASKS`/`ROOK_OFFSETS`/`BISHOP_OFFSETS` and
+  a `MAGIC_INIT[1]` flag, all following the exact zero-init-global +
+  lazy-init-guard pattern already established by `ZK_TABLE`/`ZK_TABLE_INIT`.
+  `init_magic_tables()` enumerates every occupancy subset of each square's
+  relevant mask via `pdep(i, mask)` and fills the table with the existing
+  ray-fill logic (kept as `rook_attacks_slow()`/`bishop_attacks_slow()`,
+  reference-only, never called from the hot path). `rook_attacks()`/
+  `bishop_attacks()` do the reverse: `pext(occupied & mask, mask)` to get
+  the same dense index back, single array read, no ray loop.
+  `generate_bishops`/`generate_rooks`/`generate_queens` now call these
+  instead of unioning ray_* functions directly. Init guard lives in
+  `generate_all_moves()` — the single chokepoint every move-gen path
+  (perft, alpha_beta, find_best_move's root) routes through, mirroring how
+  `find_best_move()` guards `ZK_TABLE_INIT`. `run.py` sizes and initializes
+  the new globals the same way it already does for `ZK_TABLE`/`TT_HASH`.
+  See D-59.
+
+  Verification: the full construction+lookup algorithm was simulated
+  offline in plain Python and checked against 20,000 random occupancies
+  (zero mismatches) *before* any FastPy code was written. After wiring:
+  `fastpy check`/`fastpy build --optimize O3` both clean, 185/185
+  fastpy-engine tests pass, 192/192 fastpy tests pass, and startpos
+  perft(5) via the new code path = 4,865,609 — exact match (~5M leaf
+  nodes, heavy sliding-piece exercise).
+
+  **Found a pre-existing, unrelated bug while stress-testing against
+  Kiwipete** (blocker-heavy position, D-51's standard benchmark): perft(2)
+  = 429 vs. expected 2,039, and a deeper search crashes on a king bitboard
+  going empty. Confirmed present in the pre-Session-25 code too — not
+  caused by this change. See D-60 and ROADMAP.md.
+
 ### Next session
-- PRIORITY: wire PEXT into bishop/rook move generation via precomputed
-  magic-bitboard attack tables — see ROADMAP.md and D-56.
+- PRIORITY: isolate and fix the Kiwipete perft bug (D-60) — likely in
+  castling generation. Add a Kiwipete perft regression test once fixed.
 
 ---
 
