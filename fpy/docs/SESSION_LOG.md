@@ -4,6 +4,54 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 26 — Kiwipete bug closed: it was never real. Third commit-didn't-land indentation regression, fixed.
+**Status:** COMPLETE ✅
+
+### Critical finding (before any new work)
+Baseline check found the repo broken for the third session running:
+`run.py` line 224 still had the stray 8-space indent in front of
+`def _alpha_beta_py(...)` that Session 25's log claimed to have fixed.
+The fix was correct when written, it just never landed in the commit
+pushed to `main`. Dedented the line; `ast.parse()` clean on both
+`run.py` and `engine.py`. No duplicate-definition regression this time
+(checked `pop_lsb`/`pext`/`pdep` — each defined once).
+
+### D-60 investigation (Kiwipete perft) — re-run and closed
+With `run.py` importing cleanly, ran the real `_parse_fen` +
+`_perft_py` against Kiwipete
+(`r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1`):
+perft(1)=48, perft(2)=2039, perft(3)=97862 — exact matches to the
+known-correct values. No crash, no negative shift, no king going
+missing. **The move generator was never broken.** The 429 figure in
+D-60 was a measurement artifact of the same broken `run.py` import —
+whatever produced it wasn't exercising the tested `_parse_fen`/perft
+path. See D-61 for full root-cause writeup.
+
+### What changed
+- `run.py`: dedented `_alpha_beta_py`'s def line (Change 1).
+- `tests/test_move_gen.py`: added `TestPerftKiwipete` (perft depths
+  1-3 against the Kiwipete FEN, imported via `run._parse_fen`) per
+  D-60's original instruction to add this regardless of root cause,
+  so a gap this size can't go uncaught again.
+
+### Verification
+- `python3 -m pytest tests/ -q` (fastpy-engine): 188/188 passing
+  (185 existing + 3 new Kiwipete perft tests).
+- `python3 -m pytest tests/ -q` (fastpy): 192/192 passing, unaffected.
+- `fastpy check engine.py`: zero errors.
+- `fastpy build engine.py --optimize O3`: compiles clean.
+
+### Next session
+- No open engine correctness bugs. Resume ROADMAP's ongoing-improvements
+  list: `__builtin_clzll` for MSB index, Windows support in
+  `toolchain.py`, Apple Silicon cross-compile flags, better parse error
+  messages, multi-file compilation, `match` statement support.
+- Keep the new baseline discipline (D-61): if SESSION_LOG.md's account
+  of a prior session's fix doesn't match the live file, treat every
+  other claim from that uncommitted session as unverified too.
+
+---
+
 ## Session 25 — Fixed a second build-breaking regression, shipped call-site arity checking
 **Status:** COMPLETE ✅
 

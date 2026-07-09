@@ -172,19 +172,29 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       the existing `ZK_TABLE_INIT` pattern. Algorithm verified offline
       against 20,000 random occupancies before being ported to FastPy;
       startpos perft(5) = 4,865,609 exact match post-wiring. See D-59.
-- [ ] **PRIORITY (next session): Kiwipete perft is badly wrong** —
-      perft(2) = 429 vs. expected 2,039 on
-      `r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1`,
-      and a deeper search crashes with a negative shift count (a king
-      bitboard going empty mid-recursion — something is generating or
-      applying an illegal king-losing move). **Confirmed present in the
-      pre-Session-25 code too — not caused by the PEXT change.** Never
-      caught because no test exercises Kiwipete despite D-51 naming it the
-      standard benchmark. Likely in castling generation given Kiwipete's
-      both-sides-both-rights setup, but unconfirmed — needs isolation
-      before fixing. Add a Kiwipete perft test to `test_move_gen.py`
-      regardless of root cause, so this never regresses silently again.
-      See D-60.
+- [x] Isolate the Kiwipete perft bug (Session 26) — **not a real bug.**
+      `run.py`'s `_parse_fen`/`_perft_py` give perft(1)=48, perft(2)=2039,
+      perft(3)=97862 against Kiwipete — exact matches to the known-correct
+      values, with `run.py` importing cleanly. The 429 figure was a
+      measurement artifact of the Session 24/25 indentation regression
+      (below), not a castling/move-gen defect. Added
+      `TestPerftKiwipete` (depths 1-3) to `test_move_gen.py` regardless,
+      per the original task. See D-61.
+- [x] Fix `run.py` line 224 indentation regression (Session 26) — the
+      Session 25 dedent fix for `_alpha_beta_py` was written up in
+      SESSION_LOG.md but never actually landed on `main`; the committed
+      file still had the stray 8-space indent, so `run.py` still failed
+      `ast.parse()` and every Python-mode path (including the Kiwipete
+      investigation above) was silently running against a broken import.
+      Third occurrence of this exact pattern (Sessions 24, 25, 26). See
+      D-61.
+- [ ] **PROCESS: stop trusting SESSION_LOG.md's account of a fix without
+      re-verifying the live file.** Three sessions running (24, 25, 26)
+      a fix was logged as complete but the committed `main` branch didn't
+      have it. Every session must re-run `ast.parse()` on `run.py` and
+      `fastpy check` on `engine.py` against the freshly-pulled repo
+      *before* trusting any prior session's "fixed" claim, not just at
+      baseline. See D-61.
 - [ ] Wire PEXT into bishop/rook move generation via precomputed
       magic-bitboard attack tables (replaces the current ray-fill loops
       in generate_bishops/generate_rooks) — natural next step now that

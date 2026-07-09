@@ -433,3 +433,38 @@ restriction there.
   chased under an unrelated task's scope. A Kiwipete perft regression test
   should be added to `test_move_gen.py` once fixed, so a gap this size
   can never again go uncaught.
+
+## D-61: D-60 was a measurement artifact — the real bug was a third
+  occurrence of the run.py commit-didn't-land pattern
+  Session 26 opened with the mandatory baseline re-check (per the D-58/
+  D-59 process) and found `run.py` line 224 still had the stray 8-space
+  indent in front of `def _alpha_beta_py(...)` that Session 25's log
+  entry claimed to have fixed — `ast.parse()` failed the same way it did
+  at the start of Session 25. The fix itself was correct when it was
+  written; it simply never made it into the commit that got pushed to
+  `main`. This is the third session in a row (24, 25, 26) where
+  SESSION_LOG.md described a clean, verified fix that the live branch
+  did not actually contain.
+
+  With that fixed, the D-60 Kiwipete investigation was re-run from
+  scratch using `run.py`'s own `_parse_fen`/`_perft_py` (not an ad hoc
+  script) and got perft(1)=48, perft(2)=2039, perft(3)=97862 — exact
+  matches to the known-correct Kiwipete values, no crash, no negative
+  shift. Conclusion: `generate_castling`, `make_move`'s rook relocation
+  on castling, and `is_sq_attacked` were never broken. The 429 figure
+  reported in D-60 was produced under conditions where `run.py` could
+  not have imported successfully (the same syntax error), meaning
+  whatever script produced it was not exercising the real `_parse_fen`/
+  move-gen path — most likely a hand-rolled, buggy substitute written
+  because the tested one was unavailable. `TestPerftKiwipete` (depths
+  1-3) was added to `test_move_gen.py` per D-60's original instruction
+  regardless of root cause.
+
+  Process change: baseline re-verification at the start of a session is
+  necessary but was insufficient here, because Session 25 *did* do a
+  baseline check and *did* fix the bug in its working copy — the gap is
+  between "fixed locally" and "actually committed." Going forward,
+  finding a discrepancy between SESSION_LOG.md's account and the live
+  `main` branch should immediately downgrade confidence in *any* other
+  claim from that same uncommitted session (e.g. D-60's investigation),
+  not just the specific file where the mismatch was caught.
