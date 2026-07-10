@@ -14,7 +14,26 @@ separate undertaking (training data, network format, inference code)
 that only makes sense to revisit once the base engine is proven
 functionally correct. No action taken now beyond noting this.
 
-### D7 — Remove Syzygy/Fathom tablebase integration entirely (for now)
+### D9 — D7 reconsidered: tablebase removal reversed, pending real evidence
+**Date:** 2026-07-10
+Directly tested the theory behind D7: set `SyzygyPath` to a nonexistent
+path and ran a search. **No hang, no crash** — the engine handled it
+gracefully ("Syzygy TBs loaded: up to 0 pieces") and continued working
+normally. This disproves the specific mechanism D7 was based on.
+
+Also, correctly called out: removing ~4,100 lines of working code and
+potentially re-adding it later is genuinely tedious, and shouldn't have
+been decided without testing the theory first, even with a "free hand"
+mandate — large, hard-to-reverse changes still warrant checking in
+before executing, not just after reasoning them through.
+
+**D7 is reversed.** Tablebase code stays. Roadmap's 🟣 removal section
+is retired unless real evidence turns up. The actual "no response at
+all" report is still unexplained and needs a proper reproduction
+(exact SyzygyPath value used, whether real .rtbw/.rtbz files were
+present, thread count, engine version) before any further action.
+
+### D7 — ~~Remove Syzygy/Fathom tablebase integration entirely (for now)~~ SUPERSEDED BY D9
 **Date:** 2026-07-10
 Context: Gokul reported the engine worked correctly against
 Fairy-Stockfish before adding the Syzygy tablebase ("C lib") files, and

@@ -74,17 +74,14 @@ reference (ported files) or a test suite (native files):
 - [ ] zobrist.cpp — should be a direct diff against the JS reference's
       `_zrand()` output; not yet done.
 
-## 🟣 Tablebase removal (decided, not yet done — D7)
+## 🟣 Tablebase — removal reversed (D9), needs real repro instead
 
-- [ ] Remove from build: syzygy.cpp, syzygy.h, tbprobe.c, tbprobe.h,
-      tbchess.c, tbconfig.h, stdendian.h.
-- [ ] Remove UCI options: SyzygyPath, SyzygyProbeLimit.
-- [ ] Remove call sites: root probe + interior-node probe in
-      search.cpp, TB init in uci.cpp's setoption handler.
-- [ ] Remove from CMakeLists.txt: conditional tbprobe.c target_sources
-      block and its EXISTS check/compile definitions.
-- [ ] Confirm engine still builds clean and passes the same repro tests
-      afterward.
+D7's removal decision was tested and disproven — a bogus SyzygyPath
+does not hang or crash the engine. Tablebase code **stays**. The
+original "no response at all" report is still unexplained. Needs from
+Gokul before further action: the exact SyzygyPath value used at the
+time, whether real .rtbw/.rtbz files were present, Threads setting, and
+roughly what happened (hang forever vs. crash vs. something else).
 
 ## ⬜ Renaming pass (not started)
 
@@ -93,8 +90,9 @@ reference (ported files) or a test suite (native files):
 - [ ] UCI subcommand `position c3 <fen>` → `position rogue <fen>`.
 - [ ] CMakeLists.txt: `project(C3Engine ...)` and `add_executable(c3engine ...)`
       → `rogue` naming.
-- [ ] (No third-party-naming exception needed anymore — Fathom/
-      stdendian.h are being removed entirely per D7, not kept.)
+- [ ] Exception: leave Fathom (tbprobe.*, tbchess.c, tbconfig.h) and
+      stdendian.h untouched — third-party vendored code (D2), stays in
+      the project per D9.
 - [ ] Decide: do the rename *before* or *after* the mate-in-1 bug is
       fixed? (Recommend: after — renaming now makes diffing against the
       JS reference for the bug hunt slightly more friction, no benefit
