@@ -563,3 +563,25 @@ restriction there.
   (fastpy-engine) after the fix, plus a fresh `fastpy check engine.py`
   and `ast.parse()` on `run.py`. No design change — this is a pure
   restoration of what D-64 already specified.
+
+## D-66: Parse-error caret annotation (Session 31) attaches the source
+  snippet in exactly one place — `parse_source()` — rather than at each
+  of `core/parser.py`'s ~15 individual `raise FastPyParseError(...)`
+  call sites. Those sites only ever have the AST `node` in scope, not
+  the original source text, so threading `source`/`source_file` through
+  every visitor method (`ExpressionVisitor`, `StatementVisitor`,
+  `ModuleVisitor`, and every helper they call) would have meant touching
+  dozens of signatures for a purely cosmetic feature. Instead
+  `FastPyParseError.__init__` now records `.lineno`/`.col_offset` off
+  the node it's given (as before) plus the raw message, and
+  `parse_source()` catches the error once, right where `source` is
+  already a local variable, and calls a new `.with_source()` method that
+  returns an equivalent error with a caret-annotated snippet appended —
+  same style as Python's own `SyntaxError` display (`File "x.py", line
+  N` / source line / `^` under the offending column). `FastPyParseError`
+  keeps `.raw_message` and `.node` accessible on the annotated instance
+  too, so anything that wants the structured data instead of the
+  formatted string (a future IDE integration, say) still can without
+  re-parsing the message. `main.py`'s three `except (FastPyParseError,
+  SyntaxError)` handlers needed no changes — they already just print
+  `str(e)`.

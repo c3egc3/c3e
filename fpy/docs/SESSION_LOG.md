@@ -4,6 +4,62 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 31 — Parse error messages now highlight the offending source line
+**Status:** COMPLETE ✅
+
+### `Continue` trigger
+Picked up the next unstarted ROADMAP item flagged at the end of Session
+30: "Better parse error messages (highlight offending source line)".
+Baseline re-verified already trustworthy from Session 30's fix, so went
+straight to implementation.
+
+### What changed
+`core/parser.py`'s `FastPyParseError` now carries `.lineno`/`.col_offset`
+(from the AST node it's raised with, as before) plus the raw message.
+`parse_source()` — the one place that has both the exception and the
+original source text in scope — catches the error and calls a new
+`.with_source()` method that appends a Python-`SyntaxError`-style caret
+snippet:
+
+```
+fastpy: parse error: Line 42: Unsupported expression: 'ListComp'. ...
+  File "engine.py", line 42
+    moves = [m for m in gen]
+             ^
+```
+
+None of the ~15 individual `raise FastPyParseError(...)` call sites
+throughout the file needed to change — they never had `source` in scope
+and still don't. `main.py`'s three CLI error handlers needed no changes
+either; they already just print `str(e)`.
+
+### Tests added
+`tests/test_parser.py::TestParseErrorSourceContext` — 7 new tests:
+file/line header present, source line text present, caret line present,
+caret column aligns exactly under the offending token, a plain
+`ast.parse()` `SyntaxError` is unaffected (never reaches
+`with_source()`), default `"<string>"` label used when `source_file` is
+omitted, and `.raw_message`/`.lineno` remain accessible on the annotated
+instance for any future non-string consumer (e.g. an IDE integration).
+
+### Verification
+- `fastpy` full suite: **294/294 passing** (287 prior + 7 new)
+- `fastpy check engine.py` on `fastpy-engine`'s `engine.py`, re-run
+  against the updated parser → zero errors, unaffected
+
+### Files changed
+- `fastpy/core/parser.py` — `FastPyParseError` + `parse_source()`, see D-66
+- `fastpy/tests/test_parser.py` — new `TestParseErrorSourceContext` class
+
+### Next session
+- Remaining ROADMAP ongoing-improvement items: multi-file compilation
+  support, `match` statement support.
+- Phase 6: NNUE evaluation, Lazy SMP multi-core search, target 1B NPS.
+- Re-run the Session 30/PROCESS baseline check (both repos' full test
+  suites against freshly-pulled `main`) before trusting this log.
+
+---
+
 ## Session 30 — Baseline recovery: `core/toolchain.py` was broken on `main`
 **Status:** COMPLETE ✅
 

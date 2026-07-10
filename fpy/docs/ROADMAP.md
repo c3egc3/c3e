@@ -243,6 +243,11 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       fallback exists; this is a known limitation, not fixed by flags.
       36 new tests in `tests/test_toolchain.py` (88 total for the module).
       See D-64.
-- [ ] Better parse error messages (highlight offending source line)
+- [x] Better parse error messages (highlight offending source line) —
+      `FastPyParseError` now appends a Python-`SyntaxError`-style caret
+      snippet (`File "x.py", line N` / source line / `^` under the
+      offending column), attached once in `parse_source()`. 7 new tests
+      in `tests/test_parser.py::TestParseErrorSourceContext` (294 total).
+      See D-66.
 - [ ] Multi-file compilation support
 - [ ] `match` statement support (Python 3.10+)
