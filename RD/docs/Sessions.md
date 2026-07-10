@@ -59,34 +59,54 @@ Newest entry first.
 (D9) after Gokul pushed back and a direct test disproved the hang
 theory — TB code stays untouched. Moved to the mate-in-1 bug.
 
-Built a standalone test harness (`src/test_repro.cpp`, sandbox-only,
-not delivered) linked directly against board.cpp/movegen.cpp/
-bitboard.cpp/zobrist.cpp, bypassing search entirely, to reproduce the
-exact position after `e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 f3e5`. Result at
-first: Black not in check, 32 legal moves — proved the bug wasn't in
-move-generation/check-detection in isolation.
+Built a standalone test harness (`src/test_repro.cpp`, sandbox-only) to
+reproduce the exact Nxe5 position via board.cpp/movegen.cpp directly,
+bypassing search — proved Black not in check with 32 legal moves there,
+ruling out move-generation/check-detection in isolation.
 
-Then instrumented the real engine directly (temporary debug prints in
-search.cpp, not shipped) at the exact branch that produces the mate
-score, and dumped the live board state when it fires. **The board
-itself is corrupted at that point** — pieces in positions no legal
-continuation of the actual move list could produce (a white pawn on
-e7, a vanished black knight with no capture, a bishop shown as never
-having moved despite being played earlier). This is a bigger, more
-serious finding than the original "false mate" framing: it's silent
-board-state corruption during search, and the false mate score is just
-one visible symptom of it.
+Instrumented the real engine (temporary debug prints in search.cpp) at
+the branch producing the mate score, and dumped live board state when
+it fired — found the board was genuinely corrupted (impossible piece
+placements). Added a Zobrist-mismatch canary around the main search
+loop's own make/unmake — came back clean, ruling out the obvious
+suspects (singular extension, null-move, multi-cut) as operating
+correctly *within that loop*.
 
-Leading theory: an incomplete make/unmake restoration in one of the
-search's speculative move-trial blocks (singular extension's manual
-trial loop, null-move pruning, or multi-cut pruning), all of which
-play and unplay moves internally before the real move of a node is
-tried.
+Rebuilt with AddressSanitizer + UndefinedBehaviorSanitizer
+(`-fsanitize=address,undefined`) and reproduced again — got a real,
+exact stack trace instead of continuing to guess. Root cause: `makeMove`
+and `unmakeMove` in board.cpp derived piece types from live
+`pieceAt[]` reads instead of the already-correct fields baked into
+each `Move` at generation time, causing an out-of-bounds write into
+`bb[color][6]` whenever any desync occurred anywhere — which corrupted
+adjacent memory, which move generation misread as phantom pieces,
+compounding the corruption further. First trigger traced specifically
+to move generation's own internal legality-check loop
+(movegen.cpp ~line 273), which does its own make/unmake per candidate
+move to test for self-check — a code path the earlier canary never
+covered since it only watched the main search loop.
 
-**Next session should start with:** Audit every make/unmake pair in
-search.cpp that isn't the main move loop — starting with the singular-
-extension trial loop (~lines 862-893), then null-move pruning, then
-multi-cut — for an UndoRecord that doesn't fully capture/restore state.
-Remove the temporary debug instrumentation from search.cpp once the
-real fix is in (it's sandbox-only, never delivered, but shouldn't be
-left in the working copy indefinitely either).
+**Implemented and verified the fix (D10):** both functions now trust
+the move's own recorded fields; every remaining piece-type-derived
+bitboard index is defensively guarded against `NO_PIECE_TYPE`. Rebuilt
+under ASan/UBSan and confirmed **zero warnings at search depth 10**
+(down from four confirmed out-of-bounds sites). The original repro now
+returns real, sane search results instead of a false mate.
+
+While verifying with a perft harness (`src/test_perft.cpp`,
+sandbox-only) against known-correct values for the standard start
+position, **found a second, separate, pre-existing bug**: perft(1) and
+perft(2) are exactly correct, but perft(3) undercounts by 198 moves
+(8,704 vs. the correct 8,902), with the gap widening further at deeper
+depths. Confirmed clean under sanitizers — this is a logic bug (moves
+wrongly excluded), not a memory-safety one. Leading suspects: castling
+rights or en-passant availability after 2+ ply, since those are the
+only mechanics that only start mattering once pieces have actually
+moved — consistent with depth 1-2 passing and depth 3+ failing.
+
+**Next session should start with:** Bisect the perft(3) gap — compare
+per-first-move move counts (a "perft divide") against known-correct
+values to narrow down whether castling rights or en passant is the
+culprit, then fix and re-verify perft through at least depth 5. Once
+perft is clean, that's a strong signal core rules are solid enough to
+consider the renaming pass and first real upload to `rogue-dragon`.

@@ -5,6 +5,35 @@ changed (that's Sessions.md).
 
 ---
 
+### D10 — First real code fix: make/unmake now trusts move-record fields, not live board state
+**Date:** 2026-07-10
+Implemented and verified the fix for the board-corruption/false-mate bug
+(see Roadmap ✅). Changed `makeMove` and `unmakeMove` in board.cpp so
+every piece-type lookup used to index `bb[color][type]` comes from the
+`Move` struct's own `attackerType`/`capturedType`/`promo` fields
+(already correctly set by the move generator at generation time)
+instead of re-reading `pieceAt[from]`/`pieceAt[to]` at make/unmake time.
+Added defensive `NO_PIECE_TYPE` guards on every remaining bitboard index
+derived from a piece type, so a future desync (if one ever occurs, from
+any cause) fails safe — skips that specific update — instead of writing
+out of bounds and corrupting adjacent memory.
+
+Diagnosed using AddressSanitizer + UndefinedBehaviorSanitizer builds,
+which gave exact, real stack traces rather than requiring guesswork —
+this is the method going forward for any future "impossible state"
+bug: build with `-fsanitize=address,undefined -fno-omit-frame-pointer`,
+reproduce, read the trace. Verified clean (zero warnings) at search
+depth 10 after the fix, versus four distinct confirmed out-of-bounds
+write sites before it.
+
+Not yet delivered to Gokul as files — this is still in Claude's sandbox
+working copy of the (renamed-later) engine source. Delivery happens once
+the newly-found perft bug (Roadmap 🔴) is also resolved, so the two
+don't need two separate review/upload cycles for what's still the same
+underlying "get core rules verifiably correct" milestone.
+
+---
+
 ### D8 — NNUE: out of scope for now, optional future addition
 **Date:** 2026-07-10
 Confirmed with Gokul: NNUE evaluation is not part of the current work.

@@ -6,34 +6,54 @@ checked yet."
 
 ## 🔴 Confirmed bugs
 
-- [ ] **Board state corruption during search — root cause of the mate-in-1
-      bug, and worse than originally understood.** Instrumented the real
-      engine directly (temporary debug prints, not shipped) at the
-      `movesDone==0` branch and dumped the actual board contents when it
-      fires. **The board is corrupted** — it doesn't match any legal
-      continuation of the actual moves played: a white pawn appears on
-      e7, a black pawn appears on e4, Black's b8 knight vanishes with no
-      corresponding capture, and the f1 bishop shows as never having
-      moved despite `f1b5` being earlier in the same move list. This
-      isn't a scoring/mate-detection bug — the position itself is wrong
-      by the time this node is reached. The earlier "isolated to
-      search.cpp" finding stands, but the mechanism is now understood to
-      be **incomplete make/unmake restoration**, not a legality-check or
-      move-generation bug (board.cpp/movegen.cpp were independently
-      verified correct in isolation — see earlier entries below).
-      **Leading suspects, in priority order:** (1) the singular-extension
-      trial-move loop (search.cpp ~862-893) — plays and unplays several
-      sibling moves manually with its own UndoRecord before the real
-      move is tried; (2) null-move pruning; (3) multi-cut pruning. All
-      three do speculative make/unmake *before* the real move of a node,
-      so a leak in any of them would corrupt state for everything that
-      follows in that branch, exactly matching what was observed.
-      **Top priority — this is a fundamental correctness bug, worse than
-      originally scoped**, since silent board corruption can produce
-      arbitrarily wrong play, not just occasional bad mate claims. Next
-      session: audit every UndoRecord-based make/unmake pair in
-      search.cpp for a field that isn't captured/restored, starting with
-      the singular-extension block.
+## ✅ Fixed and verified this session
+
+- [x] **Board state corruption / false mate claims — FIXED.** Root cause:
+      `makeMove` and `unmakeMove` in board.cpp derived piece types from
+      live board state (`pieceAt[from]`/`pieceAt[to]`) instead of
+      trusting the already-correct fields baked into the `Move` struct
+      at generation time (`attackerType`, `capturedType`, `promo`). Any
+      transient desync anywhere caused an out-of-bounds write into
+      `bb[color][6]` (valid range 0-5), silently corrupting adjacent
+      memory — which cascaded into phantom pieces on empty squares,
+      which move generation would then "play," compounding the
+      corruption further. Traced to its origin using
+      AddressSanitizer/UndefinedBehaviorSanitizer builds (full stack
+      traces, not guesswork) — the actual first trigger is move
+      generation's own internal legality-check loop
+      (movegen.cpp, ~line 273), which calls `makeMove`/`unmakeMove`
+      once per pseudo-legal candidate to test for self-check.
+      **Fix:** both functions now trust the move's own recorded fields,
+      and every remaining bitboard index derived from a piece type is
+      guarded against `NO_PIECE_TYPE` as a defensive backstop. Verified
+      with a clean ASan/UBSan run at depth 10 (zero warnings, down from
+      four distinct out-of-bounds write sites) and the original repro
+      (`e2e4 e7e5 g1f3 b8c6 f1b5 a7a6`, `go depth 10`) now returns real
+      search results (nodes scaling normally, sane scores, a
+      legitimately-verified `mate 2` later in the same search — board
+      dumps at that point show a real, sane position) instead of the
+      false `mate 1` after 196 nodes.
+
+## 🔴 New confirmed bug (found via perft while verifying the fix above)
+
+- [ ] **Legal moves missing starting at depth 3.** Perft from the
+      standard starting position: depth 1 = 20 (correct), depth 2 = 400
+      (correct), **depth 3 = 8,704 vs. the known-correct 8,902** — 198
+      moves missing, and the gap widens at deeper depths (4865609
+      expected vs 4589427 actual at depth 5). Undercounting (not
+      overcounting) points toward legal moves being wrongly excluded —
+      leading suspects are castling-rights tracking or en-passant
+      availability after 2+ ply, since those are the two things that
+      only become relevant once pieces have actually moved (matching
+      why depth 1-2 pass but depth 3+ doesn't). Verified independent of
+      the corruption bug above — clean under ASan/UBSan, so this is a
+      logic bug, not a memory-safety one. Confirmed via a standalone
+      perft harness (`src/test_perft.cpp`, sandbox-only) against
+      textbook-known perft values for the standard start position.
+      **Next investigation step:** bisect which specific depth-3 lines
+      are missing (compare move lists against a known-correct external
+      perft divide, e.g. `perft divide` style output by first move) to
+      narrow down whether it's castling or en passant specifically.
 - [ ] **Investigate "engine stopped responding entirely" report.**
       Gokul reported total non-response after adding the Syzygy
       tablebase files, tested against Fairy-Stockfish (separate symptom
