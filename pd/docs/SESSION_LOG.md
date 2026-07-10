@@ -7,6 +7,60 @@ Most recent session at TOP.
 
 ---
 
+## Session 58 — 2026-07-10 (D36: pinned-ref UCI match harness built)
+
+**Built:** `src/bin/uci_match_runner.rs` — new match harness that spawns
+two separate `pet_dragon` binaries as OS child processes and plays them
+against each other over real UCI (stdin/stdout), unlike `match_runner.rs`
+(Phase 17.2) which A/Bs NNUE blend weight within one binary. This is what
+makes a genuine pre/post-Texel-tuning HCE Elo number measurable — point it
+at a binary built from before the Session 55 tuning commit and one from
+`main`. Also built `.github/workflows/uci_match_runner.yml`, a manual-
+dispatch workflow that checks out and builds both refs plus the harness,
+then runs the match and uploads results — same pattern as
+`match_runner.yml` (D19/D20).
+
+**Design decision:** D36 — see DECISIONS.md. Chose pinned-ref UCI over
+refactoring `eval/*.rs` to runtime-loadable weights, because the runtime-
+weights approach touches the hottest path in the engine (`evaluate()`) for
+a one-time measurement, and doesn't even avoid needing an old git ref
+anyway (the pre-tuning literal values are already gone from the working
+tree). Gokul approved this design before any code was written (asked via
+in-chat confirmation, not assumed).
+
+**Verification this session:** Pulled the full repo tarball into the
+sandbox, dropped the new file into `src/bin/`, and ran
+`cargo check --bin uci_match_runner --release` against the real crate —
+compiled clean, zero warnings from the new file (pre-existing unrelated
+warnings elsewhere untouched). Could NOT run `cargo test` in-sandbox — the
+sandbox's rustc 1.75 (installed via `apt`, since `rustup`'s download
+domain isn't in this environment's network allowlist) hit a transitive
+dev-dependency requiring the `edition2024` Cargo feature, which isn't
+stabilized until a newer toolchain. This is a sandbox tooling limitation,
+not a defect in the new file — `cargo check` (which doesn't pull dev-deps)
+passed, and the real repo's CI runs on a current stable toolchain via
+`dtolnay/rust-toolchain@stable`, so the tests as written are expected to
+run fine there. Flagging this honestly rather than claiming a green test
+run that didn't actually happen.
+
+**Bugs fixed:** None (new files only, per this session's scope).
+
+**Decisions made:** D36 (see above and DECISIONS.md).
+
+**Next session start point:** Nothing to build yet. Gokul needs to (1)
+find the git SHA immediately before the Session 55 Texel-tuning commit
+(mobile GitHub app -> Commits, search "Session 55" or "tuned weights", use
+the parent SHA — Claude couldn't confirm this SHA directly this session,
+api.github.com anonymous rate limit was hit), (2) run
+`uci_match_runner.yml` from the Actions tab with that SHA as
+`pre_tuning_ref`. Next session should start by checking whether that run
+happened and what the result was — if yes, close out ROADMAP 17.8 as [x]
+and fold the real Elo number into the milestone table; if not, no code
+task is queued and the same "what's next" question from Session 57
+applies again.
+
+---
+
 ## Session 57 — 2026-07-10 (ROADMAP.md accuracy pass — no code changes)
 
 **Built:** Nothing — Session 56's log explicitly closed with "no specific

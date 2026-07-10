@@ -598,3 +598,49 @@ session as the audit — rejected due to session length/fatigue risk on a
 piece of code with no compiler available to catch mistakes and no
 intermediate verification possible until the whole thing (all 6 modules)
 is complete enough to run the self-consistency test.
+
+## D36 — Pre/Post-Texel-Tuning Elo: Pinned-Ref UCI Match, Not Runtime Weights (2026-07-10)
+
+**Decision**: To get a genuine pre/post-Texel-tuning Elo number (gap left
+open by 17.5/17.7 — `match_runner.rs`/17.2 can only A/B NNUE blend weight
+within one compiled binary, not two different HCE weight sets), build a
+second, independent match harness (`src/bin/uci_match_runner.rs`) that
+spawns TWO SEPARATE `pet_dragon` binaries as OS child processes — one built
+from a git ref before the Session 55 tuning commit, one from `main` — and
+plays them against each other over real UCI (stdin/stdout), the same way
+any two engines are matched by a GUI or tournament manager. A new workflow
+(`uci_match_runner.yml`) checks out and builds both refs plus the harness
+itself, then runs the match, mirroring `match_runner.yml`'s manual-dispatch
+pattern (D19/D20).
+
+**Rejected alternative**: Refactor `eval/*.rs` (material, tables, mobility,
+pawns, king_safety, open_lines) to read weights from a runtime struct
+instead of compile-time consts, then A/B a pre-tuning and post-tuning
+profile within one binary like the NNUE blend already does. Rejected for
+two reasons: (1) `evaluate()` runs at every leaf node — it's the hottest
+path in the engine, and the added indirection risks a real NPS regression
+plus risks breaking D35's exact-agreement self-consistency guarantee, for
+what is a one-time measurement, not a permanent feature; (2) the original
+pre-tuning Ethereal-derived literal values are already gone from the
+working tree (Session 55 overwrote them in place) — recovering them would
+require pulling an old git ref anyway, so the "runtime weights" approach
+doesn't even avoid needing a pinned ref. The pinned-ref UCI approach gets
+the same answer with zero changes to any shipped eval code.
+
+**Design notes**:
+- Harness tracks game state locally (movegen/position, same generator as
+  `match_runner.rs`/`selfplay.rs`) purely for legality and termination
+  checks; each engine process is treated as a black box that only sees
+  `position`/`go`/`bestmove` over UCI — exactly what a real GUI sees.
+- `parse_uci_move` is duplicated from `main.rs` rather than exported from
+  the library — it's a thin UCI-string-to-Move lookup with a single
+  caller, not worth growing the public library surface for.
+- Known limitation, accepted: no per-move timeout on the child process
+  read — a hung engine blocks the harness indefinitely, bounded only by
+  the CI job's own overall timeout. Acceptable for a manually-triggered,
+  one-off tool; would need revisiting if this were ever promoted to a
+  routinely-scheduled job.
+- `pre_tuning_ref` is a required workflow input with no default (Gokul
+  supplies the SHA via the mobile GitHub app's commit history) rather than
+  hardcoded, since Claude could not reliably confirm the exact pre-Session-55
+  commit SHA this session (api.github.com anonymous rate limit hit).

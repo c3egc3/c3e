@@ -510,6 +510,25 @@
             left in this file previously — runtime-loadable HCE weights,
             or a second binary from a pinned pre-tuning git ref over UCI
             — worth a DECISIONS.md entry before building, not a quick add).
+- [~] 17.8 — D36 (Session 57): built the pinned-ref UCI match infra flagged
+            in 17.7's caveat. New files: `src/bin/uci_match_runner.rs`
+            (spawns two separate `pet_dragon` binaries as child processes,
+            plays them over real UCI — genuinely different engines, not an
+            in-process weight swap) and `.github/workflows/uci_match_runner.yml`
+            (manual dispatch, builds both refs + the harness, runs the
+            match). Compiled clean against the real crate this session
+            (`cargo check --bin uci_match_runner --release`, zero warnings
+            from the new file); unit tests written but not run in-sandbox
+            (local sandbox rustc 1.75 can't build a transitive dev-dependency
+            that needs edition2024 — unrelated to this file, CI's toolchain
+            is current so this isn't expected to block there). Marked [~]
+            not [x]: the harness exists but has not actually been run yet.
+            NEXT ACTION (Gokul): find the git SHA of the commit immediately
+            before the Session 55 Texel-tuning commit (mobile GitHub app ->
+            Commits, search "Session 55" or "tuned weights", use the parent
+            SHA), then run `uci_match_runner.yml` from the Actions tab with
+            that as `pre_tuning_ref`. Once a real result comes back, close
+            this out as [x] and fold the number into the milestone table.
 
 ---
 
