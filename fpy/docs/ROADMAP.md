@@ -219,7 +219,17 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       it first. `.exe` suffix auto-added to output paths on Windows.
       52 new tests in `tests/test_toolchain.py` — previously zero
       coverage existed for this module. See D-63.
-- [ ] Apple Silicon cross-compilation flags
+- [x] Apple Silicon cross-compilation flags (Session 29) — `compile_cpp()`
+      gained `target_arch` ("x86_64"/"arm64"). ARM64 target: swaps
+      `-march=native` for `-mcpu=native` and drops `CHESS_FLAGS`
+      (`-mpopcnt`/`-mbmi`/`-mbmi2` are x86-only, would error out on ARM);
+      on macOS an explicit `target_arch` also adds Apple Clang's
+      `-arch <arch>`. Pre-flight rejects ARM64 target + PEXT/PDEP source
+      with a clear message instead of a cryptic `immintrin.h` error —
+      PEXT-based magic bitboards (D-59) remain x86-only, no ARM64
+      fallback exists; this is a known limitation, not fixed by flags.
+      36 new tests in `tests/test_toolchain.py` (88 total for the module).
+      See D-64.
 - [ ] Better parse error messages (highlight offending source line)
 - [ ] Multi-file compilation support
 - [ ] `match` statement support (Python 3.10+)

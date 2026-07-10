@@ -502,7 +502,34 @@ restriction there.
   because it sidesteps this whole problem — same MSVC flag dialect
   cl.exe users already have installed via Visual Studio, but Clang
   underneath, so the exact same `__builtin_*` calls just work. If native
-  cl.exe support for these three patterns is ever wanted, the correct
-  fix is a target-compiler-aware translation step *after* emission, not
-  inside `core/intrinsics.py` itself — keeps the "emitter does zero
-  analysis" rule intact while still solving the problem elsewhere.
+  If native cl.exe support for these three patterns is ever wanted, the
+  correct fix is a target-compiler-aware translation step *after*
+  emission, not inside `core/intrinsics.py` itself — keeps the "emitter
+  does zero analysis" rule intact while still solving the problem
+  elsewhere.
+
+## D-64: Apple Silicon / ARM64 support in `toolchain.py` follows the exact
+  same shape as D-63's MSVC decision, for the exact same underlying
+  reason. Two independent things needed fixing, and only one of them
+  actually could be:
+  1. `-march=native`/`-mpopcnt`/`-mbmi`/`-mbmi2` are x86-only flags that
+     GCC/Clang reject outright on an ARM64 target — this was a real bug
+     (any ARM64 build would fail immediately, not just underperform),
+     fully fixable in `toolchain.py` alone via arch-aware flag selection
+     (`-mcpu=native` instead of `-march=native`, `CHESS_FLAGS` dropped
+     entirely since ARM64 has no BMI2 to enable).
+  2. PEXT/PDEP-based magic bitboard move generation (D-59) depends on
+     `<immintrin.h>`, which doesn't exist outside x86/x86_64 — this is
+     NOT fixable in `toolchain.py`, because the problem is in what
+     `core/intrinsics.py` emits, not in how it gets compiled. Same
+     CORE RULE 5 tension as D-63: teaching the emitter about target
+     architecture would mean either violating "the emitter does zero
+     analysis" or adding a distinct post-emission translation pass.
+  `compile_cpp()` handles (1) directly and pre-flight-rejects (2) with a
+  message naming the actual constraint, rather than letting either
+  produce a compiler error several layers into a build log. If genuine
+  ARM64 `engine.py` builds are ever wanted, the fix is a portable
+  software PEXT/PDEP fallback selected by that same future post-emission
+  translation step — not a change to `core/intrinsics.py`'s pattern
+  matching itself, and not something achievable by any combination of
+  compiler flags.

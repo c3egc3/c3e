@@ -4,6 +4,97 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 29 — Apple Silicon / ARM64 cross-compilation flags in toolchain.py
+**Status:** COMPLETE ✅
+
+### Baseline re-check
+Continued directly in the same conversation as Session 28 (no fresh-window
+`Go` this time — user said "Continue" mid-session). Re-pulled
+`core/toolchain.py` and `tests/test_toolchain.py` fresh from `main` and
+grepped for Session 28's specific new symbols (`_is_true_msvc`,
+`MSVC_INCOMPATIBLE_BUILTINS`, `clang-cl`) — confirmed landed. Synced local
+working copy to the verified live version before making any further
+edits, then re-ran the full suite (251/251) as a baseline before touching
+anything.
+
+### What changed (g-c-3/fastpy) — `core/toolchain.py`
+Found a real bug hiding in plain sight: `OPT_FLAGS["O3"]` hardcoded
+`-march=native`, and `CHESS_FLAGS` hardcoded `-mpopcnt -mbmi -mbmi2` —
+all four are x86-only. Any build targeting ARM64 (Apple Silicon, or Linux
+aarch64) would have failed immediately with "unsupported option" errors,
+not just produced suboptimal code. Fixed:
+
+- `HOST_ARCH` / `IS_MACOS` module constants (via `platform.machine()`
+  and `sys.platform`).
+- `_normalize_arch()` — folds `aarch64`→`arm64`, `amd64`/`x64`→`x86_64`.
+- `_resolve_target_arch()` / `_is_arm()` / `_is_native_build()` — arch
+  resolution helpers, defaulting to the host's own arch when unspecified.
+- `_native_tuning_flags()` — `-march=native` for x86_64, `-mcpu=native`
+  for ARM64, and **nothing** for a genuine cross-build (there's no
+  sensible "native" tuning for a CPU that isn't the host's own — this
+  was a real design decision, not an oversight: guessing a tuning flag
+  for a foreign target would be worse than omitting it).
+- `_build_command()` and `compile_cpp()` gained a `target_arch` parameter
+  ("x86_64"/"arm64"/"aarch64"). For ARM64 targets, `CHESS_FLAGS` are
+  dropped entirely (no BMI2/PEXT instruction exists on ARM64 at all, so
+  there's nothing to "enable"). On macOS, an explicit `target_arch` also
+  adds Apple Clang's `-arch <arch>` — the same flag Xcode uses for
+  universal binaries. Omitting `target_arch` entirely reproduces the
+  exact pre-Session-29 command line, verified by a dedicated test.
+- `ARM_INCOMPATIBLE_INTRINSICS` + `_arm_incompatible_intrinsics_used()` —
+  mirrors Session 28's MSVC-builtin pre-flight pattern: if the target is
+  ARM64 and the source contains `_pext_u64`/`_pdep_u64`/`<immintrin.h>`,
+  `compile_cpp()` returns `ok=False` with a clear message *before*
+  invoking the compiler, rather than a `immintrin.h: No such file or
+  directory` error. Deliberately does NOT flag `__builtin_popcountll`/
+  `ctzll`/`clzll` — those are portable GCC/Clang builtins that compile
+  fine on ARM64, unlike the x86-only SIMD-header intrinsics.
+- `compile_file()` gained the same `target_arch` passthrough.
+
+### Known limitation (see D-64)
+This does NOT make `engine.py`'s PEXT-based magic bitboard move
+generation (wired in Session 25, D-59) actually compile for ARM64.
+`_pext_u64`/`_pdep_u64` come from `<immintrin.h>`, which doesn't exist
+outside x86/x86_64 — no flag combination changes that. This is the exact
+same shape of gap as Session 28's MSVC/GCC-builtin limitation (D-63):
+correct flag handling for what generalizes, a fast clear rejection for
+what doesn't, and an honest decision record instead of a flag that
+pretends to solve a problem it can't.
+
+### Tests — `tests/test_toolchain.py` (36 new tests, 88 total for the module)
+One test needed fixing first: `test_o3_uses_march_native_on_gcc` asserted
+`-march=native` was in the static `OPT_FLAGS["O3"]` list, which is no
+longer true now that the tuning flag is chosen dynamically per
+architecture — replaced with a test asserting the static table is now
+just `["-O3"]`. New coverage: arch-string normalization, native-build
+detection, dynamic tuning-flag selection (x86/ARM/cross, using
+`monkeypatch` on `HOST_ARCH` to exercise all three without needing actual
+different hardware), ARM-incompatible-intrinsic detection, architecture
+branching in `_build_command` (including confirming MSVC dialect is
+completely unaffected by `target_arch` — ARM64 Windows is out of scope),
+the ARM64 pre-flight rejection end-to-end (and confirming the *same*
+PEXT source compiles fine when the target is x86_64 — the rejection is
+architecture-specific, not blanket), and a real end-to-end O3 build on
+this machine confirming the dynamic-tuning-flag restructuring didn't
+change actual native build behavior.
+
+Full fastpy suite: 287/287 passing (251 + 36 new). fastpy-engine
+untouched this session, still 196/196. `fastpy check`/`build` on
+`engine.py` still clean, still correctly emits `-O3 -march=native` on
+this x86_64 host.
+
+### Next session
+- Better parse error messages.
+- Multi-file compilation support.
+- `match` statement support.
+- (Longer-term, not urgent) a possible portable software PEXT/PDEP
+  fallback in the emitter for genuine ARM64 engine.py builds, if that's
+  ever actually wanted — would need to be a distinct post-emission
+  translation step per D-63/D-64's reasoning, not a change to
+  `core/intrinsics.py` itself.
+
+---
+
 ## Session 28 — Windows support: MSVC/MinGW/clang-cl detection in toolchain.py
 **Status:** COMPLETE ✅
 
