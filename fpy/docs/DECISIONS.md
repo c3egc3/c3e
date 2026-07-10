@@ -533,3 +533,33 @@ restriction there.
   translation step — not a change to `core/intrinsics.py`'s pattern
   matching itself, and not something achievable by any combination of
   compiler flags.
+
+## D-65: Session 30 baseline check found `core/toolchain.py` on `main`
+  fully broken — `IndentationError` at parse time, so `import core`
+  (and therefore every single fastpy test) failed before any test could
+  even collect. This is the sixth occurrence of the pattern the ROADMAP
+  PROCESS note calls out (Sessions 24, 25, 26, and now this one), except
+  this time the damage was worse than a stray indent: `_build_command()`
+  had been truncated mid-function — its GCC/Clang-dialect return
+  statement was replaced by an orphaned `compiler=found_compiler,)`
+  fragment — and the ARM64 pre-flight-rejection block that belonged
+  inside `compile_cpp()` (using `compile_cpp`'s own `cpp_source` and
+  `found_compiler` locals) had been spliced into `_build_command()`
+  instead, a function that has neither variable in scope. Root cause
+  looks like a bad manual merge/paste at the end of Session 29, not a
+  logic error — the *design* described in D-64 was correct and is
+  preserved exactly; only the literal text of the file was mangled.
+  Fix: reconstructed `_build_command()`'s tail (opt/chess/apple-arch
+  flags → final command list, matching the shape every
+  `TestBuildCommandArchitecture` test already asserted), moved the
+  ARM64 rejection block back into `compile_cpp()` immediately after the
+  existing MSVC rejection block, and — a second real bug found in the
+  same spot — fixed `compile_cpp()`'s call to `_build_command()`, which
+  was missing `target_arch=target_arch` entirely, meaning even a
+  syntactically-valid version of Session 29's code would have silently
+  never applied any ARM64/cross-arch flag from `compile_cpp()`, only
+  from calling `_build_command()` directly (i.e. only in tests, never
+  in real use). Full suite re-verified at 287/287 (fastpy) and 196/196
+  (fastpy-engine) after the fix, plus a fresh `fastpy check engine.py`
+  and `ast.parse()` on `run.py`. No design change — this is a pure
+  restoration of what D-64 already specified.

@@ -4,6 +4,81 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 30 — Baseline recovery: `core/toolchain.py` was broken on `main`
+**Status:** COMPLETE ✅
+
+### `Go` trigger — baseline re-check found a hard failure
+Pulled both repos + all six docs fresh via `curl`/tarball per the `Go`
+protocol. Before touching the ROADMAP's next-task list, ran the
+PROCESS-mandated re-verification (per the open ROADMAP bullet from
+Sessions 24-26): `python -m pytest tests/` on the freshly-pulled
+`fastpy` repo. It didn't even collect —
+
+```
+IndentationError: unexpected indent (core/toolchain.py, line 474)
+```
+
+`core/__init__.py` imports `core.toolchain` at package level, so this
+broke *every* test in the suite, not just toolchain's own, and would
+have broken `fastpy check`/`build`/`emit` for anyone pulling `main`.
+
+### Root cause
+`_build_command()` (added/modified in Session 29) was truncated
+mid-function: its real ending — compute Apple-arch flags, return the
+final GCC/Clang command list — was replaced by an orphaned
+`compiler=found_compiler,\n            )` fragment that belongs to a
+`CompileResult(...)` call, not this function. Immediately below that,
+the ARM64 x86-intrinsic pre-flight-rejection block had been spliced
+into `_build_command()` instead of `compile_cpp()` — but `_build_command()`
+has neither `cpp_source` nor `found_compiler` in scope, so even fixing
+just the indentation wouldn't have made it correct. This reads as a bad
+manual merge/paste at the tail end of Session 29, not a logic bug — the
+design in D-64 was right; the committed text of the file wasn't.
+
+While reconstructing the correct code, found a second, independent bug
+in the same neighborhood: `compile_cpp()`'s call to `_build_command()`
+was missing `target_arch=target_arch` — so even a syntactically valid
+version of Session 29's change would have silently never propagated
+`compile_cpp()`'s `target_arch` argument into the actual command
+construction. Only the direct `_build_command()` unit tests (which pass
+`target_arch` straight through) would have caught anything was wrong;
+any real `compile_cpp(target_arch="arm64")` call would have silently
+built a native-host command instead.
+
+### Fix
+- `core/toolchain.py`: rebuilt `_build_command()`'s tail (opt flags →
+  chess flags → Apple `-arch` flags → extra flags → `[cpp_path, "-o",
+  output_path]`), removed the misplaced ARM64 check + duplicate
+  temp-file/build fragment from inside it.
+- Re-inserted the ARM64 pre-flight rejection into `compile_cpp()`,
+  directly after the existing true-MSVC rejection block, where
+  `cpp_source` and `found_compiler` are actually in scope.
+- Fixed `compile_cpp()`'s `_build_command()` call to pass
+  `target_arch=target_arch`.
+- No design change from D-64 — this is a restoration, not a redesign.
+
+### Verification (all re-run fresh post-fix, not trusted from any prior log)
+- `python3 -c "import ast; ast.parse(...)"` on `core/toolchain.py` → OK
+- `fastpy` full suite: **287/287 passing**
+- `fastpy-engine`: `ast.parse()` on `run.py` → OK; `fastpy check engine.py`
+  → zero errors; full engine suite: **196/196 passing** (untouched this
+  session — confirms the corruption was isolated to `toolchain.py`)
+
+### Files changed
+- `fastpy/core/toolchain.py` — REPLACE (bugfix only, see D-65)
+
+### Next session
+- Re-attempt the actual next ROADMAP items now that baseline is
+  trustworthy again: better parse error messages, multi-file
+  compilation support, `match` statement support, NNUE evaluation,
+  Lazy SMP.
+- Keep the ROADMAP PROCESS bullet unchecked — this is now the *second*
+  time (Sessions 24-26, and now 29→30) that a session's own "tests
+  passing" claim didn't match what was actually committed. Re-verifying
+  at the start of every session remains mandatory, not optional.
+
+---
+
 ## Session 29 — Apple Silicon / ARM64 cross-compilation flags in toolchain.py
 **Status:** COMPLETE ✅
 

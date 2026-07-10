@@ -205,7 +205,20 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       have it. Every session must re-run `ast.parse()` on `run.py` and
       `fastpy check` on `engine.py` against the freshly-pulled repo
       *before* trusting any prior session's "fixed" claim, not just at
-      baseline. See D-61.
+      baseline. See D-61. **Recurred in Session 30**: Session 29 logged
+      "287/287 passing" but `core/toolchain.py` on `main` had an
+      `IndentationError` that broke `import core` entirely — the module
+      couldn't have been importable when that claim was made. Extend the
+      rule to `fastpy` itself, not just `fastpy-engine`: every session
+      must run `python -m pytest tests/` in **both** repos against the
+      freshly-pulled `main` before trusting any prior "N/N passing"
+      claim, not just `ast.parse`/`fastpy check` on the engine files.
+      See D-65.
+- [x] Baseline recovery (Session 30) — `core/toolchain.py` restored after
+      a corrupted merge broke `_build_command()` and misplaced the ARM64
+      pre-flight check; `target_arch` passthrough bug in `compile_cpp()`
+      also fixed. 287/287 (fastpy) + 196/196 (fastpy-engine) reverified.
+      See D-65.
 - [x] Windows support (MSVC/MinGW detection in `toolchain.py`) (Session 28) —
       four backends detected: g++/clang++ (MinGW, GCC dialect), clang-cl
       (MSVC dialect, Clang underneath), cl (true MSVC). Windows search
