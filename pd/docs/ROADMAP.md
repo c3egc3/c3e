@@ -1,4 +1,4 @@
-# ROADMAP.md
+''# ROADMAP.md
 # Pet Dragon — Development Roadmap
 
 ## How to Read This File
@@ -379,6 +379,21 @@
 - [x] 17.4 — Ran 0% vs 25%, 20 games/100ms/move: A (0%) scored 87.5%,
              +338 Elo. Default weight dropped to 0% (D25). NNUE blend
              mechanism stays available as a UCI option for future retests.
+- [ ] 17.5 — Session 56 (post Phase-14 Texel tuning): discovered
+             match_runner.rs can only A/B two NNUE blend weights of the
+             SAME compiled binary — it CANNOT measure true before/after
+             Elo for a Texel-tuning round, since HCE weights are
+             compile-time consts in eval/*.rs, not runtime-swappable, and
+             the pre-tuning Ethereal-derived values are gone once a tuning
+             delta lands. Recommended immediate substitute: weight_a=0
+             (tuned HCE) vs weight_b=100 (pure NNUE) — new, useful signal,
+             zero new code, but NOT a real "did tuning help" measurement.
+             If a genuine pre/post-tuning Elo number is ever wanted, it
+             needs deliberate design (likely: runtime-loadable HCE weight
+             tables, or a second binary built from a pinned pre-tuning git
+             ref playing over UCI) — worth a DECISIONS.md entry before
+             building, given the added runtime complexity trade-off for a
+             one-time measurement. Not started.
 - [x] 17.5a — D26 sweep complete (Session 39). A=0% vs B={5,10,15,20}%,
             40 games each, seed_start=0. ALL four net-negative for B:
               5%:  A 65.0% (+107.5 Elo)
@@ -451,6 +466,31 @@
             the clamp is a safety net worth keeping regardless of weight,
             weight_decay/grad_clip_norm are now correct defaults for any
             future NNUE training, eval_diag.rs is a reusable diagnostic tool.
+- [x] 17.7 — Session 56: 3 match_runner.yml runs, post Phase-14 Texel
+            tuning, using the EXISTING tool (see note below on its real
+            limitation). All 3 confirm tuned-HCE (0%) beats every NNUE
+            config decisively, same direction as 17.4/17.6, and by a
+            comparable-or-larger margin:
+              0% vs 25%,  40 games: A 78.8% (+227.6 Elo)
+              0% vs 100%, 20 games: A 95.0% (+511.5 Elo)
+              0% vs 100%, 40 games: A 97.5% (+636.4 Elo) — agrees with the
+                                    20-game run in the same matchup, and
+                                    got MORE lopsided at 2x the sample
+                                    size, a good sign it's a real effect
+                                    not small-sample noise.
+            IMPORTANT CAVEAT (discovered this session): match_runner.rs
+            can only A/B two NNUE blend weights of the SAME compiled
+            binary — it cannot produce a true pre/post-tuning HCE Elo
+            number, since HCE weights are compile-time consts and the
+            pre-tuning Ethereal-derived values are gone once the tuning
+            delta landed (Session 55). These 3 results confirm tuned-HCE
+            is strong in absolute terms against NNUE at any blend weight
+            (reinforcing D25's 0%-default decision with fresh data), NOT
+            "tuning improved HCE by X Elo" — that number doesn't exist
+            and would need new infrastructure to ever measure (see note
+            left in this file previously — runtime-loadable HCE weights,
+            or a second binary from a pinned pre-tuning git ref over UCI
+            — worth a DECISIONS.md entry before building, not a quick add).
 
 ---
 

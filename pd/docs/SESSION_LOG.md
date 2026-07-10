@@ -7,6 +7,51 @@ Most recent session at TOP.
 
 ---
 
+## Session 56 — 2026-07-10 (match_runner data points post-tuning; weights.rs commit-mistake fix)
+
+**Built:** Nothing new — this session was two parts: (1) fixing a broken
+commit, (2) gathering match_runner.yml data with existing tooling.
+
+**Bugs fixed:** Gokul's commit of Session 55's `src/texel/weights.rs`
+delta landed broken — the `Default::default()` sync (Change 1) never got
+applied (still had the old Ethereal values) AND there was a stray extra
+closing `}` right after the `Default` impl, a hard compile error (caught
+immediately: build failed in ~20-24s, before tests could even run). Found
+via `raw.githubusercontent.com` (no rate-limit issues there, unlike
+`api.github.com` which stayed rate-limited most of this session) + diffing
+against the locally-verified copy — confirmed all 6 `eval/*.rs` files
+landed byte-identical, only `weights.rs` was affected. Fix: gave Gokul the
+complete corrected file as a full replacement rather than another delta,
+since a delta is what went wrong the first time — verified byte-identical
+against the live repo after the re-commit. Build green again (`Build &
+Release #370`, `Deploy to GitHub Pages #369`).
+
+**Match results gathered (Phase 17.7):** 3 `match_runner.yml` runs using
+the tuned HCE now compiled in. See ROADMAP 17.7 for the numbers and the
+important caveat about what this tooling can and can't measure (discovered
+this session: it A/Bs two NNUE blend weights of the same binary, not two
+different HCE constant sets — so there's no real pre/post-tuning Elo
+number available without new infrastructure).
+
+**Decisions made:** None new — interpreting existing tool output, not an
+architectural call. The "would need runtime-loadable HCE weights or a
+second pinned-ref binary" note is flagged as a future option in ROADMAP
+17.7, explicitly NOT built this session (deliberately deferred, not an
+oversight — a real complexity trade-off for a one-time measurement,
+worth its own DECISIONS.md discussion before committing to it).
+
+**Next session start point:** No specific code task queued. Options for
+whoever picks this up: (a) if a genuine pre/post-Texel-tuning Elo number
+becomes worth the infrastructure cost, design it deliberately (see ROADMAP
+17.7's note) rather than bolting it onto match_runner.rs's existing
+NNUE-blend-only design; (b) otherwise, check ROADMAP for whatever the
+next un-checked phase item is — Phase 17.6 already parked further NNUE
+work, so absent a specific ask, the natural next thread is probably
+whatever's queued after Phase 17 in ROADMAP's structure, not Phase 14/17
+specifically, since both are now in a stable, tested, committed state.
+
+---
+
 ## Session 55 — 2026-07-09 (Phase 14 COMPLETE — tuned weights applied to eval/*.rs)
 
 **Built:** `src/bin/texel_diag.rs` (NEW) + `.github/workflows/texel_diag.yml`
