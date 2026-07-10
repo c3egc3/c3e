@@ -7,6 +7,48 @@ Most recent session at TOP.
 
 ---
 
+## Session 57 — 2026-07-10 (ROADMAP.md accuracy pass — no code changes)
+
+**Built:** Nothing — Session 56's log explicitly closed with "no specific
+code task queued," so this session did docs-only cleanup rather than
+inventing work or picking an unapproved architectural task.
+
+**What changed in ROADMAP.md:**
+- Phase 14 header `⏳` → `✅ COMPLETE` (14.1-14.5 were already all `[x]`,
+  marker was just never updated).
+- Annotated the stale Session-54 "NEXT SESSION START POINT" text under
+  14.3/14.4/14.5 — left the original text intact for history, added a
+  note that it was actually completed in Sessions 55-56 and is not a
+  live task.
+- `17.5` root checkbox changed `[ ]` → `[~]` with an explicit note: the
+  NNUE-blend sub-items (17.5a-f) are done and parked (D34), but the one
+  piece of the original ask — a true pre/post-Texel-tuning HCE Elo
+  number — was never built and still needs a DECISIONS.md entry +
+  approval before any infra work starts on it. Previously this was a
+  dangling unchecked box with no clear status.
+- Milestone table's "Texel tuned HCE" row updated to reflect that 17.7's
+  match_runner.yml validation already happened (Session 56), replacing
+  the stale "needs validation next session" text.
+
+**Bugs fixed:** None.
+
+**Decisions made:** None — no new architecture, just correcting stale
+doc state to match what Sessions 55-56 actually did.
+
+**Next session start point:** No code task queued. Two open options,
+neither started, both need Gokul's call before any work begins:
+(a) if a genuine pre/post-Texel-tuning Elo number becomes worth building
+(runtime-loadable HCE weight tables, or a second binary from a pinned
+pre-tuning git ref over UCI) — write a DECISIONS.md entry first, given
+the added runtime complexity for what's currently a one-time
+measurement; (b) the 3 Node24-blocked GitHub Actions steps
+(`configure-pages@v4`, `upload-pages-artifact@v3`, `deploy-pages@v4`,
+`softprops/action-gh-release@v2`) remain cosmetic-warning-only with no
+upstream Node24 release yet — worth a quick check next session for
+whether upstream has shipped one, otherwise not actionable.
+
+---
+
 ## Session 56 — 2026-07-10 (match_runner data points post-tuning; weights.rs commit-mistake fix)
 
 **Built:** Nothing new — this session was two parts: (1) fixing a broken

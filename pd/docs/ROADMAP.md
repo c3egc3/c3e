@@ -174,7 +174,7 @@
 
 ---
 
-## Phase 14 — Texel Tuning ⏳
+## Phase 14 — Texel Tuning ✅ COMPLETE
 
 - [x] 14.1 — DECIDED (Session 49): proceed. Phase 13 is complete and Phase
             17.5's NNUE work is parked at NNUEWeight=0% (D34) — HCE is the
@@ -243,6 +243,15 @@
             mobility.rs, pawns.rs, king_safety.rs, open_lines.rs, mod.rs's
             TEMPO) replacing the current hand-picked Ethereal-derived
             constants with the tuned ones. Build.yml must stay green.
+            [STALE NOTE, superseded Session 56] The above "next session
+            start point" text was left over from Session 54 and never
+            removed once the work described in it was actually done in
+            Sessions 55-56. Real status: DONE. Tuned weights are applied
+            and committed (Session 55), texel_diag.rs sanity tool exists
+            and passed 10/10, full suite 329/329, and 3 match_runner.yml
+            runs (17.7, Session 56) confirm the tuned build is strong in
+            absolute terms. No true pre/post-tuning Elo delta exists or
+            is queued — see 17.7's caveat.
 
 ---
 
@@ -360,7 +369,7 @@
 ---
 
 
-## Phase 17 — Elo A/B Testing & NNUE Retraining ⏳
+## Phase 17 — Elo A/B Testing & NNUE Retraining ⏳ (17.5 core infra question still open, see note below)
 - [x] 17.1 — NNUE blend weight made runtime-configurable via UCI
              `NNUEWeight` option (spin, 0-100, default 25 = D23). Replaces
              the compile-time `NNUE_BLEND_WEIGHT` const. weight=0 skips the
@@ -379,7 +388,17 @@
 - [x] 17.4 — Ran 0% vs 25%, 20 games/100ms/move: A (0%) scored 87.5%,
              +338 Elo. Default weight dropped to 0% (D25). NNUE blend
              mechanism stays available as a UCI option for future retests.
-- [ ] 17.5 — Session 56 (post Phase-14 Texel tuning): discovered
+- [~] 17.5 — SUPERSEDED, not literally completed as originally scoped.
+            The sub-items 17.5a-17.5f (all [x] below) fully executed the
+            NNUE side of this investigation and 17.6 formally parked it
+            (D34). The one piece of the original 17.5 ask that was never
+            built — a genuine pre/post-Texel-tuning HCE Elo number — is
+            still open, restated in 17.7's caveat below. Left as [~]
+            rather than [x] so this gap isn't silently lost; it needs a
+            DECISIONS.md entry and explicit approval before any
+            infrastructure (runtime-loadable HCE weights, or a second
+            pinned-ref binary) gets built for it.
+            Original Session 56 (post Phase-14 Texel tuning) note: discovered
              match_runner.rs can only A/B two NNUE blend weights of the
              SAME compiled binary — it CANNOT measure true before/after
              Elo for a Texel-tuning round, since HCE weights are
@@ -516,5 +535,5 @@
 | Material only (current) | ~1200 | Phase 7 done |
 | HCE complete | ~2400-2600 | Phase 8 done |
 | Search improvements | ~2800-2900 | Phase 13 done |
-| Texel tuned HCE | ~3000-3100 | Phase 14 DONE (Session 56) — actual Elo effect TBD, needs match_runner.yml validation next session |
+| Texel tuned HCE | ~3000-3100 | Phase 14 DONE. Absolute strength confirmed strong via 17.7's 3 match_runner.yml runs (Session 56) — tuned-HCE beats every NNUE blend by a large, sample-size-stable margin. No true pre/post-tuning Elo delta exists (see 17.5 note) — that would need new infra, not queued. |
 | NORU NNUE | ~3400-3600 | Phase 16 done |
