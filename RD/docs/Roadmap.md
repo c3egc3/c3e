@@ -6,19 +6,34 @@ checked yet."
 
 ## 🔴 Confirmed bugs
 
-- [ ] **False mate-in-1 claim in a normal, non-tactical position.**
-      Repro: `position startpos moves e2e4 e7e5 g1f3 b8c6 f1b5 a7a6` then
-      `go depth 10`. At depth 3 the engine reports `score mate 1` for
-      `f3e5` (Nxe5) — this is the standard Ruy Lopez / Morphy Defense
-      position, there is no mate anywhere near it. **Confirmed isolated
-      from the tablebase code**: reproduced byte-for-byte identically
-      (same nodes/score/PV) in a build with tbprobe.c excluded entirely
-      — so this is a core search/eval/legality bug, not TB corruption.
-      Likely cause: check detection, mate-scoring, or legality bug in
-      search.cpp or board.cpp's `isAttackedBy`/`inCheck`. **Top
-      priority — this is a correctness bug that would make the engine
-      actively unsafe to trust in any real game**, not just weak play.
-      Needs isolated investigation next session.
+- [ ] **Board state corruption during search — root cause of the mate-in-1
+      bug, and worse than originally understood.** Instrumented the real
+      engine directly (temporary debug prints, not shipped) at the
+      `movesDone==0` branch and dumped the actual board contents when it
+      fires. **The board is corrupted** — it doesn't match any legal
+      continuation of the actual moves played: a white pawn appears on
+      e7, a black pawn appears on e4, Black's b8 knight vanishes with no
+      corresponding capture, and the f1 bishop shows as never having
+      moved despite `f1b5` being earlier in the same move list. This
+      isn't a scoring/mate-detection bug — the position itself is wrong
+      by the time this node is reached. The earlier "isolated to
+      search.cpp" finding stands, but the mechanism is now understood to
+      be **incomplete make/unmake restoration**, not a legality-check or
+      move-generation bug (board.cpp/movegen.cpp were independently
+      verified correct in isolation — see earlier entries below).
+      **Leading suspects, in priority order:** (1) the singular-extension
+      trial-move loop (search.cpp ~862-893) — plays and unplays several
+      sibling moves manually with its own UndoRecord before the real
+      move is tried; (2) null-move pruning; (3) multi-cut pruning. All
+      three do speculative make/unmake *before* the real move of a node,
+      so a leak in any of them would corrupt state for everything that
+      follows in that branch, exactly matching what was observed.
+      **Top priority — this is a fundamental correctness bug, worse than
+      originally scoped**, since silent board corruption can produce
+      arbitrarily wrong play, not just occasional bad mate claims. Next
+      session: audit every UndoRecord-based make/unmake pair in
+      search.cpp for a field that isn't captured/restored, starting with
+      the singular-extension block.
 - [ ] **Investigate "engine stopped responding entirely" report.**
       Gokul reported total non-response after adding the Syzygy
       tablebase files, tested against Fairy-Stockfish (separate symptom

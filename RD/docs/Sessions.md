@@ -55,14 +55,38 @@ Newest entry first.
   stays, revisit both only after the core engine is proven correct.
 - Updated all four docs to reflect this.
 
-**Left off at:** Docs written, not yet uploaded to
-`c3egc3/c3e` → `RD/docs/`. Tablebase removal decided but not yet
-executed in code.
+**Left off at:** Tablebase removal (D7) was reconsidered and reversed
+(D9) after Gokul pushed back and a direct test disproved the hang
+theory — TB code stays untouched. Moved to the mate-in-1 bug.
 
-**Next session should start with:** Two things queued, in this order:
-1. Execute the tablebase removal (Roadmap 🟣 section — mechanical, low
-   risk, shrinks the codebase before the harder work).
-2. Investigate the mate-in-1 bug — now confirmed isolated to core
-   search/movegen/board logic. Suggest starting with a minimal FEN
-   reproduction of the exact position (rather than the move sequence)
-   to narrow it down faster.
+Built a standalone test harness (`src/test_repro.cpp`, sandbox-only,
+not delivered) linked directly against board.cpp/movegen.cpp/
+bitboard.cpp/zobrist.cpp, bypassing search entirely, to reproduce the
+exact position after `e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 f3e5`. Result at
+first: Black not in check, 32 legal moves — proved the bug wasn't in
+move-generation/check-detection in isolation.
+
+Then instrumented the real engine directly (temporary debug prints in
+search.cpp, not shipped) at the exact branch that produces the mate
+score, and dumped the live board state when it fires. **The board
+itself is corrupted at that point** — pieces in positions no legal
+continuation of the actual move list could produce (a white pawn on
+e7, a vanished black knight with no capture, a bishop shown as never
+having moved despite being played earlier). This is a bigger, more
+serious finding than the original "false mate" framing: it's silent
+board-state corruption during search, and the false mate score is just
+one visible symptom of it.
+
+Leading theory: an incomplete make/unmake restoration in one of the
+search's speculative move-trial blocks (singular extension's manual
+trial loop, null-move pruning, or multi-cut pruning), all of which
+play and unplay moves internally before the real move of a node is
+tried.
+
+**Next session should start with:** Audit every make/unmake pair in
+search.cpp that isn't the main move loop — starting with the singular-
+extension trial loop (~lines 862-893), then null-move pruning, then
+multi-cut — for an UndoRecord that doesn't fully capture/restore state.
+Remove the temporary debug instrumentation from search.cpp once the
+real fix is in (it's sandbox-only, never delivered, but shouldn't be
+left in the working copy indefinitely either).
