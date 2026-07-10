@@ -7,6 +7,84 @@ Most recent session at TOP.
 
 ---
 
+## Session 55 — 2026-07-09 (Phase 14 COMPLETE — tuned weights applied to eval/*.rs)
+
+**Built:** `src/bin/texel_diag.rs` (NEW) + `.github/workflows/texel_diag.yml`
+(NEW) — a sanity-check tool comparing HCE under `TunableWeights::default()`
+against a candidate `texel_tune.rs` output, on the same real-Pet-Dragon-
+position test philosophy `eval_diag.rs` uses (5 random starts that should
+read ~0, up/down a queen, up a rook, 2 pawn-endgame checks). Built after
+Gokul's first two real 147,283-sample tuning runs (15 epochs no decay, then
+100 epochs weight_decay=0.02) came back with physically implausible values
+(`bishop_pair` MG negative, `attacker_weight` entries negative) that raw
+value-inspection caught but a proper positional check hadn't — this closes
+that gap for any future re-tuning round. Also added a `weight_decay` CLI
+arg + workflow input to `texel_tune.rs`/`texel_tune.yml` (decoupled decay
+ANCHORED AT the default weights, not zero — see rationale in the code
+comment) after the first run's implausible values pointed at under-
+regularized rare/sparse features (D30/D31 established the decoupled-decay
+pattern for train_nnue.rs; anchoring at zero doesn't make sense for HCE).
+
+**Gokul's runs, in order:** (1) 15 epochs, no decay — loss 0.0502->0.0454,
+but `bishop_pair` MG went negative, `attacker_weight` had -81/-6 entries.
+(2) 100 epochs, weight_decay=0.02 — loss ->0.0463, most values fixed but
+`attacker_weight[1]` still -27. (3) 100 epochs, weight_decay=0.08 — loss
+->0.0478 (a bit higher, expected regularization trade-off), everything
+resolved to plausible ranges: `bishop_pair` s(18,29) vs default s(22,30),
+`attacker_weight[1]` down to -5 (essentially noise), `rook_on_seventh`
+positive again. `texel_diag` run against this file: 10/10 PASS (one initial
+FAIL was my own test-case sign-convention bug in `texel_diag.rs`, fixed and
+confirmed not a real regression before reporting anything to Gokul).
+
+**Applied (D35 step 6):** All 3 run 3 values written into
+`eval/material.rs` (MG_VALUES, EG_VALUES, BISHOP_PAIR_MG/EG),
+`eval/tables.rs` (all 6 PST tables), `eval/mobility.rs` (all 4 mobility
+tables), `eval/pawns.rs` (ISOLATED/DOUBLED/BACKWARD_PENALTY,
+PASSED_PAWN_BONUS), `eval/king_safety.rs` (ATTACKER_WEIGHT,
+OPEN_FILE_NEAR_KING, SEMI_OPEN_FILE_NEAR_KING, PAWN_SHIELD_BONUS —
+MAX_KING_DANGER untouched, structural clamp per D35), `eval/open_lines.rs`
+(all 9 constants), `eval/mod.rs` (TEMPO: 10 -> 20). Cross-checked every
+existing unit test in these 6 files by hand before applying — all are
+structural (symmetry, array lengths, index math), none hardcode exact
+tuned values, so none were at risk; also manually verified
+`test_rook_7th_rank`/`test_knight_centre_better_than_rim`/
+`test_king_endgame_centralises`/`test_pawn_advance_bonus` (tables.rs)
+still hold arithmetically against the new table values before running
+the actual suite.
+
+**Bugs fixed:** After applying the new eval/*.rs consts, `cargo test --lib`
+immediately failed 4 tests — `texel::predict::tests::test_predict_matches_
+evaluate_*` and `predict_f64`'s equivalent. Cause: `src/texel/weights.rs`'s
+`TunableWeights::default()` is documented to always mirror whatever's
+currently compiled into `eval/*.rs`; I'd updated eval/*.rs but not its
+mirror, so `predict(features, TunableWeights::default())` stopped matching
+the now-changed `evaluate()`. Fix: synced `weights.rs`'s `Default` impl and
+its 6 standalone PST consts to the same new values — generated
+programmatically from Gokul's `texel_weights_tuned.txt` (reusing
+`texel_diag.rs`'s parser) rather than hand-retyping ~964 numbers a second
+time, both as a time-save and to cross-validate the hand-transcription
+into eval/*.rs (values matched exactly). Why correct: `TunableWeights::
+default()`'s entire purpose is "current compiled eval/*.rs values, so the
+self-consistency tests hold" — it's supposed to move every time eval/*.rs's
+tuned constants move; this isn't a special one-off fix, it's the standing
+rule for every future re-tuning round too. Full suite 329/329 after the
+sync.
+
+**Decisions made:** None new — this was applying D35's plan (steps 5.5 and
+6) as written, with `weight_decay` as a straightforward, expected parameter
+addition rather than a new architectural direction.
+
+**Next session start point:** Phase 14 is functionally complete, but the
+actual playing-strength effect of the tuned weights hasn't been measured
+yet — `match_runner.yml` (tuned HCE vs the pre-tuning Ethereal-derived HCE,
+or vs the current NNUE, per whatever comparison ROADMAP's Phase 15/16
+section calls for) should run next to get a real Elo delta before
+considering Phase 14 "validated" rather than just "compiled and
+sanity-checked." Check ROADMAP's Phase 15 section for what's next after
+that.
+
+---
+
 ## Session 54 — 2026-07-09 (14.3 step 5 built — gradient descent optimizer)
 
 **Built:** `src/texel/weights_f64.rs`, `src/texel/predict_f64.rs` (both

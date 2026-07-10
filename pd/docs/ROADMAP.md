@@ -190,7 +190,27 @@
             79,694 wins (stm-perspective) — win/loss imbalance is expected
             (not a bug, see Session 52 chat), draw rarity (~3.6%) reflects
             shallow 100ms searches, also expected. Data validated and ready.
-- [~] 14.3 — Steps 1-5 of D35's plan BUILT AND GREEN.
+- [x] 14.3/14.4/14.5 — Phase 14 COMPLETE. All of D35's plan built, verified,
+            and applied. Steps 1-5 (Sessions 53-54): TexelFeatures,
+            TunableWeights, predict()/predict_f64(), Adam optimizer +
+            weight decay. Step 5.5 (Session 55, added after first two real
+            runs came back with implausible values): src/bin/texel_diag.rs
+            sanity-check tool, comparing default-vs-tuned HCE on unambiguous
+            positions — now part of the standard workflow for any future
+            re-tuning round. Step 6 (Session 56): applied the
+            weight_decay=0.08, 100-epoch, 147,283-sample tuned weights to
+            eval/material.rs, tables.rs, mobility.rs, pawns.rs,
+            king_safety.rs, open_lines.rs, mod.rs (TEMPO) AND synced
+            src/texel/weights.rs's TunableWeights::default() to match (this
+            second sync is mandatory — it's the tuner's starting point for
+            next time, and skipping it silently breaks the Session 53
+            self-consistency tests, caught this session by cargo test).
+            Full suite 329/329, texel_diag PASS on all 10 cases,
+            eval_diag.rs and mobility/pawns/king_safety/open_lines/tables
+            unit tests re-verified by hand against the new values (all
+            structural — symmetry, array lengths, index math — none
+            depend on exact constant values, so none were at risk, but
+            worth the explicit check before committing).
             Session 53: TexelFeatures/TunableWeights/predict() +
             self-consistency test (bit-exact vs evaluate()).
             Session 54: step 5 — src/texel/weights_f64.rs (f64 weight
@@ -223,11 +243,6 @@
             mobility.rs, pawns.rs, king_safety.rs, open_lines.rs, mod.rs's
             TEMPO) replacing the current hand-picked Ethereal-derived
             constants with the tuned ones. Build.yml must stay green.
-- [ ] 14.4 — Update weights in eval/ files with tuned values. Build.yml must
-            stay green; consider an eval_diag.rs-style sanity check specific
-            to HCE (start pos ~0, known material swings roughly right) given
-            how much Phase 17.5 benefited from exactly that kind of direct
-            diagnostic rather than relying on aggregate metrics alone.
 
 ---
 
@@ -461,5 +476,5 @@
 | Material only (current) | ~1200 | Phase 7 done |
 | HCE complete | ~2400-2600 | Phase 8 done |
 | Search improvements | ~2800-2900 | Phase 13 done |
-| Texel tuned HCE | ~3000-3100 | Phase 14 done |
+| Texel tuned HCE | ~3000-3100 | Phase 14 DONE (Session 56) — actual Elo effect TBD, needs match_runner.yml validation next session |
 | NORU NNUE | ~3400-3600 | Phase 16 done |
