@@ -4,6 +4,105 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 34 — NNUE evaluation infrastructure (inference only)
+**Status:** COMPLETE ✅ (infra, not full NNUE — see scope below)
+
+### `Go` trigger
+Baseline re-verified first, per the standing PROCESS rule (D-61/D-65):
+freshly pulled both repos via `codeload.github.com` tarballs, ran
+`python -m pytest tests/` in both — **345/345 (fastpy)**, **196/196
+(fastpy-engine)** — confirmed `run.py` parses and `fastpy check engine.py`
+is zero errors, all against `main`, before trusting Session 33's log.
+Picked up Session 33's stated next step: Phase 6 NNUE evaluation, chosen
+over Lazy SMP as the more self-contained item (a static evaluation
+function replacement, doesn't touch search/threading).
+
+### Scope decision (read this before assuming NNUE is "done")
+A full trained NNUE needs three things: (1) an inference forward pass,
+(2) trained weights, (3) an incremental accumulator wired into
+`make_move()` for the performance win NNUE is actually for. This session
+delivers **only (1)**, fully tested and verified — not (2) or (3). See
+D-69 for the complete rationale. In short:
+- No training pipeline exists in either repo (needs numpy/PyTorch, millions
+  of labelled positions — out of scope for FastPy's chess-engine dialect).
+  `init_nnue_weights()` fills the network with deterministic
+  splitmix64-style placeholder values instead.
+- The incremental accumulator needs an array-typed `BoardState` field
+  (`self.acc: int32[128]`) so it copies-with-the-board the way `hash`
+  does — but `core/parser.py`/`core/emitter.py` don't support array-typed
+  struct fields yet (`resolve_array()` is only wired for module-level
+  globals, function parameters, and local declarations). That's a
+  transpiler change, deserving its own session. This session's
+  `evaluate_nnue()` does a full from-scratch recompute every call instead
+  (correct, tested, ~4096 adds worst case, just not incremental).
+- `evaluate_nnue()` is therefore **not called from `alpha_beta()` or
+  `quiescence()`** — wiring an untrained evaluator into search would make
+  the engine play worse with no way to distinguish "expected" from
+  "regression" until real weights exist.
+
+### Design
+Architecture: 768 sparse binary inputs (12 piece types x 64 squares) into
+one hidden layer of `NNUE_HIDDEN=128` clipped-ReLU units (clamped to
+`[0, NNUE_CLIP=127]`), into a single output rescaled by `NNUE_SCALE=64`
+to centipawns. All-`int32` arithmetic — FastPy's type system has no float
+type, which turns out to match how real NNUE engines run inference anyway
+(Stockfish uses int8/int16 quantized weights with int32 accumulation in
+its hot path). `nnue_rand()` reuses the exact `zk_rand()` splitmix64 shape
+and mixing constants (`ZK_GOLDEN`/`ZK_MIX1`/`ZK_MIX2`) rather than
+duplicating them.
+
+### Files changed
+- `fastpy-engine/engine.py` — `NNUE_INPUT`/`NNUE_HIDDEN`/`NNUE_CLIP`/
+  `NNUE_SCALE` constants; `NNUE_W1`/`NNUE_B1`/`NNUE_W2`/`NNUE_B2`/
+  `NNUE_INIT` global arrays; `nnue_rand()`, `init_nnue_weights()`,
+  `nnue_accumulate()`, `evaluate_nnue()` functions
+- `fastpy-engine/run.py` — imports the new NNUE names; Python-mode sizing
+  + `init_nnue_weights()` call at import time (same convention as
+  `ZK_TABLE`/magic bitboards); `_evaluate_nnue_py()` wrapper mirroring
+  `evaluate_nnue()`'s bare `int32[128]` local array (unrunnable directly
+  in Python, same class of issue as the `uint64[218]` move arrays)
+- `fastpy-engine/tests/test_nnue.py` — NEW, 23 tests: constants/shape (6),
+  weight-init determinism + range (7), `nnue_accumulate()` correctness (4),
+  `evaluate_nnue()` behavior via the Python mirror (5), module presence (1)
+
+See D-69 for the full design writeup, including a documented mistake: an
+early version of this test file used `importlib.reload(engine)` to check
+NNUE additions didn't break module import, which silently reset every
+other global array (`TT_HASH`, `ZK_TABLE`, ...) back to empty and took
+down 58 unrelated tests in the same pytest session. Removed in favour of
+a plain `hasattr()` check; the mistake is documented in the test file
+itself.
+
+### Verification
+- `fastpy` full suite: **345/345 passing** (unaffected — no transpiler
+  files touched this session)
+- `fastpy-engine` full suite: **219/219 passing** (196 prior + 23 new)
+- `fastpy check engine.py` → zero errors
+- `fastpy build engine.py --optimize=O3` → compiles clean to a native
+  binary
+- Standalone C++ harness (built directly against the emitted `.cpp`,
+  outside the pytest suite) called the real **compiled** `evaluate_nnue()`
+  twice on the startpos (identical result both calls: `-308`) and again
+  after removing the black queen (`113` — different, confirming the
+  forward pass reads board state) — proves the compiled function itself
+  is correct, not just the Python mirror
+- `perft(3) = 8902` reconfirmed via the Python-mode wrapper — move
+  generation untouched by this change
+
+### Next session
+- Three follow-up items now on ROADMAP.md under Phase 6, in dependency
+  order: (1) transpiler support for array-typed `BoardState` fields,
+  (2) incremental accumulator in `make_move()` built on top of that,
+  (3) wiring `evaluate_nnue()` into search once real trained weights
+  exist via an offline training pipeline (separate tool, not in scope for
+  either repo's Python dialect).
+- Lazy SMP multi-core search remains untouched — still a candidate for
+  "large enough to deserve its own session" alongside the above.
+- Re-run the Session 30/PROCESS baseline check (both repos' full test
+  suites against freshly-pulled `main`) before trusting this log.
+
+---
+
 ## Session 33 — Multi-file compilation support
 **Status:** COMPLETE ✅
 

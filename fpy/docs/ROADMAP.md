@@ -121,7 +121,32 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 
 ## Phase 6 — Elite Engine
 
-- [ ] NNUE neural network evaluation
+- [x] NNUE inference infrastructure (Session 34) — `evaluate_nnue()`:
+      768-input (12 piece types x 64 squares) -> 128 clipped-ReLU hidden
+      units -> 1 output, all-int32 arithmetic (FastPy has no float type;
+      matches how real NNUE engines run inference anyway — see D-69).
+      `init_nnue_weights()` fills the network with deterministic
+      splitmix64-style PLACEHOLDER weights, not trained ones — no ML
+      training pipeline exists in either repo. 23 new tests
+      (`test_nnue.py`), `fastpy check`/`fastpy build` clean, standalone
+      compiled-binary harness confirmed determinism + position-sensitivity.
+      See D-69 for the full scoping rationale and what's explicitly NOT
+      done yet (the three items below).
+  - [ ] Offline NNUE training pipeline (separate tool/repo, numpy/PyTorch,
+        outside FastPy's chess-engine dialect) to replace
+        `init_nnue_weights()`'s placeholder body with real trained weights
+  - [ ] Transpiler feature: array-typed `BoardState` struct fields
+        (`core/parser.py` + `core/emitter.py` — `resolve_array()` is only
+        wired for globals/params/locals today, not class fields). Needed
+        before an incremental accumulator can live on the board and
+        copy-with-value the way `hash` does.
+  - [ ] Incremental accumulator update in `make_move()` (depends on the
+        transpiler feature above) — replaces `evaluate_nnue()`'s current
+        full-recompute-every-call with add/subtract of just the moved
+        piece's `NNUE_W1` row, which is NNUE's actual performance win
+  - [ ] Wire `evaluate_nnue()` into `alpha_beta()`/`quiescence()` once
+        real trained weights exist — deliberately not done over
+        placeholder weights (see D-69 point 2)
 - [x] Futility pruning
 - [x] `go depth N` timing harness (node counting + NPS reporting, Session 18)
 - [x] Singular extensions (Session 24) — excluded-move verification search

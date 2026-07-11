@@ -717,3 +717,89 @@ restriction there.
   across the file boundary) was parsed, type-checked, emitted, and
   compiled to a real binary with `g++ -std=c++20`, and produced the
   arithmetically correct result end-to-end.
+## D-69: NNUE evaluation infrastructure (Session 34) is delivered as
+  INFERENCE ONLY this session, over deterministic PLACEHOLDER weights, not
+  a trained network wired into search. Three separate scoping decisions
+  make up this entry.
+
+  **1. Integer-only architecture, no float type.** FastPy's ground-truth
+  type table (`_CPP_TYPE_TABLE` in `type_system.py`) has never included a
+  float type — `uint64`/`int32`/`bool8` only. Rather than treat that as a
+  blocker and add float support to the transpiler, the NNUE design leans
+  into it: 768 sparse binary inputs (12 piece types x 64 squares) into one
+  hidden layer of `NNUE_HIDDEN=128` clipped-ReLU units (clamped to
+  `[0, NNUE_CLIP=127]`) into a single output, with every weight, bias, and
+  accumulator value stored as `int32`. This isn't a workaround — it's the
+  same design real engines use: Stockfish's NNUE runs int8/int16 quantized
+  weights with int32 accumulation in its hot path specifically because
+  integer SIMD is faster than float SIMD for this workload. FastPy's
+  int-only type system happens to match the correct implementation choice,
+  not just a convenient one.
+
+  **2. Placeholder weights, not trained ones — and that's the actual
+  scope of this session.** `init_nnue_weights()` fills `NNUE_W1`
+  (98304 = 768x128), `NNUE_B1`/`NNUE_W2` (128 each), and `NNUE_B2` (1) with
+  deterministic pseudo-random values in `[-128, 127]` via `nnue_rand()`, a
+  splitmix64-style mixer with the exact same shape as the pre-existing
+  `zk_rand()` (same `ZK_GOLDEN`/`ZK_MIX1`/`ZK_MIX2` constants, reused
+  rather than duplicated). There is no training pipeline in either repo —
+  producing real NNUE weights needs millions of labelled positions and
+  gradient descent, a numpy/PyTorch job that doesn't belong in FastPy's
+  chess-engine-specific Python dialect (Core Rule 4) or in `fastpy-engine`
+  at all; it would live in a third, ML-focused repo/tool feeding trained
+  weights into `init_nnue_weights()`'s body as literal array assignments
+  when it exists. Until then, `evaluate_nnue()` is verified-correct
+  plumbing over meaningless weights, and every test in `test_nnue.py`
+  reflects that honestly: they check determinism, shape, range, and
+  position-sensitivity (the forward pass reads board state and produces
+  different outputs for different inputs), never chess-meaningful
+  direction of the score. `evaluate_nnue()` is a real function, callable,
+  fully tested, and compiles — it is just not yet good at chess.
+
+  **3. Not wired into alpha_beta()/quiescence() this session, and not a
+  BoardState field.** Two reasons, both deliberate:
+    a. Wiring an untrained evaluator into search would make the engine
+       play worse than plain material+PST `evaluate()` with no way to
+       verify that's "expected" versus "regression" — there's no trained
+       network yet to make wiring it in meaningful.
+    b. Real NNUE's performance win is the *incremental* accumulator: on
+       each move, add/subtract only the moved piece's `NNUE_W1` row
+       instead of recomputing all 12 bitboards' contributions from
+       scratch. That requires the accumulator to live inside `BoardState`
+       (so it copies-with-the-board on `make_move()`'s value-copy
+       semantics, the same way `hash` does) — but `BoardState`'s struct
+       fields are all scalar (`uint64`/`bool8`/`int32`); nothing in
+       `core/parser.py`/`core/emitter.py` today parses or emits an
+       array-typed class field (`self.acc: int32[128]`). `resolve_array()`
+       is wired for module-level globals, function parameters, and local
+       declarations only. Adding that is a transpiler feature change, not
+       an `engine.py` change, and deserves its own session rather than
+       being bolted on here. This session's `evaluate_nnue()` instead does
+       a full from-scratch recompute every call (`O(popcount x 128)` per
+       position, ~4096 adds worst case) — correct and fully tested, but
+       without the incremental speedup that's NNUE's whole point at scale.
+
+  23 new tests in `tests/test_nnue.py`: constants/shape (6), weight-init
+  determinism and range (7), `nnue_accumulate()` correctness — single-bit,
+  multi-bit, additive-across-calls (4), `evaluate_nnue()` via `run.py`'s
+  `_evaluate_nnue_py()` mirror — determinism, material-sensitivity,
+  side-to-move sign-flip (5), module presence (1). One test iteration
+  (`importlib.reload(engine)` to check NNUE additions didn't break module
+  import) was written, found to silently reset every other global array
+  (`TT_HASH`, `ZK_TABLE`, ...) back to their empty compiled-mode
+  placeholders since those are only sized/filled once at `run.py` import
+  time, took down 58 unrelated tests in `test_phase5.py`/`test_phase6.py`
+  in the same pytest session, and was removed in favour of a plain
+  `hasattr()` presence check — documented in `test_nnue.py` itself so the
+  mistake isn't repeated.
+
+  Full suite re-verified at 345/345 (fastpy, unaffected — no transpiler
+  files touched) and 219/219 (fastpy-engine, 196 prior + 23 new).
+  `fastpy check engine.py` → zero errors. `fastpy build engine.py
+  --optimize=O3` → compiles clean; a standalone C++ harness (outside the
+  test suite, built directly against the emitted `.cpp`) called the real
+  compiled `evaluate_nnue()` twice on the startpos (identical result both
+  calls) and again after removing the black queen (different result),
+  confirming the compiled function — not just the Python mirror — is
+  deterministic and position-sensitive. `perft(3) = 8902` reconfirmed
+  unaffected (move generation untouched by this change).
