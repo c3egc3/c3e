@@ -1,134 +1,92 @@
 # Rogue Dragon — Roadmap
 
-What & how. Checklist format. Confirmed-broken items are separate from
-unverified/planned items — don't conflate "known bug" with "haven't
-checked yet."
+What & how. Checklist format. This is a fresh roadmap for the
+pet-dragon-based path (see Decisions.md D13) — the C3Engine roadmap
+items are retired, not carried forward, except where explicitly noted.
 
-## 🔴 Confirmed bugs
+## 🔴 Not started — the actual adaptation work
 
-## ✅ Fixed and verified this session
+- [ ] **Renaming pass**: `pet`/`Pet` → `rogue`/`Rogue` throughout.
+      Crate names in Cargo.toml (`pet_dragon`/`pet_dragon_lib` →
+      `rogue_dragon`/`rogue_dragon_lib`), binary name, any type/struct
+      names embedding "Pet Dragon," comments, doc strings, UCI
+      `id name` response in main.rs. Also the repo's own metadata
+      (description, repository URL, homepage in Cargo.toml).
+- [ ] **Remove bishop-opposite-colour constraint** in
+      `position/setup.rs` — delete the light/dark-square search block,
+      let bishops go through the same general random-placement path as
+      every other piece.
+- [ ] **Remove mirroring** in `position/setup.rs` — replace "Step 6:
+      Mirror White to Black" with running the shuffle-and-place logic
+      (currently steps 2-4) a second time, independently, for Black's
+      ranks 7-8.
+- [ ] **Make castling-rights detection independent per side** — same
+      file currently derives Black's rights from White's ("Black
+      mirrors White"). Needs its own check for Black's actual rook
+      positions, following the same pattern as White's existing check.
+- [ ] **New eval: same-color bishop rule** (see Architecture.md and
+      Decisions.md D15 for the full specification). Three cases:
+      baseline (lower), active attack opportunity (higher), mutual
+      support (higher). Needs to be threaded through wherever
+      bishop-bishop batteries, queen+bishop batteries, and bishop
+      support are currently scored in `eval/`.
 
-- [x] **Board state corruption / false mate claims — FIXED.** Root cause:
-      `makeMove` and `unmakeMove` in board.cpp derived piece types from
-      live board state (`pieceAt[from]`/`pieceAt[to]`) instead of
-      trusting the already-correct fields baked into the `Move` struct
-      at generation time (`attackerType`, `capturedType`, `promo`). Any
-      transient desync anywhere caused an out-of-bounds write into
-      `bb[color][6]` (valid range 0-5), silently corrupting adjacent
-      memory — which cascaded into phantom pieces on empty squares,
-      which move generation would then "play," compounding the
-      corruption further. Traced to its origin using
-      AddressSanitizer/UndefinedBehaviorSanitizer builds (full stack
-      traces, not guesswork) — the actual first trigger is move
-      generation's own internal legality-check loop
-      (movegen.cpp, ~line 273), which calls `makeMove`/`unmakeMove`
-      once per pseudo-legal candidate to test for self-check.
-      **Fix:** both functions now trust the move's own recorded fields,
-      and every remaining bitboard index derived from a piece type is
-      guarded against `NO_PIECE_TYPE` as a defensive backstop. Verified
-      with a clean ASan/UBSan run at depth 10 (zero warnings, down from
-      four distinct out-of-bounds write sites) and the original repro
-      (`e2e4 e7e5 g1f3 b8c6 f1b5 a7a6`, `go depth 10`) now returns real
-      search results (nodes scaling normally, sane scores, a
-      legitimately-verified `mate 2` later in the same search — board
-      dumps at that point show a real, sane position) instead of the
-      false `mate 1` after 196 nodes.
+## 🟡 Verification required after the above (don't skip)
 
-## 🔴 New confirmed bug (found via perft while verifying the fix above)
+- [ ] **Re-run the existing test suite after each change**, not just at
+      the end — `cargo test` for `tests/perft.rs`, `tests/make_unmake.rs`,
+      `tests/setup.rs`. The setup tests specifically
+      (`test_bishops_opposite_colours_1000`,
+      `test_black_mirrors_white_1000`) will need to be rewritten or
+      removed since they assert the exact constraints being removed —
+      replace with equivalent tests asserting the NEW behavior
+      (independent random placement, same-color bishops allowed) at the
+      same 1000-iteration statistical rigor.
+- [ ] **Functionally verify castling still works correctly after
+      mirroring is removed** — Architecture.md notes no `mirror`
+      keyword was found in `movegen/castling.rs`, but that's "nothing
+      found," not "proven independent." Test castling from several
+      genuinely independent (non-mirrored) White/Black setups, not just
+      trust the absence of a keyword match.
+- [ ] **New perft-style verification for the new eval logic isn't
+      applicable (eval doesn't affect move legality)**, but the
+      same-color bishop rule should get its own dedicated test suite —
+      construct positions for each of the three cases (baseline, attack
+      opportunity, mutual support) and assert the eval score direction
+      matches the rule, mirroring the rigor of pet-dragon's own existing
+      test style.
+- [ ] **Full opening-space sanity check**: verify the adapted generator
+      actually produces the expected ~16.4 trillion distinct positions
+      in principle (i.e., confirm the combinatorics match — this is a
+      math check against the generation logic, not something to
+      brute-force enumerate).
 
-- [ ] **Legal moves missing starting at depth 3.** Perft from the
-      standard starting position: depth 1 = 20 (correct), depth 2 = 400
-      (correct), **depth 3 = 8,704 vs. the known-correct 8,902** — 198
-      moves missing, and the gap widens at deeper depths (4865609
-      expected vs 4589427 actual at depth 5). Undercounting (not
-      overcounting) points toward legal moves being wrongly excluded —
-      leading suspects are castling-rights tracking or en-passant
-      availability after 2+ ply, since those are the two things that
-      only become relevant once pieces have actually moved (matching
-      why depth 1-2 pass but depth 3+ doesn't). Verified independent of
-      the corruption bug above — clean under ASan/UBSan, so this is a
-      logic bug, not a memory-safety one. Confirmed via a standalone
-      perft harness (`src/test_perft.cpp`, sandbox-only) against
-      textbook-known perft values for the standard start position.
-      **Next investigation step:** bisect which specific depth-3 lines
-      are missing (compare move lists against a known-correct external
-      perft divide, e.g. `perft divide` style output by first move) to
-      narrow down whether it's castling or en passant specifically.
-- [ ] **Investigate "engine stopped responding entirely" report.**
-      Gokul reported total non-response after adding the Syzygy
-      tablebase files, tested against Fairy-Stockfish (separate symptom
-      from the mate-in-1 bug above — not yet reproduced directly).
-      Leading theory: `syzygyInit()` given a `SyzygyPath` pointing at a
-      missing/malformed directory, called via `setoption`, possibly by
-      the test harness/GUI automatically. Moot for Rogue Dragon going
-      forward since the TB code is being removed entirely (D7), but
-      worth a mental note in case the same class of bug (unguarded
-      filesystem/init call hanging) exists elsewhere.
+## ✅ Already true, verified, nothing to do
 
-## 🟡 Confirmed gaps (not bugs — missing features)
+- [x] Insufficient-material draw detection — exists natively in
+      `position/mod.rs`, tested.
+- [x] Pawn double-push/en-passant from actual start square — this is
+      pet-dragon's own core rule already, identical to Rogue Dragon's
+      rule 2, no change needed.
+- [x] Corner-locked castling mechanism itself (which corner squares
+      grant which rights) — identical rule to Rogue Dragon's rule 3,
+      only the *independence from mirroring* needs fixing (see 🔴 above).
+- [x] Magic bitboard correctness — proven via the passing perft suite,
+      independently run and confirmed.
+- [x] Core engine features: UCI (including pondering, MultiPV), Syzygy
+      tablebases, NNUE (trained), Texel-tuned classical eval — all
+      already built and tested in pet-dragon, inherited as-is.
 
-- [ ] **Insufficient-material draw detection missing entirely.** Zero
-      references anywhere in the C++ source. Decision made (D6): build
-      natively. Needs: K vs K, K+minor vs K, K+B vs K+B (same-color
-      bishops), and similar. Not yet started.
+## ⚪ Not urgent / future
 
-## 🟢 Confirmed correct (verified, no action needed)
-
-- [x] Clean build — CMake + GCC 13, zero project warnings.
-- [x] UCI handshake (`uci`/`isready`) responds correctly.
-- [x] Opening book gate — correctly limited to standard start position
-      only, silently and correctly skipped for shuffled variant
-      positions (Zobrist keys never match). Not a bug.
-- [x] Unmoved-pawn tracking exists in board.cpp/.h as a dedicated
-      bitboard, matches JS reference rule intent.
-- [x] Castling rights correctly gated on real king/rook corner-square
-      occupancy, matches JS reference.
-
-## ⚪ Documentation fixes (trivial, low priority)
-
-- [ ] README opening-position count has an arithmetic error:
-      16,435,321,**3**02,500 should be 16,435,321,**4**02,500 (verified
-      by direct calculation: 15!/(1!·2!·2!·2!·8!), squared for both
-      sides).
-
-## 🔵 Unverified — needs a validation pass
-
-These aren't known-broken, just not yet checked against either the JS
-reference (ported files) or a test suite (native files):
-
-- [ ] movegen.cpp — perft testing (standard positions first, since
-      perft references exist for those; variant positions need custom
-      expected values since no public perft data exists for this rule
-      set).
-- [ ] eval.cpp — no reference implementation exists for this file at
-      all; needs comparison against known evaluation principles and/or
-      a reference engine on positions where variant rules don't apply.
-- [ ] search.cpp — Lazy SMP multi-threaded correctness unverified
-      (searchthread.h groundwork exists but hasn't been stress-tested
-      with Threads > 1).
-- [ ] zobrist.cpp — should be a direct diff against the JS reference's
-      `_zrand()` output; not yet done.
-
-## 🟣 Tablebase — removal reversed (D9), needs real repro instead
-
-D7's removal decision was tested and disproven — a bogus SyzygyPath
-does not hang or crash the engine. Tablebase code **stays**. The
-original "no response at all" report is still unexplained. Needs from
-Gokul before further action: the exact SyzygyPath value used at the
-time, whether real .rtbw/.rtbz files were present, Threads setting, and
-roughly what happened (hang forever vs. crash vs. something else).
-
-## ⬜ Renaming pass (not started)
-
-- [ ] `c3`/`c3e`/`c3engine` → `rogue` across all identifiers, comments,
-      filenames, commit messages.
-- [ ] UCI subcommand `position c3 <fen>` → `position rogue <fen>`.
-- [ ] CMakeLists.txt: `project(C3Engine ...)` and `add_executable(c3engine ...)`
-      → `rogue` naming.
-- [ ] Exception: leave Fathom (tbprobe.*, tbchess.c, tbconfig.h) and
-      stdendian.h untouched — third-party vendored code (D2), stays in
-      the project per D9.
-- [ ] Decide: do the rename *before* or *after* the mate-in-1 bug is
-      fixed? (Recommend: after — renaming now makes diffing against the
-      JS reference for the bug hunt slightly more friction, no benefit
-      to doing it first.)
+- [ ] Re-tune or re-train NNUE/Texel weights after the rule changes,
+      since the training data was generated under pet-dragon's more
+      constrained rules (mirrored, opposite-color bishops only) — the
+      network has never seen a same-color-bishop position. Not blocking
+      initial functionality; classical eval (with the new bishop rule)
+      works immediately, NNUE retraining is a later self-play project.
+- [ ] Revisit whether pet-dragon's other design decisions (e.g., D6/D7
+      king-safety-without-castling-bias, given ~74% of pet-dragon games
+      have no castling) still hold at Rogue Dragon's different castling
+      probability, once the independence-from-mirroring fix changes the
+      actual castling-rate statistics. Worth measuring, not assuming.

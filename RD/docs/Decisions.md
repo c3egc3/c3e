@@ -1,159 +1,160 @@
 # Rogue Dragon — Decisions
 
-Newest entry first. Records *what* we decided and *why* — not just what
-changed (that's Sessions.md).
+Newest entry first. Records *what* we decided and *why*.
 
 ---
+
+### D15 — Same-color bishop battery/support eval rule, fully specified
+**Date:** 2026-07-11
+Since Rogue Dragon allows same-color bishops (unlike pet-dragon, where
+they're always opposite-colored by construction), new eval logic is
+needed — this doesn't exist anywhere in pet-dragon to port from. Final
+rule, after several rounds of clarification with Gokul:
+- **Baseline** (neither condition below active): same-color scores
+  **lower** than opposite-color. Permanent structural weakness — half
+  the board's squares are forever unreachable.
+- **Active attack opportunity** (open diagonal bearing on the enemy
+  king or a weak/undefended enemy piece): same-color scores **higher**.
+  Rationale: same-color bishops can stack on one shared diagonal for a
+  concentrated attack — opposite-color bishops structurally cannot,
+  since they're never on the same diagonal as each other.
+- **Mutual support** (bishop A defends the square bishop B stands on,
+  or vice versa — same pattern as rook-rook/knight-knight support
+  elsewhere in the eval): same-color scores **higher**. Same
+  structural-impossibility reasoning as above.
+Explicitly NOT a third "shared convergence square" case (two bishops on
+different diagonals both able to reach some third square) — Claude
+initially over-specified this as a separate case; Gokul clarified it
+collapses into the mutual-support case as already defined. Applies to:
+bishop-bishop batteries, queen+bishop(s) batteries, bishop-to-bishop
+support.
+
+### D14 — Renaming scope for the pet-dragon-based build
+**Date:** 2026-07-11
+Every `pet`/`Pet` occurrence in engine-facing naming becomes
+`rogue`/`Rogue`: crate names (`pet_dragon`/`pet_dragon_lib` →
+`rogue_dragon`/`rogue_dragon_lib`), binary name, types/structs that
+embed "Pet Dragon," comments, doc strings, UCI `id name` response —
+everywhere it's part of the engine's identity. Docs consolidated into
+the existing `RD/docs` location (the separate `pd/docs` inventory pass
+is now folded in here, not maintained as a parallel track).
+
+### D13 — Pivot: adopt pet-dragon (Rust) as the foundation, retire the C3Engine (C++) path
+**Date:** 2026-07-11
+**Context:** After fixing three real, verified memory-safety bugs in
+C3Engine's C++ codebase in one session (D10-D12) — with a fourth
+(SIGILL crash in eval.cpp) found and still open during final delivery
+checks — Gokul asked directly whether adopting pet-dragon (his other,
+more mature Rust project) as the foundation instead would be easier.
+
+**Investigation before deciding** (not a snap call):
+- Read pet-dragon's actual source (`position/setup.rs` in full),
+  confirming the two constraints to remove (bishop-opposite-colour,
+  mirroring) are cleanly isolated in one file, not scattered.
+- Installed a Rust toolchain and **actually built pet-dragon and ran
+  its real test suite** — 63 directly-relevant tests (perft including
+  Kiwipete, make/unmake symmetry, 1000-iteration setup validation) all
+  passed. This is the same rigor applied to C3Engine (nothing taken on
+  faith), not a lighter-touch evaluation.
+  Retrieved and read pet-dragon's own extensive documentation
+  (`pd/docs/` in `c3egc3/c3e` — 4,647 lines: DECISIONS.md,
+  ROADMAP.md, SESSION_LOG.md, ENGINE_ARCHITECTURE.md,
+  VARIANT_ARCHITECTURE.md, PROJECT_CONTEXT.md). Found it substantially
+  more mature than a first pass suggested: Phase 19 complete (full UCI
+  with pondering/MultiPV), Syzygy done, NNUE trained, Texel tuning
+  validated via a real 520-game match (~39 Elo gain, honestly reported
+  as "modest," not oversold), 375 tests green as of its own Session 63.
+  Confirmed insufficient-material detection already exists natively
+  (an item that was still an open gap in C3Engine).
+
+**Decision: switch.** Reasoning: the C3Engine bugs weren't bad luck —
+they're the predictable cost of hand-written C++ with no reference to
+check against, and eval.cpp/search.cpp still had ~4,000 largely
+unverified lines when the pivot was decided, so more of the same class
+of bug should be expected. Rust makes that specific bug category
+(out-of-bounds access, buffer overflows, silent corruption) structurally
+much harder to write by accident — directly addressing the actual cost
+center of the previous session, not a vague "Rust is safer" preference.
+pet-dragon is also simply further along as an engine. The specific rule
+differences needed (remove mirror, remove bishop-colour constraint, add
+same-color bishop eval logic) are well-scoped, isolated changes, not a
+rewrite.
+
+**This reverses D4** (the earlier decision to continue with C3Engine
+rather than switch to Rust), made explicitly with better information
+than was available at the time D4 was made — D4 wasn't wrong given what
+was known then (C3Engine's ported core rules were validated against a
+JS reference at that point, and no C++-specific bugs had been found
+yet). C3Engine's debugging history (D1-D12, Sessions 1) is preserved
+below for record, not deleted.
+
+---
+
+## C3Engine era (superseded — retained for record, see D13)
+
+### D12 — Bishop-battery buffer overflow fixed; array sizing needs a second look elsewhere later
+**Date:** 2026-07-10
+Found via AddressSanitizer while doing final verification of D10/D11:
+`evalC3Batteries` in eval.cpp filled a fixed `std::array<Square, 8>`
+with a side's bishop squares, with no bounds check. Fixed by resizing
+to 10 (the true theoretical max: 2 original + 8 promoted pawns) and
+adding a bounds check on the fill loop. Checked eval.cpp for the same
+pattern elsewhere — this was the only instance.
+Flagged but not resolved: this fired on move 5 of a normal game line,
+far earlier than a legitimate many-bishop position could occur. The fix
+makes the crash impossible either way, but whether the bishop bitboard
+was genuinely over-populated at that point (a symptom of something else)
+is still open. Moot now under D13 — not pursued further.
+
+### D11 — Magic-bitboard tables replaced with classical ray-casting (correctness over speed, for now)
+**Date:** 2026-07-10
+Root cause of the depth-3+ perft undercount: the magic-bitboard slider-
+attack tables produced wrong (truncated) results for at least some
+squares — confirmed directly by calling `bishopAttacks()` in isolation.
+Tested and disproved an `sq XOR 56` re-indexing theory (a suspected
+a1=0-vs-a8=0 convention mismatch in the copied-in magic numbers) — it
+broke a previously-working square, so the true mechanism was never
+conclusively identified. Fix: redirected to the codebase's existing
+"classical" ray-casting functions. Verified via perft matching
+known-correct values exactly through depth 5.
+**Methodology note that still applies going forward regardless of
+codebase:** this fix, D10, and D12 were all found by building with
+`-fsanitize=address,undefined -fno-omit-frame-pointer` and reproducing
+the failure — an exact stack trace instead of manual reasoning. Rust's
+own equivalent discipline (Miri, or just trusting the borrow checker/
+bounds checks) is the natural continuation of this same principle.
 
 ### D10 — First real code fix: make/unmake now trusts move-record fields, not live board state
 **Date:** 2026-07-10
-Implemented and verified the fix for the board-corruption/false-mate bug
-(see Roadmap ✅). Changed `makeMove` and `unmakeMove` in board.cpp so
-every piece-type lookup used to index `bb[color][type]` comes from the
-`Move` struct's own `attackerType`/`capturedType`/`promo` fields
-(already correctly set by the move generator at generation time)
-instead of re-reading `pieceAt[from]`/`pieceAt[to]` at make/unmake time.
-Added defensive `NO_PIECE_TYPE` guards on every remaining bitboard index
-derived from a piece type, so a future desync (if one ever occurs, from
-any cause) fails safe — skips that specific update — instead of writing
-out of bounds and corrupting adjacent memory.
-
-Diagnosed using AddressSanitizer + UndefinedBehaviorSanitizer builds,
-which gave exact, real stack traces rather than requiring guesswork —
-this is the method going forward for any future "impossible state"
-bug: build with `-fsanitize=address,undefined -fno-omit-frame-pointer`,
-reproduce, read the trace. Verified clean (zero warnings) at search
-depth 10 after the fix, versus four distinct confirmed out-of-bounds
-write sites before it.
-
-Not yet delivered to Gokul as files — this is still in Claude's sandbox
-working copy of the (renamed-later) engine source. Delivery happens once
-the newly-found perft bug (Roadmap 🔴) is also resolved, so the two
-don't need two separate review/upload cycles for what's still the same
-underlying "get core rules verifiably correct" milestone.
-
----
-
-### D8 — NNUE: out of scope for now, optional future addition
-**Date:** 2026-07-10
-Confirmed with Gokul: NNUE evaluation is not part of the current work.
-The existing classical evaluation (eval.cpp — hand-written PSTs and
-heuristics) stays as the working evaluation function. NNUE is a large,
-separate undertaking (training data, network format, inference code)
-that only makes sense to revisit once the base engine is proven
-functionally correct. No action taken now beyond noting this.
+Root cause of the board-corruption/false-mate-claim bug: `makeMove`/
+`unmakeMove` in board.cpp derived piece types from live board state
+instead of the already-correct fields baked into each `Move` at
+generation time, causing an out-of-bounds write whenever any desync
+occurred anywhere. Traced via ASan/UBSan to its first trigger: move
+generation's own internal legality-check loop. Fixed by trusting the
+move's own recorded fields; verified clean under sanitizers afterward.
 
 ### D9 — D7 reconsidered: tablebase removal reversed, pending real evidence
 **Date:** 2026-07-10
-Directly tested the theory behind D7: set `SyzygyPath` to a nonexistent
-path and ran a search. **No hang, no crash** — the engine handled it
-gracefully ("Syzygy TBs loaded: up to 0 pieces") and continued working
-normally. This disproves the specific mechanism D7 was based on.
+Directly tested the theory behind D7 (that Syzygy files caused a
+reported hang): a bogus SyzygyPath didn't hang or crash. D7 reversed;
+tablebase code stayed in C3Engine. Also: Gokul correctly called out that
+large, hard-to-reverse changes shouldn't be decided without testing the
+underlying theory first, even under a "free hand" mandate.
 
-Also, correctly called out: removing ~4,100 lines of working code and
-potentially re-adding it later is genuinely tedious, and shouldn't have
-been decided without testing the theory first, even with a "free hand"
-mandate — large, hard-to-reverse changes still warrant checking in
-before executing, not just after reasoning them through.
-
-**D7 is reversed.** Tablebase code stays. Roadmap's 🟣 removal section
-is retired unless real evidence turns up. The actual "no response at
-all" report is still unexplained and needs a proper reproduction
-(exact SyzygyPath value used, whether real .rtbw/.rtbz files were
-present, thread count, engine version) before any further action.
-
-### D7 — ~~Remove Syzygy/Fathom tablebase integration entirely (for now)~~ SUPERSEDED BY D9
-**Date:** 2026-07-10
-Context: Gokul reported the engine worked correctly against
-Fairy-Stockfish before adding the Syzygy tablebase ("C lib") files, and
-stopped responding at all afterward — but wasn't fully certain of the
-sequence, and doesn't recall why the files were added originally. Given
-free hand to decide the architecture, decision: **remove the tablebase
-code from Rogue Dragon entirely for now** (syzygy.cpp/.h, tbprobe.c/.h,
-tbchess.c, tbconfig.h, stdendian.h, plus the SyzygyPath/SyzygyProbeLimit
-UCI options and their call sites in search.cpp/uci.cpp).
-
-Reasoning:
-- It's ~4,100 lines (28% of the codebase) of vendored third-party C —
-  the largest single source of build/linkage complexity in the project.
-- Tablebase initialization scanning a misconfigured filesystem path is
-  a very plausible, concrete explanation for a total non-response hang.
-- It's genuinely optional — tablebases only ever activate at 6-7 pieces
-  or fewer on the board; they add late-endgame precision, nothing else.
-  They have no bearing on whether the engine works, plays legally, or
-  respects the variant's rules.
-- Stated goal is "a purely functional working custom variant chess
-  engine" first — tablebases don't serve that goal.
-- Not a permanent loss: Fathom is a well-known public-domain library,
-  cleanly re-addable later from its own source if wanted, once the core
-  engine is proven correct.
-
-Confirmed via direct experiment: built the engine with tbprobe.c
-excluded entirely and re-ran the mate-in-1 repro (see Roadmap 🔴) — bug
-reproduced byte-for-byte identically (same nodes, same score, same PV).
-This proves that specific bug is unrelated to tablebase code, and
-supports debugging the core search/movegen without the TB code as a
-confound.
-
-### D6 — Insufficient-material draw detection: implement natively
-**Date:** 2026-07-10
-The JS prototype delegated this check to an external library (`chess.js`)
-and never implemented it itself. A standalone UCI engine can't assume a
-GUI will handle it. Decision: write native C++ detection (K vs K, K+B vs
-K, K+N vs K, K+B vs K+B same-color-bishops, etc.) rather than leaving it
-as an external dependency or an open gap. Tracked in Roadmap.
-
+### D8 — NNUE: out of scope for now, optional future addition (superseded — pet-dragon already has trained NNUE, see D13)
+### D7 — ~~Remove Syzygy/Fathom tablebase integration~~ SUPERSEDED BY D9
+### D6 — Insufficient-material draw detection: implement natively (superseded — pet-dragon already has this natively, see D13)
 ### D5 — Delivery format: copy-paste, not automated push
-**Date:** 2026-07-10
-Tested GitHub write access via the connected GitHub tool
-(`create_or_update_file`) against both `g-c-3/rogue-dragon` and
-`c3egc3/c3e` — both returned `403 Resource not accessible by
-integration`. The connector has read access but not write access on
-either repo. Rather than requiring Gokul to fix connector permissions
-first, we're proceeding with manual delivery: small changes as
-Find/Replace blocks, large new/rewritten files as a download link +
-GitHub's own "Upload files" button. Claude retains standing read access
-to both repos with no need to ask permission per read.
+GitHub write access via the connected tool returned 403 on both
+`g-c-3/rogue-dragon` and `c3egc3/c3e`. Manual delivery: Find/Replace for
+small changes, download+upload for large/new files. Still applies.
 
-### D4 — Language: C++, continuing existing codebase
-**Date:** 2026-07-10
-Considered switching to Rust (mirroring Gokul's other project,
-pet-dragon) vs. continuing in C++. Decision: **C++**, continuing from
-the existing engine code. Reasoning: the core rule logic (unmoved-pawn
-tracking, corner-locked castling, en passant) is already ported from a
-working JS prototype and confirmed matching. A Rust rewrite at this
-stage would discard validated work and effectively restart the project
-— which we explicitly determined this effort is *not*. Rust remains a
-plausible future target once the C++ version is proven correct (this
-appears to be the path pet-dragon itself took), not a starting point.
-
+### D4 — Language: C++, continuing existing codebase (reversed — see D13)
 ### D3 — Keep original variant rules as-is
-**Date:** 2026-07-10
-Considered moving toward pet-dragon's more conservative opening-position
-style. Decision: keep the original rules unchanged — full 16.4-trillion
-random-opening space, pawn-rights-follow-the-piece, corner-locked
-castling. No simplification.
-
-### D2 — Full rename: c3 / c3e / c3engine → rogue
-**Date:** 2026-07-10
-Every identifier, comment, filename, commit message, and UCI protocol
-token (including the `position c3 <fen>` subcommand) referencing the old
-project name is renamed to `rogue`. Exception: vendored third-party code
-(Fathom tablebase probing, the endianness header) keeps its own upstream
-naming — renaming third-party library internals would make future
-upstream updates harder to apply and provides no benefit.
-The JS reference implementation is retained privately as a debugging
-oracle only, never named or linked in anything delivered into the
-`rogue-dragon` repo.
-
-### D1 — Two-track debugging strategy by file provenance
-**Date:** 2026-07-10
-Roughly 40% of the codebase was ported from a JS prototype (core rules:
-board, movegen, zobrist, uci, tt) and can be validated by direct
-behavioral diff against that reference. The remaining ~60% (eval,
-search, tablebase probing, opening book, bitboard generation) was
-written natively in C++ with no reference implementation, and has to be
-validated against chess-engine theory and test suites instead (perft,
-tactical test suites, reference-engine comparison). This distinction
-determines which validation method applies file-by-file — logged in
-Project.md's file map.
+Full 16.4-trillion random-opening space, pawn-rights-follow-the-piece,
+corner-locked castling, no simplification. **Still applies** — this is
+exactly the rule set Rogue Dragon is being adapted toward from
+pet-dragon's more constrained baseline.
+### D2 — Full rename: c3/c3e/c3engine → rogue (superseded in mechanism by D14, same principle)
+### D1 — Two-track debugging strategy by file provenance (C3Engine-specific, moot under D13)
