@@ -803,3 +803,98 @@ restriction there.
   confirming the compiled function — not just the Python mirror — is
   deterministic and position-sensitive. `perft(3) = 8902` reconfirmed
   unaffected (move generation untouched by this change).
+
+## D-70: Array-typed struct fields (Session 35) — transpiler feature,
+  first of D-69's three NNUE follow-up items. `self.acc: int32[128] = []`
+  inside `__init__` now declares a fixed-size, zero-initialised C++ array
+  member (`int32_t acc[128] = {};`) instead of being silently mis-emitted
+  as a scalar. Three files changed, each doing exactly its one job (Core
+  Rule 1):
+
+  - **`core/parser.py`**: `IRField` gained an `is_array: bool = False`
+    flag, set in `_parse_init_fields()` the same way `IRGlobal.is_array`
+    already is (`"[" in type_name`) — no new parsing logic, just reusing
+    the existing annotation-resolution path (`_resolve_annotation()`
+    already handled `ast.Subscript` generically, so `int32[128]` inside a
+    field annotation parsed correctly before this session; the field just
+    wasn't *marked* as an array). `_resolve_target()` gained a new case:
+    `obj.attr[index]` (attribute-then-subscript, e.g. `board.acc[h] = x`
+    or `self.acc[h] = x`) now flattens to a target string instead of
+    raising "Unsupported assignment target" — previously only bare-name
+    subscripts (`moves[i]`) were supported.
+  - **`core/type_system.py`**: `_check_class()` now validates array field
+    types via `resolve_array()` (invalid size, unknown element type)
+    instead of `is_known()`'s scalar-only check (which happened to not
+    reject array type strings, but didn't actually validate them either —
+    `is_known("int32[128]")` strips the array suffix and only checks
+    `"int32"`, silently ignoring the size). `_check_assign()`'s
+    subscript-assignment branch now exempts any dotted base
+    (`"." in base`) from the "must already be a declared local array"
+    check — `board.acc[h] = x` is a struct-field element write, validated
+    once at the class level, not a new local declaration needing
+    first-use annotation. This subsumed the narrower pre-existing
+    `not target.startswith("self.")` exclusion, which only handled
+    `self.foo = x` (no subscript) and had no path for `self.acc[h] = x`
+    or any non-self dotted-subscript target at all.
+  - **`core/emitter.py`**: `_emit_class()` branches on `f.is_array` and
+    emits array fields with the exact same zero-init BSS convention as
+    module-level global arrays (`_emit_globals`) — custom initial contents
+    aren't supported for array fields, same as globals; fill via an init
+    function for non-zero starting values (this is exactly the pattern
+    `init_nnue_weights()` already uses for the module-level NNUE arrays,
+    and the intended pattern for a future `init_accumulator()` per-board
+    method/function).
+
+  **Verified with a standalone test file** (`/tmp/arrfield_test.py`, not
+  committed — a minimal `Acc` struct with an `int32[4]` field), compiled
+  with `g++ -std=c++20 -O2` outside the test suite, actually **run**: a
+  free function taking the struct by value, writing `a.vals[i] = i * 100`
+  for each index, and returning the modified struct — mirroring
+  `make_move()`'s established value-copy convention exactly — produced
+  correct results end-to-end (`sum_external=600 sum_self=600
+  vals=0,100,200,300`, matching hand-computed expected values).
+
+  **Discovered, not fixed, this session — noted as a real limitation**:
+  struct methods emit as C++ `const` unconditionally
+  (`core/emitter.py`'s `_emit_function`, `const_suffix = " const" if
+  in_struct else ""`, no mutation analysis). This predates array fields
+  entirely and was never exercised before because every existing
+  `BoardState` method is a pure accessor (`white_pieces()`,
+  `black_pieces()`, etc.) — all mutation in the codebase already goes
+  through free functions taking the struct by value and returning a
+  modified copy (`make_move()`), which is unaffected by this limitation
+  and is the pattern array fields should use too, as demonstrated above.
+  A method that tries `self.field = x` (scalar OR array) fails to compile
+  with "assignment of read-only location" — confirmed by deliberately
+  testing it (`fill_self()` in an earlier draft of the standalone test)
+  before removing that draft in favor of the working free-function
+  pattern. Not fixing this now: it's a separate, self-contained emitter
+  change (detect self-mutation in a method body, conditionally drop
+  `const`) with no NNUE dependency — filed as a ROADMAP item, own session.
+
+  Test coverage: `tests/test_parser.py` — 2 new tests
+  (`test_attribute_subscript_target_parses`,
+  `test_self_attribute_subscript_target_parses`) plus
+  `test_unsupported_subscript_target_raises` updated to use a genuinely
+  still-unsupported target (`g()[i] = 0`, subscripting a call result)
+  since its old example (`self.moves[i] = 0`) is exactly the capability
+  this session added. `tests/test_emitter.py` — new
+  `TestArrayFieldEmission` class, 7 tests. `tests/test_type_system.py` —
+  new `TestArrayFieldTypeChecking` class, 5 tests, including one that
+  deliberately checks the new struct-field exemption didn't accidentally
+  swallow the genuine "undeclared local array" error for plain names.
+
+  Full suite: **359/359** (345 prior + 14 new across the three files, net
+  of the one test that was updated rather than added).
+  `fastpy-engine`'s `engine.py`/`run.py` untouched this session and
+  reconfirmed unaffected: `fastpy check` zero errors, `fastpy build
+  --optimize=O3` compiles clean, full suite **219/219**.
+
+  Next: D-69's item 2, the incremental NNUE accumulator itself
+  (`BoardState.acc: int32[128]`, updated inside `make_move()` by
+  add/subtract of the moved/captured piece's `NNUE_W1` row instead of
+  `evaluate_nnue()`'s current full recompute) — now unblocked, its own
+  session, since it touches `fastpy-engine` (not the transpiler) and
+  needs its own careful correctness verification (incremental accumulator
+  must match a full recompute bit-for-bit after every move, including
+  captures, promotions, castling, and en passant).

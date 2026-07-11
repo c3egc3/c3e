@@ -4,6 +4,79 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 35 — Transpiler: array-typed struct fields
+**Status:** COMPLETE ✅
+
+### Continuation
+Picked up directly from Session 34's D-69 scoping: the first of three
+NNUE follow-up items, and the only one that's self-contained to the
+`fastpy` repo rather than `fastpy-engine`. User was asked to choose
+between this and Lazy SMP; delegated the choice back ("You decide") —
+went with this one since it unblocks the incremental accumulator and is
+a naturally scoped, single-purpose transpiler change, the same shape as
+D-68's multi-file compilation work.
+
+### What changed
+`self.acc: int32[128] = []` inside a class `__init__` now correctly
+declares a fixed-size, zero-initialised C++ array struct member instead
+of being silently mis-emitted as a scalar (the array dimension was
+silently dropped). `obj.attr[index] = x` (e.g. `board.acc[h] = x`,
+`self.acc[h] = x`) is now a supported assignment target — previously
+only bare-name subscripts (`moves[i]`) worked; anything with a leading
+attribute access raised "Unsupported assignment target".
+
+Three files, three separate concerns (Core Rule 1):
+- `core/parser.py` — `IRField.is_array` flag; `_resolve_target()` handles
+  `obj.attr[index]`
+- `core/type_system.py` — `_check_class()` validates array field types
+  properly via `resolve_array()`; `_check_assign()`'s subscript check
+  exempts dotted (struct-field) bases from the local-declaration
+  requirement
+- `core/emitter.py` — `_emit_class()` emits array fields with the same
+  zero-init convention as module-level global arrays
+
+Full design rationale, including a **discovered-but-deliberately-not-fixed
+limitation** (struct methods emit `const` unconditionally, so no method
+can mutate `self` — array or scalar field — only free functions taking
+the struct by value can, matching `make_move()`'s existing convention) is
+in D-70.
+
+### Verification
+- Standalone test file (`/tmp/arrfield_test.py`, not committed): a
+  minimal `Acc` struct with an `int32[4]` field, compiled with
+  `g++ -std=c++20 -O2` and **run** — a free function mutating the array
+  field via the value-copy-return pattern produced the correct summed
+  result (`600`) and correct individual values (`0,100,200,300`),
+  cross-checked against a read-only struct method computing the same sum
+  a second way
+- 14 new/updated tests: `test_parser.py` (2 new + 1 updated — the old
+  "unsupported" test used exactly the target this session made
+  supported, so its example was swapped for a genuinely-still-unsupported
+  one), `test_emitter.py` (`TestArrayFieldEmission`, 7 new),
+  `test_type_system.py` (`TestArrayFieldTypeChecking`, 5 new)
+- `fastpy` full suite: **359/359** (345 prior + 14)
+- `fastpy-engine`: untouched this session, reconfirmed unaffected —
+  `fastpy check engine.py` zero errors, `fastpy build --optimize=O3`
+  compiles clean, full suite **219/219**
+
+### Next session
+- D-69/D-70's item 3 on ROADMAP.md: the incremental NNUE accumulator
+  itself — `BoardState.acc: int32[128]`, updated inside `make_move()` via
+  add/subtract of the moved/captured piece's `NNUE_W1` row instead of
+  `evaluate_nnue()`'s current full-recompute-every-call. Needs careful
+  correctness verification: the incremental result must match a full
+  recompute bit-for-bit after every move type (quiet moves, captures,
+  promotions, castling, en passant all touch different numbers of
+  bitboards).
+- Lower priority, filed but not blocking: the unconditional-`const`
+  struct-method limitation (D-70) — self-contained emitter fix, no NNUE
+  dependency, own session whenever it's next in line.
+- Lazy SMP multi-core search still untouched, still a candidate.
+- Re-run the Session 30/PROCESS baseline check (both repos' full test
+  suites against freshly-pulled `main`) before trusting this log.
+
+---
+
 ## Session 34 — NNUE evaluation infrastructure (inference only)
 **Status:** COMPLETE ✅ (infra, not full NNUE — see scope below)
 

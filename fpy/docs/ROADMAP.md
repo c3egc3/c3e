@@ -135,15 +135,35 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
   - [ ] Offline NNUE training pipeline (separate tool/repo, numpy/PyTorch,
         outside FastPy's chess-engine dialect) to replace
         `init_nnue_weights()`'s placeholder body with real trained weights
-  - [ ] Transpiler feature: array-typed `BoardState` struct fields
-        (`core/parser.py` + `core/emitter.py` — `resolve_array()` is only
-        wired for globals/params/locals today, not class fields). Needed
-        before an incremental accumulator can live on the board and
-        copy-with-value the way `hash` does.
-  - [ ] Incremental accumulator update in `make_move()` (depends on the
-        transpiler feature above) — replaces `evaluate_nnue()`'s current
-        full-recompute-every-call with add/subtract of just the moved
-        piece's `NNUE_W1` row, which is NNUE's actual performance win
+  - [x] Transpiler feature: array-typed `BoardState` struct fields
+        (Session 35 / D-70) — `core/parser.py` (`IRField.is_array`,
+        `_resolve_target()` now handles `obj.attr[index]`),
+        `core/type_system.py` (`_check_class()` validates via
+        `resolve_array()`; `_check_assign()` exempts struct-field
+        element writes from the local-array-declared check),
+        `core/emitter.py` (`_emit_class()` emits zero-init fixed-size
+        array members). 14 new/updated tests across
+        `test_parser.py`/`test_emitter.py`/`test_type_system.py`.
+        Verified end-to-end with a standalone compiled-and-run test
+        (not committed) using the established value-copy mutation
+        pattern (free function takes struct by value, mutates the
+        array field, returns the modified struct — same convention as
+        `make_move()`). Full suite 359/359 (fastpy), 219/219
+        (fastpy-engine, unaffected).
+  - [ ] Emitter: struct methods emit `const` unconditionally (discovered
+        during D-70, not fixed — self-contained, no NNUE dependency).
+        `core/emitter.py`'s `_emit_function` needs to detect whether a
+        method mutates `self` and conditionally drop `const`. Not
+        currently a blocker — every existing `BoardState` method is a
+        pure accessor, and the accumulator's mutation will go through a
+        free function (`make_move()`'s pattern), same as every other
+        struct mutation in this codebase — but worth fixing so future
+        method-style mutators aren't forced into free-function style.
+  - [ ] Incremental accumulator in `make_move()` (unblocked by the above;
+        needs `BoardState.acc: int32[128]`, add/subtract of the
+        moved/captured piece's `NNUE_W1` row per move, and correctness
+        verification against a full recompute after every move type —
+        quiet moves, captures, promotions, castling, en passant)
   - [ ] Wire `evaluate_nnue()` into `alpha_beta()`/`quiescence()` once
         real trained weights exist — deliberately not done over
         placeholder weights (see D-69 point 2)
