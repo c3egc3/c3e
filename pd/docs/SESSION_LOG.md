@@ -7,6 +7,52 @@ Most recent session at TOP.
 
 ---
 
+## Session 64 — 2026-07-11 (Difficulty levels scoped — D39 — no code)
+
+**Built:** Nothing — this session was a scoping discussion, not
+implementation. Gokul asked whether the engine has difficulty presets,
+whether major engines do, and then proposed reusing standard-chess Elo
+calibration (via one Pet Dragon opening that visually resembles the
+standard starting array) as a shortcut for difficulty levels.
+
+**What got worked out:** Pet Dragon has no difficulty/skill-level option
+currently — confirmed against the live UCI option list. Real engines do:
+Stockfish's `Skill Level` (weighted randomness among top candidates + a
+depth cap, not just "search less") and `UCI_Elo` (calibrated against real
+rating data). Gokul's Elo-reuse idea was explored properly rather than
+dismissed outright — took two passes to fully reject correctly:
+1. First pass: one opening's resemblance to standard chess isn't enough
+   representativeness on its own — same class of mistake as D36's
+   original single-seed outlier, just bigger in scope.
+2. Real reason, found on the second pass: it doesn't work even for that
+   one opening, because Pet Dragon's custom pawn rules apply from move
+   one — a visually standard starting array doesn't mean the game plays
+   like real chess from there on, so no part of an external Elo
+   calibration table (built from real chess games) transfers over.
+
+**Decision (D39):** difficulty levels will be depth-cap tiers (possibly +
+low-end move-selection noise, Stockfish-style), labeled plainly (`Skill
+Level N`), making no Elo/human-comparable-strength claim — sidesteps the
+whole external-calibration problem, since "less depth is weaker" needs no
+borrowed data, only internal verification. That verification reuses the
+existing `uci_match_runner.rs` harness (D36) across many seeds — no new
+infrastructure needed.
+
+**Bugs fixed:** None.
+
+**Decisions made:** D39 (see DECISIONS.md) — scoped, not implemented.
+
+**Next session start point:** Build Phase 20. Scope the exact tier count
+and depth/noise values, add a `Skill Level` UCI option (spin, similar
+shape to `MultiPV`), wire into `iterative_deepening()`'s depth cap (and
+move selection if noise is included), then validate tier ordering with
+`uci_match_runner.rs` across multiple seeds before calling any tier done
+— don't skip that validation step given how much this project has
+already learned about single-sample results being misleading (D36's
+original outlier, this very session's rejected shortcut).
+
+---
+
 ## Session 63 — 2026-07-11 (Phase 19: MultiPV + Move Overhead built and verified)
 
 **Built:** Two standard UCI analysis-GUI options, requested together after

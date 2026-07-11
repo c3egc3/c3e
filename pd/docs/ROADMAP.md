@@ -626,6 +626,40 @@
 
 ---
 
+## Phase 20 — Difficulty / Skill Levels ⏳ SCOPED, NOT STARTED
+- [ ] 20.1 — D39 (Session 64, scoping discussion only — no code this
+            session): build depth-cap difficulty tiers (`Skill Level
+            0..N` or similar), optionally with a little move-selection
+            noise at the low end matching Stockfish's actual `Skill
+            Level` mechanism (weighted randomness among top candidates,
+            not just a lower depth cap) rather than inventing something
+            new. Explicitly NOT `UCI_Elo`-style — no calibrated
+            human-comparable number attached to any tier, for the same
+            reason noted throughout this project: no external rating pool
+            exists for this variant.
+            Considered and rejected: borrowing standard-chess Elo
+            calibration tables for the one Pet Dragon opening that visually
+            resembles the standard starting array. Doesn't work even for
+            that one opening — Pet Dragon's custom pawn rules apply from
+            move one, so a visually standard start doesn't mean the game
+            plays like real chess from there on; external Elo tables were
+            built against real chess rules and don't transfer. Full
+            reasoning: D39.
+            Validation plan when built: same methodology as D36 — use the
+            existing `uci_match_runner.rs` harness across many seeded
+            positions to empirically confirm tiers are correctly ordered
+            and reasonably spaced (tier K vs K+1 should win convincingly
+            and consistently). No new measurement infrastructure needed,
+            reuses what already exists.
+            NEXT SESSION START POINT: scope the exact tier count and
+            depth/noise values, implement as a new `Skill Level` UCI
+            option (spin, similar shape to `MultiPV`), wire into
+            `iterative_deepening()`'s depth cap (and move selection if
+            noise is included), then validate with `uci_match_runner.rs`
+            before calling any tier done.
+
+---
+
 ## Test Coverage Summary
 **Note: the per-module breakdown below is stale (predates several
 sessions' worth of additions — texel_diag.rs, uci_match_runner.rs,

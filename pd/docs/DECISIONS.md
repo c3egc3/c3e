@@ -780,3 +780,53 @@ produced correctly depth-sorted, distinct-move `multipv 1/2/3` lines with
 produced exactly one `multipv 1` line per depth, confirming zero change
 to existing behavior; `Move Overhead 2000` on a `movetime 3000` search
 correctly finished in ~1s (3000-2000ms budget) instead of ~3s.
+
+
+## D39 — Skill Levels: Depth-Cap Tiers, Not Elo Calibration (2026-07-11)
+
+**Decision (scoping only — not built this session)**: When difficulty
+levels get built, they'll be depth-cap tiers (optionally + a little
+move-selection noise at the low end, matching Stockfish's actual `Skill
+Level` mechanism rather than just "search less"), labeled `Skill Level
+0..N` or similar. Each tier's ordering/spacing will be validated
+empirically using the existing `uci_match_runner.rs` harness (D36) across
+many seeded positions — tier K vs tier K+1 should win convincingly and
+consistently, same methodology as the Texel-tuning validation. No new
+measurement infrastructure needed.
+
+**Explicitly rejected: reusing standard-chess Elo tables (Stockfish's
+`UCI_Elo`/`Skill Level` calibration) for Pet Dragon, even just for
+openings that start from the standard array.** The reasoning took two
+passes to land correctly:
+1. First framing considered: use the *one* Pet Dragon opening that visually
+   matches the standard chess starting position, apply standard-chess Elo
+   calibration there, generalize to other openings later. Rejected — this
+   still repeats D36's original single-seed-outlier lesson (one sample,
+   even a resembling one, isn't representative) at a *larger* scale than
+   before.
+2. Real reason it doesn't work at all, even for that one opening:
+   **Pet Dragon's custom pawn rules apply from move one**, so a visually
+   standard starting array doesn't mean move one onward plays like real
+   chess — legal pawn moves, promotion timing, and en passant can already
+   diverge. Stockfish's Elo calibration tables were built from millions of
+   games under *real* chess rules against known-strength opponents; that
+   calibration measures "how does this engine play chess," not "how does
+   it handle these 32 starting squares." Once the rules diverge, there's
+   no way to know how much of that calibration still applies — could be
+   negligible or could be large, and there's no data either way to check.
+   The resemblance between the two starting positions is cosmetic, not
+   structural, so no part of an external Elo table transfers.
+
+**Why depth-cap tiers don't have this problem**: "less search depth is
+weaker" is true by construction, not by borrowed calibration — it doesn't
+need external data to justify, only internal ordering to verify, which
+D36's harness already does well. A plain `Level 1-10` label makes no
+claim about human-comparable strength, so there's nothing dishonest about
+shipping it without a rating pool — unlike `UCI_Elo`, which explicitly
+promises "you will play at approximately N Elo," a promise this project
+still can't back for the reasons already established in the "is it
+release-ready" discussion (no external rating pool exists for this
+variant at all, full stop, regardless of the pawn-rules issue above).
+
+**Status**: scoped, not implemented. Queued for a future session — see
+ROADMAP Phase 20.
