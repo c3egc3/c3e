@@ -7,6 +7,85 @@ Most recent session at TOP.
 
 ---
 
+## Session 63 — 2026-07-11 (Phase 19: MultiPV + Move Overhead built and verified)
+
+**Built:** Two standard UCI analysis-GUI options, requested together after
+the pondering/self-containment review identified them as the remaining
+gaps besides NNUE: `MultiPV` (report N candidate lines) and `Move
+Overhead` (runtime-configurable time-safety buffer). Neither affects
+playing strength.
+
+**MultiPV (D38):** Standard root-move-exclusion technique — search the
+primary line normally, then re-search from the root excluding
+already-found moves, once per extra line, full window. New `SearchInfo`
+fields `multipv: usize` (default 1) and `root_exclude: Vec<Move>`. The
+root-only exclusion check in `alpha_beta.rs`'s move loop coexists with
+singular extension's `excluded: Move` parameter without collision —
+confirmed by reading exactly where singular extension's `!root_node`
+guard sits before writing the new `root_node`-gated check. Entirely
+additive: gated behind `multipv > 1`, so the existing single-PV code path
+in `iterative_deepening()` wasn't touched, not even reformatted.
+
+**Move Overhead (D38):** `OVERHEAD_MS` was a hardcoded constant in
+`search/time.rs`; now `TimeControl::overhead_ms`, defaulting to the same
+value, set from `EngineState.move_overhead_ms` via `setoption`.
+
+**Files changed:** `src/search/mod.rs`, `src/search/alpha_beta.rs`,
+`src/search/iterative.rs`, `src/search/time.rs`, `src/main.rs`.
+
+**Two real things caught during this session, both fixed before shipping:**
+1. A pre-existing bug in `cmd_setoption`, found while touching it to add
+   Move Overhead: the old parser assumed single-word option names/values
+   at fixed token positions, which would have silently mis-parsed "Move
+   Overhead" itself (two words) and truncated any multi-word value (e.g.
+   a spaced Windows SyzygyPath) to its first token. Rewrote to find the
+   `"value"` token and join everything on each side — backward-compatible
+   with every existing single-word case (regression test added).
+2. My own first version of a MultiPV test asserted the primary line's
+   move is identical between MultiPV=1 and MultiPV=4 runs. It failed —
+   genuinely, not flaky. Turns out extra MultiPV lines searched at
+   earlier depths feed the same shared TT/history tables the primary
+   line's later-depth search then reads, so more of the tree has
+   legitimately been explored by the time depth N's primary line runs —
+   enough to occasionally shift which (still fully valid, still
+   best-scoring) move comes out on top. This is a known, accepted
+   property of MultiPV in alpha-beta engines generally (Stockfish
+   documents the same caveat), not a defect. Fixed the test to assert
+   what's actually guaranteed — legality — with the full explanation
+   written into the test itself.
+
+**Verification:**
+- `cargo check --release` clean against the real crate.
+- Full suite green: 345 lib tests (was 335) + 30 bin tests (was 22) = 375
+  total, 18 new, 0 regressed, 0 pre-existing tests rewritten.
+- Manual end-to-end UCI runs against the actual compiled binary: MultiPV=3
+  produced correctly depth-sorted, distinct-move `multipv 1/2/3` lines
+  with `bestmove` matching line 1's final-depth move; default (no MultiPV
+  set) produced exactly one `multipv 1` line per depth, confirming zero
+  change to existing behavior; Move Overhead=2000 on a movetime=3000
+  search finished in ~1.02s (3000-2000ms budget) instead of ~3s.
+
+**Bugs fixed:** The `cmd_setoption` multi-word parsing bug above — this
+was a pre-existing latent bug (SyzygyPath's value could already have been
+silently truncated), not something introduced this session, caught and
+fixed as a natural consequence of touching that function.
+
+**Decisions made:** D38 (see DECISIONS.md) — covers both MultiPV's
+root-exclusion design and Move Overhead's TimeControl-field approach,
+plus the `cmd_setoption` fix.
+
+**Next session start point:** No code task queued. Phase 19 is complete.
+Gokul said "then we will move on to NNUE" — next session should start
+there: a bigger network (128+ hidden units, king-relative features
+instead of flat piece-square) per the existing Phase 16/17.6 conclusion
+that `hidden_size=32` is structurally too small, not a tuning problem.
+That's a real architecture change needing a bigger Kaggle self-play job
+for enough data to justify the extra capacity — worth scoping carefully
+before writing any code, given how large that undertaking is compared to
+this session's two contained features.
+
+---
+
 ## Session 62 — 2026-07-11 (Phase 18: real UCI pondering built and verified)
 
 **Built:** Full UCI pondering support (`go ... ponder` + `ponderhit`),

@@ -575,14 +575,66 @@
 
 ---
 
+## Phase 19 — Analysis GUI UCI Options (MultiPV, Move Overhead) ✅ COMPLETE
+- [x] 19.1 — D38 (Session 63): MultiPV — report N candidate lines instead
+            of 1. Standard root-move-exclusion technique: search the
+            primary line normally (fully unmodified code path), then
+            re-search from the root excluding already-found moves once per
+            extra line, same depth, full window (no per-line aspiration
+            state — simpler, and MultiPV usage already accepts being
+            slower than single-PV as the cost of extra lines). New
+            `SearchInfo` fields: `multipv: usize` (default 1),
+            `root_exclude: Vec<Move>`. The root-only exclusion check in
+            `alpha_beta.rs`'s move loop shares space with singular
+            extension's differently-scoped `excluded: Move` parameter
+            without colliding — singular verification is gated `!root_node`,
+            MultiPV's check is gated `root_node`, confirmed by reading the
+            existing guard before writing the new one.
+            Entirely additive: gated behind `multipv > 1`, false for every
+            existing caller by default, so nothing about the single-PV
+            path changed — not even reformatted.
+            Files changed: `src/search/mod.rs`, `src/search/alpha_beta.rs`,
+            `src/search/iterative.rs`, `src/main.rs`.
+            A test caught a real (if expected) surprise: MultiPV>1 runs
+            can pick a *different* primary-line move than MultiPV=1 at the
+            same depth, because extra lines searched at earlier depths
+            feed the same shared TT/history tables the primary line then
+            reads. Not a bug — matches Stockfish's own documented caveat —
+            but the first version of the test wrongly asserted move
+            identity; fixed to assert what's actually guaranteed (legality).
+            Full writeup: D38.
+- [x] 19.2 — D38 (same session): Move Overhead — `search/time.rs`'s
+            `OVERHEAD_MS` was a hardcoded constant; now
+            `TimeControl::overhead_ms`, runtime-configurable via
+            `setoption name Move Overhead`, defaulting to the same value.
+            Files changed: `src/search/time.rs`, `src/main.rs`.
+            Caught and fixed a real pre-existing bug in `cmd_setoption`
+            while touching it for this: the old parser assumed single-word
+            option names and values (`tokens[2]`/`tokens[4]` at fixed
+            positions), which silently mis-parsed "Move Overhead" itself
+            (two words) and would have truncated any multi-word value
+            (e.g. a spaced Windows SyzygyPath) to its first token. Rewrote
+            to find the `"value"` token and join everything on each side —
+            backward-compatible with every existing single-word case.
+            Verified: `cargo check --release` clean; full suite green,
+            345 lib (was 335) + 30 bin (was 22) = 375 total, 18 new, 0
+            regressed; manual end-to-end UCI runs against the real
+            compiled binary confirmed both features working (sorted
+            distinct-move MultiPV lines matching `bestmove`; default
+            behavior unchanged; Move Overhead 2000 on movetime 3000
+            correctly finished in ~1s not ~3s).
+
+---
+
 ## Test Coverage Summary
 **Note: the per-module breakdown below is stale (predates several
 sessions' worth of additions — texel_diag.rs, uci_match_runner.rs,
-Phase 18's pondering tests, etc.) and hasn't been recomputed file-by-file.
-The actual current total, confirmed by Session 62's full-suite run, is
-335 lib tests + 22 bin tests = 357, all green.** Recomputing the exact
-per-module split below is a small, low-priority task for whenever it's
-convenient — not blocking anything.
+Phase 18's pondering tests, Phase 19's MultiPV/Move Overhead tests, etc.)
+and hasn't been recomputed file-by-file. The actual current total,
+confirmed by Session 63's full-suite run, is 345 lib tests + 30 bin tests
+= 375, all green.** Recomputing the exact per-module split below is a
+small, low-priority task for whenever it's convenient — not blocking
+anything.
 | Test File          | Count | Status |
 |--------------------|-------|--------|
 | src/types.rs       | 14    | ✅     |

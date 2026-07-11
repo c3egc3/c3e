@@ -706,3 +706,77 @@ none touched/regenerated); manual end-to-end UCI runs via a real spawned
 a bounded ~2.2s real search (matching the 60s-clock-implied soft limit)
 instead of running forever; a plain `go movetime 300` and a `go ponder`
 followed by `stop` (ponder miss) both still behave exactly as before.
+
+
+## D38 — MultiPV via Root-Move Exclusion, Not Parallel Search Trees (2026-07-11)
+
+**Decision**: Implement UCI `MultiPV` (report N candidate lines instead of
+1) using the standard alpha-beta technique: search the primary line
+normally, then re-search from the root excluding the move(s) already
+found, once per extra line, all at the same depth. Two new `SearchInfo`
+fields make this possible: `multipv: usize` (default 1) and
+`root_exclude: Vec<Move>`. The move loop in `alpha_beta.rs` skips a move
+if it's in `root_exclude` — but ONLY at the root (`root_node &&
+!info.root_exclude.is_empty() && ...`), which matters for a specific
+reason: singular extension already uses a same-shaped `excluded: Move`
+parameter deeper in the tree, gated on `!root_node`. Since singular
+verification never runs at the root and MultiPV's exclusion never runs
+below the root, the two mechanisms share the move loop without ever
+colliding — confirmed by reading where singular extension's guard
+actually sits before writing a single line of the new check.
+
+The extra lines are 100% additive: the entire existing single-PV code
+path in `iterative_deepening()` is untouched (not even reformatted), and
+the new block is gated behind `info.multipv > 1`, which is false for
+every existing caller (`SearchInfo::new()` defaults `multipv` to 1). The
+returned `SearchResult` — the one that actually determines what gets
+played — always comes from the untouched primary-line code above the new
+block.
+
+**Rejected alternative**: give each MultiPV line its own aspiration-window
+state carried across depths (matching how the primary line already
+works), for speed. Rejected as unnecessary complexity for what MultiPV
+users already expect to be slower than single-PV — extra lines use a
+plain full-window search instead (`search_multipv_slot()`), which is
+simpler, shares the TT lock-free, and costs nothing when MultiPV is at
+its default of 1 since the function is never called.
+
+**A test I wrote was wrong, and fixing it taught something worth
+recording**: the first version of `test_multipv_does_not_affect_primary_
+move_choice` asserted the primary line's `best_move` is identical whether
+MultiPV is 1 or 4. It failed — genuinely, not a flaky timing issue.
+Investigating showed why: extra MultiPV lines searched at depths 1..N-1
+feed the same shared TT/history/killer/correction-history tables that
+depth N's primary-line search then reads, so a MultiPV=4 run has
+legitimately explored more of the tree by depth N than a MultiPV=1 run
+did — enough to occasionally shift move ordering and land on a different,
+still fully valid, still best-scoring-at-that-depth move. This is a
+known, accepted property of MultiPV in alpha-beta engines generally
+(Stockfish's own documentation carries the same caveat), not a defect
+introduced here. The test now asserts what's actually guaranteed and
+worth testing — the primary line is always legal, in both configurations
+— documented at length in the test itself so nobody has to rediscover
+this the hard way.
+
+**Also this session — Move Overhead (D38 covers both, one small feature
+alongside the bigger one)**: `search/time.rs`'s `OVERHEAD_MS` was a
+hardcoded constant; added `TimeControl::overhead_ms` (defaults to the same
+constant via a manual `Default` impl, replacing the old `#[derive(Default)]`)
+and wired it through `EngineState.move_overhead_ms` / `setoption name Move
+Overhead`. Caught and fixed a real pre-existing parsing bug while touching
+`cmd_setoption` for this: the old parser took `tokens[2]` as the entire
+option name and `tokens[4]` as the entire value, which silently mis-parsed
+any multi-word option name ("Move Overhead" itself, the very option being
+added) and truncated any multi-word value (e.g. a Windows SyzygyPath with
+spaces) to its first token. Rewrote to find the `"value"` token and join
+everything on each side of it, backward-compatible with every existing
+single-word case (verified: `test_setoption_single_word_value_still_works`).
+
+**Verified**: `cargo check --release` clean; full suite green, 345 lib
+(was 335) + 30 bin (was 22) = 375 total, 18 new; manual end-to-end UCI
+runs against the real compiled binary — `setoption name MultiPV value 3`
+produced correctly depth-sorted, distinct-move `multipv 1/2/3` lines with
+`bestmove` matching line 1's final-depth move; default (no MultiPV set)
+produced exactly one `multipv 1` line per depth, confirming zero change
+to existing behavior; `Move Overhead 2000` on a `movetime 3000` search
+correctly finished in ~1s (3000-2000ms budget) instead of ~3s.
