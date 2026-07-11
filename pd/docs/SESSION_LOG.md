@@ -7,6 +7,73 @@ Most recent session at TOP.
 
 ---
 
+## Session 62 — 2026-07-11 (Phase 18: real UCI pondering built and verified)
+
+**Built:** Full UCI pondering support (`go ... ponder` + `ponderhit`),
+closing a real protocol-completeness gap surfaced during a general "is the
+engine release-ready / what's missing besides NNUE" review — found by
+inspection, not by a failing test. `allocate_time()` already special-cased
+`tc.ponder` correctly (near-infinite search); `ponderhit` simply wasn't
+handled anywhere in `main.rs`'s command dispatch.
+
+**Files changed:** `src/main.rs`, `src/search/mod.rs`, `src/search/iterative.rs`.
+Mechanism: two new `Arc<AtomicU64>` fields on `SearchInfo`
+(`ponder_hit_soft_ms`/`ponder_hit_hard_ms`), threaded exactly like the
+existing `stop_flag` pattern (D4). `cmd_go` precomputes the real time
+allocation a ponder search would use once confirmed; `cmd_ponderhit`
+converts that into a deadline relative to the search thread's own
+`start_time` (not reset to zero — pondering time is free per spec, and
+`start_time` is owned by the search thread so can't be safely reset from
+main.rs's thread). `is_time_up()`'s hot-path check (every 256 nodes) and
+`iterative_deepening()`'s depth-loop both respect the override once set.
+Full design rationale and the rejected start_time-reset alternative: D37.
+
+**Bug caught during this session, not shipped:** the first version of the
+integration test set the override atomics *before* calling
+`iterative_deepening()`, which meant `reset_for_search()` — correctly,
+for real usage — wiped them before the depth loop ever read them. The
+test passed for the wrong reason. Caught because a manual `cargo test`
+run showed the "bounded" search still going at depth 23 / 191 seconds
+instead of stopping in milliseconds. Fixed by spawning a real background
+thread that sets the atomics ~30ms after the search starts, matching how
+a real GUI's `ponderhit` can only arrive after the search is already
+running.
+
+**Verification:**
+- `cargo check --release` clean against the real crate (pulled fresh via
+  `codeload.github.com` tarball, edited in-sandbox).
+- Full test suite green: 335 lib tests (was 329) + 22 bin tests (was 17)
+  = 357 total, 12 new, 0 regressed, 0 pre-existing tests touched/rewritten.
+- Manual end-to-end UCI runs against the actual compiled binary (piped
+  real UCI commands via a Python harness): pondered 500ms then
+  `ponderhit` correctly bounded the search to ~2.2s, matching the
+  60s-clock-implied soft limit, instead of running forever. Plain
+  `go movetime 300` (0.20s, as expected) and `go ponder` + `stop`
+  (ponder miss, stopped promptly at 0.4s) both confirmed unaffected.
+
+**Also done — self-containment audit (no code changes):** confirmed NNUE
+weights are embedded via `include_bytes!` (no external model file at
+runtime); the only optional external-file dependency is `SyzygyPath`,
+standard for any tablebase-capable UCI engine. No other gaps found.
+
+**Bugs fixed:** None in shipped code (the test bug above was caught and
+fixed before it left the sandbox, not a shipped regression).
+
+**Decisions made:** D37 (see DECISIONS.md) — atomic-deadline-override
+approach over resetting `start_time` from another thread.
+
+**Note on ROADMAP's Test Coverage Summary table:** flagged as stale (predates
+several sessions of additions) rather than guessing at a recomputed
+per-module breakdown — the confirmed current total (335+22=357) is now
+recorded, but the per-file split still needs a proper recount sometime.
+
+**Next session start point:** No code task queued. Phase 18 is complete.
+Whoever picks this up next should ask Gokul what's next — there's no
+further known gap in UCI compatibility or self-containment as of this
+session.
+
+---
+
 ## Session 61 — 2026-07-11 (D36 final confirmation: 2×200-game runs, ~39 Elo)
 
 **Built:** Nothing new — analysis only. Gokul ran 2 more `uci_match_runner.yml`

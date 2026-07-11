@@ -533,7 +533,56 @@
 
 ---
 
+## Phase 18 — UCI Protocol Completeness (Pondering) ✅ COMPLETE
+- [x] 18.1 — D37 (Session 62): found and closed a real UCI-compatibility
+            gap during a general "what's missing besides NNUE" review, not
+            from a failing test. `search/time.rs`'s `allocate_time()`
+            already special-cased `tc.ponder` to search near-infinitely
+            (that half was already correct, pre-existing) — but
+            `ponderhit` wasn't handled anywhere in `main.rs`'s command
+            dispatch at all. A real pondering-capable GUI would get an
+            unrequested `bestmove` mid-ponder instead of the engine
+            switching to a real, clock-bounded search on `ponderhit`.
+            Fix: two new `Arc<AtomicU64>` fields on `SearchInfo`
+            (`ponder_hit_soft_ms`/`ponder_hit_hard_ms`, threaded the same
+            way `stop_flag` already is, D4-style) let `cmd_ponderhit`
+            (main thread) hand the running search thread a real deadline
+            — expressed relative to the search's own `start_time` (not
+            reset to zero; pondering time is free per spec, and
+            `start_time` is owned by the search thread so it can't safely
+            be reset from another thread — see D37 for the full mechanism
+            and the rejected start_time-reset alternative).
+            Files changed: `src/main.rs`, `src/search/mod.rs`,
+            `src/search/iterative.rs`.
+            Verified: `cargo check --release` clean; full suite green,
+            335 lib + 22 bin tests (up from 329/17 — 12 new, 0 regressed,
+            0 pre-existing tests touched); manual end-to-end UCI runs
+            against the real compiled binary — pondered 500ms then
+            `ponderhit` correctly bounded the search to ~2.2s (matching
+            the 60s-clock-implied soft limit) instead of running forever;
+            plain `go movetime` and `go ponder` + `stop` (ponder miss)
+            both unaffected.
+            Caught and fixed a bug in the FIRST version of the
+            integration test during this same session, before it shipped
+            — see D37's verification section for what happened and why.
+- [x] 18.2 — Self-containment audit (same session, same review): confirmed
+            NNUE weights are embedded via `include_bytes!` (no external
+            model file needed at runtime); the only optional external-file
+            dependency is `SyzygyPath` for tablebases, which is standard/
+            expected for any UCI engine with tablebase support. No other
+            runtime dependency gaps found. No code changes needed — this
+            was a verification pass, not a build task.
+
+---
+
 ## Test Coverage Summary
+**Note: the per-module breakdown below is stale (predates several
+sessions' worth of additions — texel_diag.rs, uci_match_runner.rs,
+Phase 18's pondering tests, etc.) and hasn't been recomputed file-by-file.
+The actual current total, confirmed by Session 62's full-suite run, is
+335 lib tests + 22 bin tests = 357, all green.** Recomputing the exact
+per-module split below is a small, low-priority task for whenever it's
+convenient — not blocking anything.
 | Test File          | Count | Status |
 |--------------------|-------|--------|
 | src/types.rs       | 14    | ✅     |
@@ -545,7 +594,7 @@
 | tests/perft.rs     | 18    | ✅     |
 | tests/setup.rs     | 18    | ✅     |
 | tests/make_unmake.rs | 19  | ✅     |
-| **TOTAL**          | **239** | ✅   |
+| **TOTAL (stale)**  | **239** | see note above |
 
 ---
 

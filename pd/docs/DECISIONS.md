@@ -644,3 +644,65 @@ the same answer with zero changes to any shipped eval code.
   supplies the SHA via the mobile GitHub app's commit history) rather than
   hardcoded, since Claude could not reliably confirm the exact pre-Session-55
   commit SHA this session (api.github.com anonymous rate limit hit).
+
+
+## D37 — Real UCI Pondering: Atomic Deadline Override, Not start_time Reset (2026-07-11)
+
+**Decision**: Implement full UCI pondering (`go ... ponder` + `ponderhit`),
+closing a real protocol-completeness gap found by inspection (not by a
+failing test): `allocate_time()` already special-cased `tc.ponder` to
+search near-infinitely (correct half of pondering, pre-existing), but
+`ponderhit` wasn't handled anywhere in `main.rs`'s command dispatch at
+all — a real GUI that ponders would get an unrequested `bestmove` during
+the opponent's think time instead of the engine correctly switching to a
+bounded real-time search.
+
+Mechanism: two new `Arc<AtomicU64>` fields on `SearchInfo`
+(`ponder_hit_soft_ms`, `ponder_hit_hard_ms`, default `u64::MAX` sentinel =
+unset), threaded through exactly like the existing `stop_flag: Arc<AtomicBool>`
+pattern (D4). `cmd_go` precomputes what the REAL (non-ponder) time
+allocation would be from the same `go` line's clock values, stashes it on
+`EngineState`, and records the wall-clock instant pondering began. `cmd_ponderhit`
+computes elapsed-since-pondering-began and stores `elapsed + real_soft` /
+`elapsed + real_hard` into the atomics — deadlines expressed relative to
+the search thread's own `start_time`, not reset to zero, since pondering
+time is free per the UCI spec. `is_time_up()` (the hot-path check, every
+256 nodes) reads `ponder_hit_hard_ms` first and uses it in place of
+`time_allocated_ms` when set — a single extra atomic load, same cost
+class as the existing `stop_flag` check right above it. `iterative_deepening()`'s
+depth-loop-top additionally consumes `ponder_hit_soft_ms` once (via `swap`)
+to rebuild the `TimeManager` so the "should I start the next depth"/early-
+stop logic also respects the real budget, not just the hard 256-node kill
+switch.
+
+**Rejected alternative**: Reset `SearchInfo::start_time` to `Instant::now()`
+at ponderhit, so the existing `elapsed_ms() >= time_allocated_ms` check
+needs no new override logic at all. Rejected because `start_time` is a
+plain field owned by the (already-running) search thread — `cmd_ponderhit`
+runs on the main UCI-loop thread and has no safe way to mutate it without
+either a `Mutex` around a currently-hot-path field (D4 precedent is
+specifically atomics, not locks, for anything checked per-node) or an
+unsafe alias. Expressing the override as a deadline relative to the
+existing, unchanged `start_time` avoids ever needing write access to
+search-thread-owned state from another thread — the atomics are the only
+thing main.rs touches.
+
+**Bug caught during verification, not shipped**: the first version of the
+integration test set the override atomics *before* calling
+`iterative_deepening()`, which made `reset_for_search()` (correctly, for
+real usage — a genuinely new search should never inherit a stale
+override) wipe them before the depth loop ever read them, so the test
+passed for the wrong reason (it wasn't actually exercising the concurrent
+case). Caught because the "bounded" search ran to depth 23 / 191 seconds
+in a manual `cargo test` run instead of stopping in milliseconds — fixed
+by spawning a real background thread that sets the atomics ~30ms after
+the search starts, matching how a real GUI's `ponderhit` can only arrive
+after the search is already running, never before.
+
+**Verified**: `cargo check --release` clean on the real crate; full test
+suite green (335 lib + 22 bin, up from 329/17 — 12 new tests, all passing,
+none touched/regenerated); manual end-to-end UCI runs via a real spawned
+`pet_dragon` process — pondered 500ms then `ponderhit` correctly produced
+a bounded ~2.2s real search (matching the 60s-clock-implied soft limit)
+instead of running forever; a plain `go movetime 300` and a `go ponder`
+followed by `stop` (ponder miss) both still behave exactly as before.
