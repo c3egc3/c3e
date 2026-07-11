@@ -4,6 +4,83 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 33 — Multi-file compilation support
+**Status:** COMPLETE ✅
+
+### `Go` trigger
+Baseline re-verified first, per the standing PROCESS rule (D-61/D-65):
+freshly pulled both repos via `codeload.github.com` tarballs, ran
+`python -m pytest tests/` in both — **320/320 (fastpy)**, **196/196
+(fastpy-engine)** — confirmed `run.py` parses and `fastpy check engine.py`
+is zero errors, all against `main`, before trusting Session 32's log.
+Picked up the sole remaining ROADMAP ongoing-improvement item flagged at
+the end of Session 32: multi-file compilation support (chosen over
+starting Phase 6's NNUE/Lazy SMP, which are large enough to deserve their
+own dedicated sessions rather than being squeezed in alongside this).
+
+### Design
+`core/parser.py` gained `_record_import` (detects `import foo` / `from
+foo import ...`, recording the bare module name onto a new
+`IRModule.imports` field — no filesystem access, the parser stays a pure
+AST→IR step) and `parse_project(entry_file)` — the new orchestrator that
+resolves those names against sibling `.py` files, recursively follows
+transitive imports, and merges every reachable file's IR into one
+IRModule. `main.py`'s `build`/`check`/`emit` all switched from
+`parse_file()` to `parse_project()`; a single file with no local imports
+behaves identically to before. See D-68 for the full design writeup.
+
+Two correctness issues surfaced while building this and were fixed in the
+same change:
+1. **Emitter didn't forward-declare free functions** (only structs) —
+   single-file `engine.py` got away with this by hand-ordering functions
+   callee-before-caller; a multi-file merge can't guarantee that. Fixed
+   by forward-declaring every free function via a new shared
+   `_function_signature()` helper.
+2. **Pre-existing bug: `BUILTIN_TYPE_MAP` global mutation.**
+   `_try_type_alias` wrote into the module-level dict directly, so any
+   two `parse_source()`/`parse_file()` calls in the same process (the
+   pytest suite; now `parse_project()` merging files that both redeclare
+   `uint64 = int`) could silently cross-contaminate custom alias
+   meanings. Fixed by giving each `ModuleVisitor` its own copy. Caught by
+   a test that gave two merged files conflicting meanings for one alias
+   name and found it silently accepted instead of rejected.
+
+### Files changed
+- `fastpy/core/parser.py` — `IRModule.imports`, `_record_import`,
+  `parse_project()`, `FastPyImportError`, per-instance `_type_map` (bug fix)
+- `fastpy/core/emitter.py` — `_function_signature()` helper,
+  `_emit_forward_declarations()` now also prototypes free functions
+- `fastpy/main.py` — `build`/`check`/`emit` use `parse_project()`
+- `fastpy/tests/test_parser.py` — `TestImportDetection` (8 tests),
+  `TestParseProject` (12 tests)
+- `fastpy/tests/test_emitter.py` — `TestFunctionForwardDeclarations`
+  (5 tests), `TestMultiFileEmission` (2 tests)
+
+See D-68 for the full design rationale.
+
+### Verification
+- `fastpy` full suite: **345/345 passing** (320 prior + 25 new)
+- Hand-built two-file project (`mathutil.py` + `main_entry.py`, functions
+  calling across the file boundary, including a caller emitted before its
+  callee) parsed via `parse_project()`, type-checked clean, emitted, and
+  compiled with `g++ -std=c++20 -O2` to a real binary — ran and produced
+  the arithmetically correct result end-to-end
+- Diamond-import test confirms a shared dependency imported via two paths
+  is merged exactly once, not duplicated
+- `fastpy check engine.py` on `fastpy-engine`'s `engine.py` → zero errors
+  (single-file, no local imports — regression check)
+- `fastpy-engine` full suite: **196/196 passing** (unaffected)
+
+### Next session
+- Phase 6: NNUE evaluation, Lazy SMP multi-core search, target 1B NPS —
+  all three remain unstarted and are each large enough to warrant a
+  dedicated session; NNUE probably first (self-contained: a static
+  evaluation function replacement, doesn't touch search/threading).
+- Re-run the Session 30/PROCESS baseline check (both repos' full test
+  suites against freshly-pulled `main`) before trusting this log.
+
+---
+
 ## Session 32 — `match` statement support (Python 3.10+)
 **Status:** COMPLETE ✅
 

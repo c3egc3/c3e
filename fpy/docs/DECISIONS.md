@@ -624,3 +624,96 @@ restriction there.
   compile with `g++ -std=c++20`) — full suite re-verified at 320/320
   (fastpy) and 196/196 (fastpy-engine, unaffected — `engine.py` doesn't
   use `match` yet).
+## D-68: Multi-file compilation support (Session 33) resolves and merges
+  local `import`s into one IRModule rather than teaching type_system.py or
+  emitter.py about multiple files. `core/parser.py` gained two pieces:
+  `_record_import` (in `ModuleVisitor._visit_top_level`) records the bare
+  module name of every `import foo` / `from foo import ...` statement onto
+  `IRModule.imports`, without touching the filesystem — the parser stays a
+  pure AST→IR step, consistent with every other `_try_*` method in that
+  class. `parse_project(entry_file)` is the new orchestrator: it parses the
+  entry file, and for each name in its `.imports` list checks whether
+  `<entry_dir>/<name>.py` exists; if so, it recursively parses that file
+  the same way (so transitive imports are followed) and merges its
+  type_aliases/constants/globals_/functions/classes into one IRModule.
+  Names that don't resolve to a sibling file (`typing`, `__future__`,
+  dotted/relative imports, or a genuine typo) are left alone exactly as
+  `parse_file()` has always silently skipped them — `parse_project()` can't
+  distinguish "meant a real Python package" from "typo'd a local module",
+  and guessing wrong in the error-raising direction would break any file
+  that imports `typing`. `main.py`'s `build`/`check`/`emit` all switched
+  from `parse_file()` to `parse_project()`; a single file with zero local
+  imports behaves identically to before (verified: `fastpy check engine.py`
+  still zero errors, `fastpy-engine`'s 196/196 suite unaffected).
+
+  Two correctness issues surfaced while building this and were fixed as
+  part of the same change, since both were exactly what a real multi-file
+  merge would immediately trip over:
+
+  1. **Cross-file function call order.** The emitter only ever
+     forward-declared structs (`_emit_forward_declarations`), not free
+     functions — single-file `engine.py` avoided this by hand-ordering
+     every function callee-before-caller. That assumption doesn't survive
+     a multi-file merge, where an imported file's functions can land
+     after the entry file's in `IRModule.functions` regardless of call
+     direction. Fix: forward-declare every free function the same way
+     structs already are, via a new shared `_function_signature(func)`
+     helper used by both the prototype line and the real definition (so
+     the two can never drift apart). Methods are unaffected — they're
+     declared inline in their struct body and never needed this.
+
+  2. **`BUILTIN_TYPE_MAP` global mutation (pre-existing bug, not
+     introduced by this session).** `_try_type_alias` wrote newly
+     discovered aliases (`uint64 = int`) directly into the *module-level*
+     `BUILTIN_TYPE_MAP` dict in `core/parser.py`, so every
+     `parse_source()`/`parse_file()` call in the same process permanently
+     mutated shared state. Harmless for a one-shot CLI process parsing a
+     single file, but silently wrong the moment more than one parse
+     happens in one process with a reused custom alias name meaning
+     different things — which is exactly the pytest test-suite process,
+     and exactly what `parse_project()` now does on purpose (helper.py
+     and main.py both re-declaring the `uint64 = int` prelude, or two
+     files disagreeing about what a shared alias name means). Fix: each
+     `ModuleVisitor` now seeds its own `self._type_map` as a *copy* of
+     `BUILTIN_TYPE_MAP` at construction and mutates only that — parsing
+     one file can no longer affect the outcome of parsing any other,
+     restoring parser purity. Caught by a test that deliberately gave two
+     merged files conflicting meanings for the same alias name and found
+     it silently accepted instead of rejected — that failure is what
+     surfaced the bug.
+
+  Repeated identical type aliases across merged files (every file in a
+  project re-declaring `uint64 = int` etc. as its own prelude) are deduped
+  silently rather than rejected — expected boilerplate, not a name
+  collision, unlike every other top-level construct. Any other kind of
+  duplicate top-level name (function, class, constant, global, or a type
+  alias reused for a genuinely different underlying type) raises
+  `FastPyImportError` (a `FastPyParseError` subclass, so `main.py`'s
+  existing `except (FastPyParseError, SyntaxError)` clauses need no
+  changes) naming both files and both meanings — C++ wouldn't compile
+  with the duplicate anyway, and silently picking one file's definition
+  over the other would hide a real bug rather than surface it.
+
+  FastPy's local-import model is deliberately flat: one directory, no
+  packages, no relative imports, no partial/aliased imports (`from foo
+  import bar as baz` isn't given special handling — the whole module
+  merges regardless of which names were named in the `from` clause,
+  per Core Rule 4: FastPy is chess-engine-specific, not a general Python
+  import system). This matches the only realistic use case — splitting
+  one engine's source across a handful of files in the same repo
+  directory (e.g. `board.py`, `movegen.py`, `search.py`, `eval.py`) — and
+  avoids building header generation, multi-translation-unit linking, or
+  a namespace system for a problem multi-TU compilation doesn't actually
+  have here: everything still emits as a single `.cpp` translation unit,
+  same as before, just assembled from more than one source file.
+
+  20 new tests: `test_parser.py::TestImportDetection` (8),
+  `test_parser.py::TestParseProject` (12); `test_emitter.py`
+  `TestFunctionForwardDeclarations` (5) and `TestMultiFileEmission` (2).
+  Full suite re-verified at 345/345 (fastpy, 320 prior + 25 new — 18 in
+  parser tests, 7 in emitter tests) and 196/196 (fastpy-engine,
+  unaffected). A hand-built two-file project (`mathutil.py` +
+  `main_entry.py`, one function calling another which calls a third
+  across the file boundary) was parsed, type-checked, emitted, and
+  compiled to a real binary with `g++ -std=c++20`, and produced the
+  arithmetically correct result end-to-end.

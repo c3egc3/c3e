@@ -249,7 +249,18 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       offending column), attached once in `parse_source()`. 7 new tests
       in `tests/test_parser.py::TestParseErrorSourceContext` (294 total).
       See D-66.
-- [ ] Multi-file compilation support
+- [x] Multi-file compilation support (Session 33) — `import foo` / `from
+      foo import ...` where `foo.py` sits next to the file being built now
+      merges into one IRModule via `core/parser.py`'s new `parse_project()`;
+      `main.py`'s build/check/emit all switched to it. Diamond imports
+      dedupe, genuine name collisions raise `FastPyImportError`, repeated
+      `uint64 = int`-style prelude aliases dedupe silently. Required
+      forward-declaring free functions in the emitter (previously only
+      structs were) since merged-file function order no longer guarantees
+      callee-before-caller. Surfaced and fixed a pre-existing bug along the
+      way: `_try_type_alias` mutated the module-level `BUILTIN_TYPE_MAP`
+      dict, leaking one parse's custom aliases into every other
+      `parse_source()`/`parse_file()` call in the same process. See D-68.
 - [x] `match` statement support (Python 3.10+) — restricted to the
       switch-mappable subset: integer/boolean literal `case` patterns
       (optionally `|`-combined) and one wildcard `case _:`. Guards,
