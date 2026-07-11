@@ -7,6 +7,56 @@ Most recent session at TOP.
 
 ---
 
+## Session 59 — 2026-07-11 (D36 RUN 1: tuned HCE loses to pre-tuning — unconfirmed)
+
+**Built:** Nothing new — this session ran the D36 harness (built Session
+58) for the first time and analyzed the result.
+
+**Result (RUN 1):** `pre_tuning_ref=c9905a22ed018c6c8332bef275aff548a1d0de70`,
+`post_tuning_ref=main`, 20 games, 100ms/move, seed_start=0. Pre-tuning
+(Ethereal-derived hand-picked HCE) beat post-tuning (Phase 14 Texel-tuned
+HCE, current `main`) 14-6, 0 draws, +147.2 Elo. This is the OPPOSITE of
+what Phase 14 assumed — the milestone table's "~3000-3100" target implied
+tuning would help, not cost ~147 Elo.
+
+**Verification done before trusting this result:** Confirmed the D36
+harness itself isn't the cause. (1) Diffed every file (not just the
+expected eval ones) between the two refs via `codeload.github.com`
+tarballs of both — only the 7 Session-55 tuning files differ
+(`eval/{king_safety,material,mobility,mod,open_lines,pawns,tables}.rs`,
+`texel/weights.rs`); no search, hash, threads, or other engine-config
+differences that could confound the match. (2) Confirmed both refs default
+to 0% NNUE blend weight identically (`NNUE_BLEND_WEIGHT_PCT` static
+default unchanged), so this isn't a repeat of the NNUE-blend confound
+17.7 already ruled out. The harness is trustworthy; the result itself
+still needs replication before acting on it.
+
+**Decision (delegated to Claude — "you decide, confirmative call"):**
+Don't revert Phase 14's work and don't start a tuner-bug investigation off
+one 20-game/one-seed sample. Rerun with a different seed first — it's
+free, changes no code, and either confirms the regression (then
+investigate/revert with actual confidence) or shows RUN 1 was noise
+(then there's nothing to fix). Queued as 17.8's next action:
+`seed_start=1000`, everything else identical.
+
+**Bugs fixed:** None.
+
+**Decisions made:** None new (no DECISIONS.md entry this session — the
+verification above was ruling out confounds in an existing tool, not an
+architectural choice). If RUN 2 confirms the regression, the eventual
+revert-or-fix call will need its own entry, tentatively D37.
+
+**Next session start point:** Check whether Gokul ran RUN 2
+(`seed_start=1000`). If yes: compare against RUN 1. Regression confirmed
+by both → investigate `src/bin/texel_tune.rs` for a bug (overfitting,
+sign error, loss function) before any revert decision (D37). Result
+flips or narrows a lot → sample size at 100ms/20 games is too noisy,
+recommend more games and/or longer movetime next. If Gokul hasn't run it
+yet, that's still the queued action — nothing else to do until that data
+exists.
+
+---
+
 ## Session 58 — 2026-07-10 (D36: pinned-ref UCI match harness built)
 
 **Built:** `src/bin/uci_match_runner.rs` — new match harness that spawns
