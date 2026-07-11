@@ -4,6 +4,110 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 36 — Incremental NNUE accumulator (the payoff)
+**Status:** COMPLETE ✅ — all three of D-69's NNUE follow-up items now done
+
+### Continuation
+Directly continues Session 35, which unblocked this by adding array-typed
+struct field support to the transpiler. This is D-69/D-70's remaining
+item: give `BoardState` a real `acc: int32[128]` field and make
+`make_move()` maintain it incrementally instead of `evaluate_nnue()`
+recomputing all 12 bitboards from scratch on every call.
+
+### What shipped
+- `BoardState.acc: int32[128]` — the accumulator field itself
+- `nnue_diff_accumulate(feature_base, old_bb, new_bb, out)` — diffs two
+  bitboards and adjusts `out` accordingly. Deliberately diff-based, not
+  move-semantics-based (doesn't special-case captures/castling/en
+  passant/promotion) — see D-71 for why that's a correctness choice, not
+  just a style preference
+- `init_accumulator(board)` — full recompute for boards not produced by
+  `make_move()` (starting position, FEN, test fixtures)
+- `nnue_output_from_hidden(hidden, white_to_move)` — the final layer,
+  factored out of `evaluate_nnue()` so it and the new incremental path
+  share one implementation
+- `evaluate_nnue_incremental(board)` — O(NNUE_HIDDEN) instead of
+  `evaluate_nnue()`'s O(popcount x NNUE_HIDDEN) — the actual performance
+  win this whole three-session arc was for
+- `make_move_with_accumulator(board, move)` — **a separate function from
+  `make_move()`**, not a modification to it (see "what went wrong" below)
+- `run.py`: `_init_accumulator_py()`, `_copy_board_with_acc_py()`, and a
+  rewritten `_evaluate_nnue_py()` (see below)
+- `tests/test_nnue_accumulator.py` — NEW, 18 tests
+
+### What went wrong mid-session (and why the fixes matter)
+Three real bugs were found and fixed before anything was shipped —
+recorded in full in D-71, summarized here:
+
+1. **First draft baked the accumulator diff directly into `make_move()`.**
+   Type-checked, compiled, passed a from-scratch C++ harness — and would
+   have broken every one of the dozens of *existing* Python-mode
+   `make_move()` call sites across `test_move_gen.py`/`test_phase4/5/6.py`,
+   none of which populate `board.acc` (it starts as `[]` in Python mode —
+   see D-70), by turning a harmless empty list into an `IndexError` the
+   moment the diff code ran. Caught by running the **full** existing
+   suite before considering the feature done, not by any test in this
+   session's own new file (which only exercises code this session wrote).
+   Fixed by reverting `make_move()` to byte-for-byte unchanged and adding
+   `make_move_with_accumulator()` as a new, separate, opt-in function.
+2. **`_evaluate_nnue_py()` (Session 34) and `evaluate_nnue_incremental()`
+   (this session) disagreed by exactly 1** on negative scores — Session
+   34's wrapper hand-emulated C++ truncating division to match the
+   *compiled* binary, but this session's function calls the real
+   `nnue_output_from_hidden()` directly, which uses Python's native floor
+   `//` when interpreted. Fixed by rewriting `_evaluate_nnue_py()` to
+   delegate to the real shared function instead of hand-copying its
+   arithmetic — the two now agree exactly, at the cost of no longer
+   matching the compiled binary's division for negative values (nothing
+   depends on that).
+3. **`copy.copy(board)` is a shallow copy** — list-valued fields (only
+   `acc`, so far) share a reference across "copies" instead of being
+   duplicated, invisible until this session's tests specifically chained
+   `make_move_with_accumulator()` calls. Fixed with a new
+   `_copy_board_with_acc_py()` helper, with a regression test
+   (`test_original_board_untouched_after_move_on_copy`) guarding it.
+   Filed on ROADMAP.md as a real fix (a `__copy__`/`__deepcopy__` on
+   `BoardState` in `run.py`) for whenever a second array field exists.
+
+### Verification
+- Standalone (not committed): a C++ harness checked
+  `evaluate_nnue_incremental()` against `evaluate_nnue()` and a fresh
+  `init_accumulator()` reconstruction across 10 hand-built scenarios
+  (quiet, capture, promotion, promotion+capture, en passant, castling,
+  4-move sequence checked every ply) — all exact matches. A second
+  harness played 200 randomized games (real move generation, fixed seed,
+  up to 60 plies) and checked the same agreement after **every one of
+  11,982 moves** — zero mismatches.
+- Committed: `tests/test_nnue_accumulator.py`, 18 tests, including a
+  smaller (8 games/25 plies) randomized-game stress test using
+  `_generate_legal_moves_py()`, scaled for Python-mode speed inside CI.
+- `fastpy-engine` full suite: **237/237** (219 prior + 18 new)
+- `fastpy` full suite: **359/359** (unaffected — no transpiler files
+  touched this session)
+- `fastpy check engine.py` → zero errors
+- `fastpy build --optimize=O3` → compiles clean
+- `perft(3) = 8902` reconfirmed — move generation untouched
+- Both `engine.py` and `run.py` still `ast.parse()` clean (Core Rule 2)
+
+### Next session
+- **Only one blocker remains** before NNUE could actually be wired into
+  search: an offline training pipeline (separate tool, numpy/PyTorch,
+  outside either repo's FastPy dialect) to replace
+  `init_nnue_weights()`'s placeholder body with real trained weights.
+  Once that exists, wiring `evaluate_nnue_incremental()` into
+  `alpha_beta()`/`quiescence()` is a small, well-scoped change — the
+  infrastructure underneath it is now fully built and tested.
+- Two smaller, non-blocking items filed on ROADMAP.md from this session's
+  discoveries: the unconditional-`const` struct-method limitation (D-70)
+  and the `copy.copy()` list-aliasing pitfall (D-71) — both self-
+  contained, neither urgent.
+- Lazy SMP multi-core search still untouched, still the other major
+  Phase 6 item.
+- Re-run the Session 30/PROCESS baseline check (both repos' full test
+  suites against freshly-pulled `main`) before trusting this log.
+
+---
+
 ## Session 35 — Transpiler: array-typed struct fields
 **Status:** COMPLETE ✅
 

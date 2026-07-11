@@ -898,3 +898,142 @@ restriction there.
   needs its own careful correctness verification (incremental accumulator
   must match a full recompute bit-for-bit after every move, including
   captures, promotions, castling, and en passant).
+
+## D-71: Incremental NNUE accumulator (Session 36) — the last of D-69's
+  three NNUE follow-up items, and the one that actually delivers NNUE's
+  performance win: evaluate_nnue_incremental() reads BoardState.acc
+  directly (O(NNUE_HIDDEN)) instead of evaluate_nnue()'s full recompute
+  over all 12 bitboards (O(popcount x NNUE_HIDDEN)). Two significant
+  design changes happened mid-session after draft implementations
+  revealed real problems — both are documented here because the mistakes
+  are as informative as the fix.
+
+  **Design, as shipped:**
+  - `nnue_diff_accumulate(feature_base, old_bb, new_bb, out)` — the core
+    incremental primitive. Diffs two bitboards (`removed = old & ~new`,
+    `added = new & ~old`) and subtracts/adds `NNUE_W1` rows accordingly.
+    Deliberately diff-based, not move-semantics-based: it doesn't know or
+    care whether a change came from a quiet move, a capture, a promotion,
+    a castling rook shift, or an en passant capture (whose captured pawn
+    isn't even on the destination square) — it only compares bitboard
+    states. This is correct by construction for every move type,
+    including ones added later, because it never needs to know *why* the
+    bitboard changed. Hand-deriving the delta separately per move type
+    inside `make_move()` was considered and rejected for exactly this
+    reason — one missed case (en passant especially) would silently
+    desync the accumulator with no compiler error to catch it.
+  - `init_accumulator(board)` — full recompute into `board.acc`, reusing
+    the existing `nnue_accumulate()` helper from Session 34. Call once
+    after constructing a `BoardState` from anything other than
+    `make_move()` (starting position, FEN, test fixture) — same
+    convention as `compute_hash()`, for the same reason: struct field
+    defaults are static expressions evaluated at struct-definition time,
+    not runtime computation, so this can't be baked into `__init__`.
+  - `evaluate_nnue_incremental(board)` — the payoff. Reads `board.acc`
+    directly through a new shared helper, `nnue_output_from_hidden()`
+    (factored out of `evaluate_nnue()` in this session so the two
+    functions share one final-layer implementation instead of two copies
+    that could drift apart).
+  - `make_move_with_accumulator(board, move)` — **a separate function
+    from `make_move()`**, not a modification to it. See "Mistake #1"
+    below for why.
+
+  **Mistake #1 — baking the diff into `make_move()` directly.** The first
+  draft snapshotted the 12 old bitboards at the top of `make_move()` and
+  called `nnue_diff_accumulate()` before its final `return board`. This
+  type-checked, compiled, and passed the compiled-binary correctness
+  harness (below) — but `make_move()` is called from dozens of existing
+  Python-mode sites across `test_move_gen.py`/`test_phase4/5/6.py`/
+  `run.py`, essentially all of which construct a bare `BoardState()` and
+  never touch `acc`. In Python mode, `self.acc: int32[128] = []` really
+  does start as an empty list (same as any array field or global — see
+  D-70), and `nnue_diff_accumulate` writing `out[h] = ...` against an
+  empty list raises `IndexError`. Running the full `fastpy-engine` suite
+  against this draft would have shown mass failures across files this
+  session didn't even touch. Caught by running that suite BEFORE
+  considering the feature done — not shipped. Fixed by reverting
+  `make_move()` to byte-for-byte its pre-session form and adding
+  `make_move_with_accumulator()` as a new, separate, opt-in function that
+  calls `make_move()` internally and does the diff on the result. Every
+  existing `make_move()` call site is completely unaffected; nothing new
+  is required of any of them. Re-ran the full suite after the fix: still
+  219/219 (now 237/237 with this session's own 18 new tests added),
+  confirming zero blast radius.
+
+  **Mistake #2 — a cross-execution-mode division inconsistency.** Session
+  34's `_evaluate_nnue_py()` hand-emulated C++ truncating integer division
+  (`output // NNUE_SCALE if output >= 0 else -(-output // NNUE_SCALE)`)
+  specifically to match the *compiled* `evaluate_nnue()`'s C++ `/`
+  (FastPy's `//` compiles to C++ `/`, not Python's floor division — they
+  differ for negative operands). That was fine in isolation, but this
+  session's `evaluate_nnue_incremental()` calls the real
+  `nnue_output_from_hidden()` directly from Python (no array-local
+  problem, so no wrapper needed) — which executes Python's *native*
+  floor `//`, not the hand-emulated truncating version. Result: the two
+  Python-mode functions disagreed by exactly 1 on negative outputs,
+  caught immediately by a manual cross-check before writing the pytest
+  file (`incr: -33 full: -32`). Fixed by rewriting `_evaluate_nnue_py()`
+  to build `hidden` by hand (still needed — that part of the array-local
+  problem is real) and then delegate the final layer to the real
+  `nnue_output_from_hidden()`, rather than hand-copying its arithmetic.
+  Both Python-mode functions now agree exactly, at the cost of no longer
+  bit-matching the *compiled* binary's truncating division for negative
+  scores — which nothing in either repo actually depends on (same class
+  of accepted, harmless cross-mode divergence as `zk_rand()`'s bignum-vs-
+  wraparound behavior, D-69). General lesson recorded here: don't hand-
+  duplicate a sub-computation's arithmetic in more than one Python-mode
+  wrapper when a real, directly-callable sub-function exists — delegate,
+  or the two copies WILL eventually disagree on an edge case.
+
+  **A third pitfall, caught and fixed before it reached a test:**
+  `copy.copy(board)` — used throughout `run.py` (e.g.
+  `_generate_legal_moves_py`) because `make_move()` mutates its parameter
+  in place under Python's reference semantics — is a *shallow* copy. It
+  duplicates scalar fields correctly but copies the *reference* to any
+  list-valued field, so two "copies" would silently share and mutate the
+  same underlying `acc` list. Invisible everywhere else in the codebase
+  because `acc` is the first-ever array-typed struct field and nothing
+  before this session's own tests ever populated it. Fixed with a new
+  `_copy_board_with_acc_py()` helper (`copy.copy(board)` +
+  `nb.acc = list(board.acc)`) and a regression test
+  (`test_original_board_untouched_after_move_on_copy`) guarding it.
+  Compiled C++ has no equivalent bug — a struct's array member is a true
+  value member, genuinely duplicated on struct copy — this is strictly a
+  Python-mode pitfall.
+
+  **Verification, compiled side** (none of this committed — ad hoc
+  sandbox harnesses, superseded by the committed pytest suite for
+  ongoing CI coverage, but the numbers are worth recording): a standalone
+  C++ harness built directly against the emitted `.cpp` checked
+  `evaluate_nnue_incremental()` against `evaluate_nnue()` and a fresh
+  `init_accumulator()` reconstruction across 10 hand-built scenarios
+  (quiet move, capture, promotion, promotion+capture, en passant,
+  castling, and a 4-move sequence checked after every ply) — all exact
+  matches. A second harness played 200 randomized games (real
+  `generate_legal_moves()`, up to 60 plies each, fixed seed) and checked
+  the same three-way agreement after **every one of 11,982 moves** — zero
+  mismatches.
+
+  **Verification, committed:** `tests/test_nnue_accumulator.py`, 18
+  tests — `init_accumulator()`/`_init_accumulator_py()` (4),
+  `nnue_diff_accumulate()` unit tests including cross-checking it against
+  two full `nnue_accumulate()` calls (5), `make_move_with_accumulator()`
+  across every move type (8), and a randomized-game stress test using
+  real legal move generation (1, checking correctness after every ply
+  across 8 games/25 plies — smaller than the manual C++ stress run,
+  scaled for Python-mode speed inside a CI-run pytest suite).
+
+  Full suite: **237/237** (fastpy-engine: 219 prior + 18 new).
+  `fastpy` unaffected (359/359, unchanged this session — no transpiler
+  files touched). `fastpy check engine.py` zero errors, `fastpy build
+  --optimize=O3` compiles clean, `perft(3) = 8902` reconfirmed unaffected.
+
+  **Still not wired into search** — `evaluate_nnue_incremental()` and
+  `make_move_with_accumulator()` are real, tested, fast, and correct, but
+  `alpha_beta()`/`quiescence()` still call `evaluate()` (material + PST),
+  not any NNUE path. That remains gated on real trained weights existing
+  (D-69, point 2) — wiring an untrained-but-now-fast evaluator into
+  search would just make the engine play worse, faster. With this
+  session, all three of D-69's follow-up items are done; NNUE is
+  feature-complete infrastructure waiting on a training pipeline that
+  doesn't exist yet.

@@ -131,10 +131,7 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       (`test_nnue.py`), `fastpy check`/`fastpy build` clean, standalone
       compiled-binary harness confirmed determinism + position-sensitivity.
       See D-69 for the full scoping rationale and what's explicitly NOT
-      done yet (the three items below).
-  - [ ] Offline NNUE training pipeline (separate tool/repo, numpy/PyTorch,
-        outside FastPy's chess-engine dialect) to replace
-        `init_nnue_weights()`'s placeholder body with real trained weights
+      done yet (the three items below, all now complete except training).
   - [x] Transpiler feature: array-typed `BoardState` struct fields
         (Session 35 / D-70) — `core/parser.py` (`IRField.is_array`,
         `_resolve_target()` now handles `obj.attr[index]`),
@@ -150,23 +147,56 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         array field, returns the modified struct — same convention as
         `make_move()`). Full suite 359/359 (fastpy), 219/219
         (fastpy-engine, unaffected).
+  - [x] Incremental accumulator in `make_move()` (Session 36 / D-71) —
+        shipped as `make_move_with_accumulator()`, a SEPARATE function
+        from `make_move()` (not baked into it — an earlier draft did
+        that and would have broken Python-mode `board.acc` init for
+        dozens of existing test call sites; caught by running the full
+        suite before considering the feature done, see D-71).
+        `nnue_diff_accumulate()` is diff-based (compares old vs new
+        bitboards), not move-semantics-based, so it's correct by
+        construction for every move type without hand-special-casing
+        captures/castling/en passant/promotion. `evaluate_nnue_incremental()`
+        reads `board.acc` directly — O(NNUE_HIDDEN) instead of
+        `evaluate_nnue()`'s O(popcount x NNUE_HIDDEN) full recompute.
+        Verified against a full recompute after every move type
+        (quiet/capture/promotion/promotion+capture/castling/en passant)
+        and across a 200-game/11,982-move randomized stress run
+        (standalone, not committed) plus 18 committed pytest tests
+        including a smaller randomized-game check. 237/237
+        (fastpy-engine), 359/359 (fastpy, unaffected). **All three of
+        D-69's NNUE follow-up items are now done** — NNUE is
+        feature-complete inference infrastructure (full recompute AND
+        incremental paths, both tested, both fast/correct) waiting on a
+        real training pipeline before it's worth wiring into search.
+  - [ ] Offline NNUE training pipeline (separate tool/repo, numpy/PyTorch,
+        outside FastPy's chess-engine dialect) to replace
+        `init_nnue_weights()`'s placeholder body with real trained
+        weights — the only remaining blocker to wiring `evaluate_nnue()`/
+        `evaluate_nnue_incremental()` into `alpha_beta()`/`quiescence()`
+  - [ ] Wire `evaluate_nnue_incremental()` into `alpha_beta()`/
+        `quiescence()` once real trained weights exist — deliberately
+        not done over placeholder weights (see D-69 point 2)
   - [ ] Emitter: struct methods emit `const` unconditionally (discovered
         during D-70, not fixed — self-contained, no NNUE dependency).
         `core/emitter.py`'s `_emit_function` needs to detect whether a
         method mutates `self` and conditionally drop `const`. Not
         currently a blocker — every existing `BoardState` method is a
-        pure accessor, and the accumulator's mutation will go through a
-        free function (`make_move()`'s pattern), same as every other
-        struct mutation in this codebase — but worth fixing so future
-        method-style mutators aren't forced into free-function style.
-  - [ ] Incremental accumulator in `make_move()` (unblocked by the above;
-        needs `BoardState.acc: int32[128]`, add/subtract of the
-        moved/captured piece's `NNUE_W1` row per move, and correctness
-        verification against a full recompute after every move type —
-        quiet moves, captures, promotions, castling, en passant)
-  - [ ] Wire `evaluate_nnue()` into `alpha_beta()`/`quiescence()` once
-        real trained weights exist — deliberately not done over
-        placeholder weights (see D-69 point 2)
+        pure accessor, and every struct mutation in this codebase
+        (including the accumulator's) goes through a free function
+        instead — but worth fixing so future method-style mutators
+        aren't forced into free-function style.
+  - [ ] Python-mode `copy.copy(board)` list-aliasing pitfall (discovered
+        during D-71, worked around with `run.py`'s
+        `_copy_board_with_acc_py()`, not fixed at the source): shallow
+        `copy.copy()` shares any list-valued field's reference between
+        "copies" instead of duplicating it. Only matters for `acc` today
+        (the only array-typed field), but will matter again for any
+        future array field. A real fix would give `BoardState` a
+        `__copy__`/`__deepcopy__` in `run.py`'s Python-mode layer (not
+        `engine.py` — Core Rule 6, no Python-only code there) so every
+        existing `copy.copy(board)` call site is automatically safe
+        without each one needing to know about this.
 - [x] Futility pruning
 - [x] `go depth N` timing harness (node counting + NPS reporting, Session 18)
 - [x] Singular extensions (Session 24) — excluded-move verification search
