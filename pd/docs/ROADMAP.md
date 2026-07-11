@@ -651,12 +651,33 @@
             and reasonably spaced (tier K vs K+1 should win convincingly
             and consistently). No new measurement infrastructure needed,
             reuses what already exists.
-            NEXT SESSION START POINT: scope the exact tier count and
-            depth/noise values, implement as a new `Skill Level` UCI
-            option (spin, similar shape to `MultiPV`), wire into
-            `iterative_deepening()`'s depth cap (and move selection if
-            noise is included), then validate with `uci_match_runner.rs`
-            before calling any tier done.
+- [ ] 20.2 — Session 65 refinement (still scoping, no code): depth cap
+            alone has a real rough edge — it doesn't touch time at all, so
+            a low tier would still use whatever time the GUI/clock gives
+            it, just to search shallower. Concretely: `go movetime 5000`
+            at a tier capped to depth 6 could finish in ~50ms and sit idle
+            for the rest — a "beginner" bot instaflying moves against a
+            human who gave it 5 seconds looks broken, not weak. It also
+            wastes think time that the move-selection-noise half of the
+            mechanism (20.1) benefits from having — weighted-random choice
+            among top candidates works better with at least some real
+            search behind it, not an instant return.
+            Fix: use BOTH, not depth alone — depth as the primary strength
+            ceiling (that's what actually caps how well it can find
+            moves), plus a tier-dependent fraction of the normal time
+            budget so low tiers also visibly "try less hard," not just
+            "see less far." Wiring: a `Skill Level` UCI option feeds both
+            a `max_depth` override AND a time-fraction multiplier into
+            `allocate_time()`'s output, before `TimeManager` sees it —
+            same pattern as `Move Overhead` (D38), just tier-driven
+            instead of a flat user-set value.
+            NEXT SESSION START POINT: scope the exact tier count, depth
+            values per tier, and time-fraction values per tier, implement
+            as a `Skill Level` UCI option (spin, similar shape to
+            `MultiPV`), wire into both `iterative_deepening()`'s depth cap
+            and `allocate_time()`'s output, then validate tier ordering
+            with `uci_match_runner.rs` across multiple seeds before
+            calling any tier done.
 
 ---
 

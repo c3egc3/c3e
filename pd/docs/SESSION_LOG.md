@@ -7,6 +7,37 @@ Most recent session at TOP.
 
 ---
 
+## Session 65 — 2026-07-11 (Difficulty levels: depth+movetime refinement — no code)
+
+**Built:** Nothing — continued scoping Phase 20, no implementation yet.
+Gokul asked whether difficulty is set by depth alone or movetime too.
+
+**What got worked out:** depth-only has a real gap — it doesn't touch
+time at all, so a low tier would still use whatever time the GUI/clock
+gives it, just to search shallower, which can produce an oddly-instant
+move on a long time control (looks broken, not weak) and wastes think
+time that move-selection noise would otherwise benefit from. Refined
+20.1's plan to use both: depth as the primary strength ceiling, plus a
+tier-dependent fraction of the normal time budget so low tiers also
+visibly "try less hard." Wiring plan: `Skill Level` feeds both a
+`max_depth` override and a time-fraction multiplier into
+`allocate_time()`'s output, same pattern as `Move Overhead` (D38).
+
+**Bugs fixed:** None.
+
+**Decisions made:** None new (this refines 20.1's existing scope rather
+than reversing or replacing a prior decision — not a fresh D-numbered
+entry, folded into ROADMAP's Phase 20 as 20.2).
+
+**Next session start point:** Build Phase 20 — scope the exact tier
+count, depth values per tier, and time-fraction values per tier;
+implement as a `Skill Level` UCI option (spin, similar shape to
+`MultiPV`); wire into both `iterative_deepening()`'s depth cap and
+`allocate_time()`'s output; validate tier ordering with
+`uci_match_runner.rs` across multiple seeds before calling any tier done.
+
+---
+
 ## Session 64 — 2026-07-11 (Difficulty levels scoped — D39 — no code)
 
 **Built:** Nothing — this session was a scoping discussion, not
