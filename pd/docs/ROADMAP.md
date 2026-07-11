@@ -510,34 +510,26 @@
             left in this file previously — runtime-loadable HCE weights,
             or a second binary from a pinned pre-tuning git ref over UCI
             — worth a DECISIONS.md entry before building, not a quick add).
-- [~] 17.8 — D36 (Session 57-58): built the pinned-ref UCI match infra
-            flagged in 17.7's caveat. Files: `src/bin/uci_match_runner.rs`,
-            `.github/workflows/uci_match_runner.yml`. Compiled clean
-            against the real crate (`cargo check --release`).
-            RUN 1 RESULT (Session 59, seed_start=0, 20 games, 100ms/move,
-            pre_tuning_ref=c9905a22ed018c6c8332bef275aff548a1d0de70):
-            pre-tuning (Ethereal-derived) beat post-tuning (Texel-tuned,
-            current main) 14-6, 0 draws, +147.2 Elo. THIS IS THE OPPOSITE
-            of what Phase 14 assumed — tuning was expected to help, not
-            hurt. Before treating this as real: verified the harness
-            itself isn't the cause — diffed every file (not just the
-            eval ones) between `pre_tuning_ref` and `main`, only the 7
-            expected eval-tuning files differ (no search/config/hash
-            confound), and both binaries default to 0% NNUE blend
-            identically. So the harness is trustworthy; the *result*
-            still needs replication before acting on it — one 20-game
-            sample at one seed isn't enough to justify reverting real,
-            already-shipped work. NEXT ACTION (Gokul): rerun
-            `uci_match_runner.yml`, same `pre_tuning_ref`, seed_start=1000,
-            everything else the same. If RUN 2 confirms the regression,
-            next session should investigate `texel_tune.rs` for a bug
-            (overfitting, sign error, wrong loss function, etc.) before
-            deciding whether to revert eval/*.rs to the pre-tuning values
-            — that decision needs its own DECISIONS.md entry (D37) either
-            way, not a quiet revert. If RUN 2 contradicts RUN 1 (post-
-            tuning wins or it's close), the 20-game/100ms sample size is
-            probably just too noisy and more games at longer movetime
-            would be the next step before drawing any conclusion.
+- [x] 17.8 — D36 (Session 57-60): built and validated the pinned-ref UCI
+            match infra flagged in 17.7's caveat. Files:
+            `src/bin/uci_match_runner.rs`, `.github/workflows/uci_match_runner.yml`.
+            Verified trustworthy (Session 59): diffed every file — not just
+            eval — between `pre_tuning_ref=c9905a22ed018c6c8332bef275aff548a1d0de70`
+            and `main`; only the 7 expected eval-tuning files differ, both
+            binaries default to 0% NNUE blend identically.
+            FINAL RESULT — pooled across 7 runs, 520 games total (5 small
+            runs of 20-40 games each, then 2 large 200-game confirmatory
+            runs; 100ms/move throughout): pre-tuning (A) 225 wins,
+            post-tuning (B, current `main`) 283 wins, 12 draws. A score
+            44.4% → aggregate Elo diff ≈ −38.9 (A vs B), i.e. Texel-tuned
+            HCE is ~39 Elo STRONGER than the original Ethereal-derived
+            hand-picked values, pooled. The two 200-game runs alone landed
+            at −41.9 each, essentially identical to each other — tight,
+            consistent, well-powered. RUN 1's early +147.2 outlier
+            (single seed, 20 games) is now clearly explained as small-
+            sample noise, not signal. No tuner bug, no revert — Phase 14's
+            tuning is working. This is the pre/post-Texel-tuning Elo
+            number 17.5/17.7 flagged as missing — closed for real.
 
 ---
 
@@ -563,5 +555,5 @@
 | Material only (current) | ~1200 | Phase 7 done |
 | HCE complete | ~2400-2600 | Phase 8 done |
 | Search improvements | ~2800-2900 | Phase 13 done |
-| Texel tuned HCE | ~3000-3100 | Phase 14 code-complete, but Session 59's first real pre/post-tuning UCI match (17.8, D36) found tuned-HCE LOSING to pre-tuning by -147 Elo (14-6, 20 games) — opposite of this target. Unconfirmed pending a second run with a different seed (queued). Do not treat "~3000-3100" as validated until 17.8 closes out. |
+| Texel tuned HCE | ~3000-3100 (relative estimate — Pet Dragon is a custom variant with no external rating pool to calibrate against, so this figure is comparative, not a calibrated absolute) | Phase 14 done, 17.8/D36 closed (Session 59-60): 520-game pooled pinned-ref UCI match (2 of those runs at 200 games each, tightly consistent) shows tuned HCE ~39 Elo stronger than pre-tuning Ethereal values. Real, well-powered, and modest — nowhere near the scale that "~3000-3100" implies on its own; treat that number as a rough historical target, not a validated one. |
 | NORU NNUE | ~3400-3600 | Phase 16 done |

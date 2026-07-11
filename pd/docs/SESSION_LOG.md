@@ -7,6 +7,77 @@ Most recent session at TOP.
 
 ---
 
+## Session 61 — 2026-07-11 (D36 final confirmation: 2×200-game runs, ~39 Elo)
+
+**Built:** Nothing new — analysis only. Gokul ran 2 more `uci_match_runner.yml`
+matches at 200 games each (larger than any prior run), same
+`pre_tuning_ref`/`post_tuning_ref`, 100ms/move.
+
+**Result (these 2 runs):** 200 games each — 86W/110L/4D (44.0%, −41.9 Elo)
+and 85W/109L/6D (44.0%, −41.9 Elo). Essentially identical to each other —
+tight, consistent, well-powered.
+
+**Pooled final (all 7 runs, 520 games total):** pre-tuning (A) 225 wins,
+post-tuning (B, `main`) 283 wins, 12 draws. A score 44.4% → aggregate Elo
+diff ≈ −38.9 (A vs B) — Texel-tuned HCE is ~39 Elo stronger than
+pre-tuning, pooled. This converged as expected: Session 60's small-sample
+pooled estimate (~29 Elo) moved toward these two large runs' own number
+(~42 Elo) as sample size dominated. RUN 1's original +147.2 outlier is now
+unambiguously explained as small-sample noise (n=20, one seed).
+
+**Bugs fixed:** None.
+
+**Decisions made:** None new.
+
+**Housekeeping note:** the Session 60 docs update had not actually been
+committed to the live repo yet when this batch of results came in — caught
+via `raw.githubusercontent.com` before editing (would have built on stale
+docs otherwise). This session's ROADMAP.md/SESSION_LOG.md outputs are
+built on the correct Session 60 content plus this session's additions, so
+committing these latest files carries both sessions' work in one go.
+
+**Next session start point:** No code task queued. 17.8/D36 is fully
+closed with a well-powered result. Ask Gokul what's next.
+
+---
+
+## Session 60 — 2026-07-11 (D36 CLOSED: pooled 5-run result, no bug)
+
+**Built:** Nothing new — analysis only. Gokul ran 4 more `uci_match_runner.yml`
+matches (40, 20, 20, 20 games) beyond Session 59's original 20-game RUN 1,
+same `pre_tuning_ref`/`post_tuning_ref`, different seeds.
+
+**Result (pooled, 5 runs, 120 games):** pre-tuning (A) 54 wins, post-tuning
+(B, `main`) 64 wins, 2 draws. A score 45.8% → aggregate Elo diff ≈ −29
+(A vs B) — Texel-tuned HCE is ~29 Elo stronger than the original
+Ethereal-derived values, pooled. Session 59's RUN 1 (+147.2 the opposite
+direction) was a single-seed outlier; the other 4 runs (100 games) all
+lean the expected direction, consistently. Conclusion: Phase 14's tuning
+works, no bug, no revert — 17.8 closed as `[x]`.
+
+**Bugs fixed:** None — none existed. The dramatic RUN 1 number was sample
+noise from one seed at a fast 100ms/move time control, not a defect in the
+tuner or the harness (harness trustworthiness had already been verified
+file-diff-clean in Session 59).
+
+**Decisions made:** None new. D37 (tentatively flagged in Session 59 as
+"needed if regression confirmed") is now moot — no revert-or-fix decision
+to make.
+
+**Note on the milestone table:** reframed the "Texel tuned HCE ~3000-3100"
+entry to be explicit that this was always a relative/comparative estimate,
+not a calibrated absolute — Pet Dragon is a custom variant with no
+external rating pool to anchor an absolute Elo figure against. The real,
+now-measured number is "~29 Elo better than pre-tuning," which is a much
+more modest claim than "~3000-3100" implies on its own.
+
+**Next session start point:** No code task queued. Phase 14 and Phase 17
+are both now in a clean, fully-documented state (17.8 closed, milestone
+table honest). Whoever picks this up next should check ROADMAP for
+whatever's queued after Phase 17, or ask Gokul directly if nothing is.
+
+---
+
 ## Session 59 — 2026-07-11 (D36 RUN 1: tuned HCE loses to pre-tuning — unconfirmed)
 
 **Built:** Nothing new — this session ran the D36 harness (built Session
