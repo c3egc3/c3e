@@ -4,6 +4,63 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 32 — `match` statement support (Python 3.10+)
+**Status:** COMPLETE ✅
+
+### `Continue` / "Go as planned" — picked up the item proposed at the
+end of Session 31: `match` statement support, chosen over multi-file
+compilation as the more contained change.
+
+### Design
+Restricted to the subset that maps onto exactly one C++ construct — a
+`switch` — per Core Rule 5:
+- Any subject expression; `case` patterns must be integer/boolean
+  literals, optionally `|`-combined (stacked `case` labels, C++'s native
+  fallthrough idiom); at most one wildcard `case _:` → `default:`.
+- Rejected at parse time: guard clauses (`case X if cond:`), capture
+  patterns (`case x:`), `case None:`, class/sequence/mapping patterns —
+  none of these is a single switch-case construct.
+- Rejected at type-check time (needs to see all cases together):
+  duplicate case values, more than one wildcard.
+- The one real correctness trap: Python's `break` inside a `match` case
+  breaks the enclosing *loop*; a naive `switch` translation would make
+  it only break the switch — silently wrong control flow whenever a
+  `match` sits inside a `for`/`while`. Rejected outright at type-check
+  time rather than attempting labeled-break/goto cleverness, which would
+  have made the emitter start doing analysis (forbidden by Core Rule 5).
+  A `break` inside a loop nested *inside* a case body is unaffected —
+  unambiguous in both languages.
+
+### Files changed
+- `fastpy/core/parser.py` — `IRMatch`/`IRMatchCase` IR nodes,
+  `StatementVisitor.visit_Match` + pattern-resolution helpers
+- `fastpy/core/type_system.py` — `_check_match` (duplicate values/
+  wildcards) + `_reject_break_in_case_body`
+- `fastpy/core/emitter.py` — `_emit_match` (switch/case/default/break),
+  `IRMatch` wired into `_collect_typed_scalars` for case-body hoisting
+- `fastpy/tests/test_parser.py` — `TestMatchStatement` (10 tests)
+- `fastpy/tests/test_type_system.py` — `TestMatchStatementChecking` (8 tests)
+- `fastpy/tests/test_emitter.py` — `TestMatchEmission` (8 tests)
+
+See D-67 for the full design rationale.
+
+### Verification
+- `fastpy` full suite: **320/320 passing** (294 prior + 26 new)
+- Generated C++ for a representative `match` hand-verified to actually
+  compile: `g++ -std=c++20 -c test_match.cpp` → clean
+- `fastpy check engine.py` on `fastpy-engine`'s `engine.py` → zero errors
+- `fastpy-engine` full suite: **196/196 passing** (unaffected —
+  `engine.py` doesn't use `match` yet)
+
+### Next session
+- Remaining ROADMAP ongoing-improvement item: multi-file compilation
+  support.
+- Phase 6: NNUE evaluation, Lazy SMP multi-core search, target 1B NPS.
+- Re-run the Session 30/PROCESS baseline check (both repos' full test
+  suites against freshly-pulled `main`) before trusting this log.
+
+---
+
 ## Session 31 — Parse error messages now highlight the offending source line
 **Status:** COMPLETE ✅
 

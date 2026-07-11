@@ -585,3 +585,42 @@ restriction there.
   re-parsing the message. `main.py`'s three `except (FastPyParseError,
   SyntaxError)` handlers needed no changes — they already just print
   `str(e)`.
+
+## D-67: `match` statement support (Session 32) is deliberately restricted
+  to the subset that maps onto exactly one C++ construct — a `switch` —
+  per Core Rule 5. Supported: any subject expression; `case` patterns
+  that are integer or boolean literals, optionally combined with `|`
+  (`case 1 | 2 | 3:` → stacked `case` labels sharing one body, C++'s
+  native fallthrough-label idiom); and at most one wildcard `case _:` →
+  `default:`. Rejected outright at parse time, each with a message
+  pointing at the alternative: guard clauses (`case X if cond:` — a
+  runtime check per case isn't a single switch-case construct; use
+  `if`/`elif`), capture patterns (`case x:` — binds a name, not
+  representable as a case label), `case None:` (FastPy has no
+  None/Optional type), and any class/sequence/mapping pattern. Two
+  further checks live in type_system.py rather than the parser, because
+  they need to see all cases together, not just one at a time (parses-fine,
+  only-invalid-in-combination is a semantic property, not a syntactic
+  one — Core Rule 1, "type system validates"): duplicate case values
+  (parses fine per-case, but is an illegal C++ switch — duplicate case
+  labels don't compile) and more than one wildcard (would mean two
+  `default:` labels).
+  The one genuinely subtle issue: Python's `break` inside a `match` case
+  breaks the nearest *enclosing loop* (`match` isn't a loop), but the
+  case body compiles to a C++ `switch` `case`, where `break` only exits
+  the switch. A naive translation would silently produce wrong control
+  flow — the C++ would keep looping where the Python stops — for any
+  `match` nested inside a `for`/`while` with a `break` in one of its
+  cases. Rather than attempt anything clever (labeled breaks/gotos would
+  make the emitter start doing analysis, which Core Rule 5 forbids), a
+  bare `break` directly inside a case body is rejected outright at
+  type-check time, with a message suggesting a flag variable or
+  `if`/`elif` instead. This check only walks into `IRIf`/nested `IRMatch`
+  (still ambiguous — no loop separates the `break` from the `match`) and
+  deliberately does not recurse into `IRWhile`/`IRFor` bodies nested
+  inside a case, since a `break` there is unambiguous in both languages.
+  26 new tests across `test_parser.py` (10), `test_type_system.py` (8),
+  and `test_emitter.py` (8, plus generated C++ verified to actually
+  compile with `g++ -std=c++20`) — full suite re-verified at 320/320
+  (fastpy) and 196/196 (fastpy-engine, unaffected — `engine.py` doesn't
+  use `match` yet).

@@ -250,4 +250,10 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       in `tests/test_parser.py::TestParseErrorSourceContext` (294 total).
       See D-66.
 - [ ] Multi-file compilation support
-- [ ] `match` statement support (Python 3.10+)
+- [x] `match` statement support (Python 3.10+) — restricted to the
+      switch-mappable subset: integer/boolean literal `case` patterns
+      (optionally `|`-combined) and one wildcard `case _:`. Guards,
+      captures, and class/sequence/mapping patterns rejected at parse
+      time; duplicate case values, duplicate wildcards, and unsafe
+      `break` inside a case body rejected at type-check time. 26 new
+      tests (320 total). See D-67.
