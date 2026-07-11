@@ -728,6 +728,29 @@
             5, 5 vs 10, 10 vs 15, 15 vs 20) to confirm monotonic, convincing
             win rates before calling any tier "done." If a pair is too
             close, that's the point to reconsider move-selection noise.
+            UPDATE (same session, follow-up): `uci_match_runner.rs`/
+            `.yml` (D36) could NOT actually run these tier-pair comparisons
+            as they stood — that harness builds two separate git-ref
+            binaries and never sends a `setoption` to either, so both
+            engines always ran at compiled-in defaults regardless of the
+            workflow's inputs. Extended both: harness gets a new
+            `EngineProcess::configure()` (sends `;`-separated `setoption`
+            lines once after the UCI handshake, before any games) plus two
+            new trailing CLI args; workflow gets matching
+            `engine_a_uci_options`/`engine_b_uci_options` inputs. To run a
+            tier comparison: set `pre_tuning_ref`/`post_tuning_ref` BOTH to
+            `main` (same build twice) and only vary the two UCI-options
+            inputs, e.g. "setoption name Skill Level value 0" vs
+            "setoption name Skill Level value 5". Match-summary labels
+            changed from "pre-tuning (ref)"/"post-tuning (ref)" to
+            "A (ref | options)"/"B (ref | options)" to stay readable for
+            this use case — flagged since it touches D36's existing output
+            format, though scoring/Elo math is untouched.
+            NEXT SESSION START POINT (updated): commit
+            `src/bin/uci_match_runner.rs` and
+            `.github/workflows/uci_match_runner.yml` (both REPLACE) on top
+            of the Phase 20 files, confirm green, then actually run the 4
+            tier-pair comparisons above before calling any tier "done."
 
 ---
 

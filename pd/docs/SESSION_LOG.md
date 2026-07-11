@@ -54,6 +54,48 @@ any pair is too close, that's the point to reconsider the move-selection
 noise mechanism that was scoped as optional in 20.1 and deliberately not
 built this session.
 
+**Follow-up same session (still 2026-07-12):** Gokul confirmed the full
+suite is green from the files above and asked for the tier-pair match
+values to actually run the validation. Discovered `uci_match_runner.rs`/
+`uci_match_runner.yml` (D36) can't do it as they stood — that harness
+spawns two SEPARATE git-ref builds and never sends a single `setoption` to
+either one, so both engines always run at compiled-in defaults (Skill
+Level 20 either way) regardless of what the workflow's inputs claim to
+compare. Fine for D36's original pre/post-Texel-tuning use case (two
+different builds, same default options), but structurally unable to
+compare two Skill Level tiers of the SAME build.
+
+**Built (cont.):** Extended `uci_match_runner.rs` with a pure
+`split_uci_options()` helper (semicolon-separated `setoption` lines ->
+trimmed non-empty commands, unit tested directly) and an
+`EngineProcess::configure()` method that sends them once right after the
+UCI handshake, before any games — matching how a real GUI sets a
+persistent option like Skill Level once per session, not per move. Two
+new trailing CLI args (`engine_a_uci_options`, `engine_b_uci_options`,
+both optional/empty-by-default, fully backward compatible with every
+existing invocation). Extended `uci_match_runner.yml` with matching new
+`engine_a_uci_options`/`engine_b_uci_options` workflow inputs, passed
+through to the harness; updated the match-summary labels from
+"pre-tuning (ref)"/"post-tuning (ref)" to "A (ref | options)"/
+"B (ref | options)" so a Skill Level run's output is actually readable
+(flagging this label wording change explicitly since it touches D36's
+existing, already-green output format, even though the underlying
+scoring/Elo logic is untouched).
+
+**Decisions made:** None new — this is infrastructure needed to actually
+execute the validation D39/20.1/20.2 already required, not a new
+architectural choice.
+
+**Next session start point (updated):** Commit `src/bin/uci_match_runner.rs`
+and `.github/workflows/uci_match_runner.yml` (both REPLACE) on top of the
+Skill Level files above. Confirm the full suite is still green (new
+`split_uci_options` tests included). Then run the workflow 4 times, each
+with `pre_tuning_ref`/`post_tuning_ref` BOTH set to `main` and only the
+UCI-options inputs differing, to compare: Skill Level 0 vs 5, 5 vs 10, 10
+vs 15, 15 vs 20. Confirm monotonic, convincing win rates for the higher
+tier in each pair before marking any tier "done." If a pair is too close,
+reconsider the move-selection noise mechanism deferred from 20.1.
+
 ---
 
 ## Session 65 — 2026-07-11 (Difficulty levels: depth+movetime refinement — no code)
