@@ -626,8 +626,8 @@
 
 ---
 
-## Phase 20 — Difficulty / Skill Levels ⏳ SCOPED, NOT STARTED
-- [ ] 20.1 — D39 (Session 64, scoping discussion only — no code this
+## Phase 20 — Difficulty / Skill Levels ⏳ IMPLEMENTED, VALIDATION PENDING
+- [x] 20.1 — D39 (Session 64, scoping discussion only — no code this
             session): build depth-cap difficulty tiers (`Skill Level
             0..N` or similar), optionally with a little move-selection
             noise at the low end matching Stockfish's actual `Skill
@@ -651,7 +651,11 @@
             and reasonably spaced (tier K vs K+1 should win convincingly
             and consistently). No new measurement infrastructure needed,
             reuses what already exists.
-- [ ] 20.2 — Session 65 refinement (still scoping, no code): depth cap
+            Session 66: IMPLEMENTED — see 20.3 below for what got built.
+            Move-selection noise (the "optionally" above) was NOT built —
+            depth cap + time fraction (20.2) covers the core requirement;
+            noise is deferred, not rejected (see 20.3 notes).
+- [x] 20.2 — Session 65 refinement (still scoping, no code): depth cap
             alone has a real rough edge — it doesn't touch time at all, so
             a low tier would still use whatever time the GUI/clock gives
             it, just to search shallower. Concretely: `go movetime 5000`
@@ -671,13 +675,59 @@
             `allocate_time()`'s output, before `TimeManager` sees it —
             same pattern as `Move Overhead` (D38), just tier-driven
             instead of a flat user-set value.
-            NEXT SESSION START POINT: scope the exact tier count, depth
-            values per tier, and time-fraction values per tier, implement
-            as a `Skill Level` UCI option (spin, similar shape to
-            `MultiPV`), wire into both `iterative_deepening()`'s depth cap
-            and `allocate_time()`'s output, then validate tier ordering
-            with `uci_match_runner.rs` across multiple seeds before
-            calling any tier done.
+            Session 66: IMPLEMENTED — see 20.3.
+- [x] 20.3 — Session 66: implementation. Built `src/search/skill.rs` —
+            21 levels (0..=20, matching the familiar `Skill Level` spin
+            shape GUIs expect — option SHAPE only, no borrowed calibration
+            data). `skill_depth_cap(level)`: `None` at level 20 (default,
+            fully uncapped — byte-identical to pre-Phase-20 behavior),
+            `level + 1` for 0..19 (so level 0 = depth 1, level 19 = depth
+            20). `skill_time_fraction_pct(level)`: `100` at level 20,
+            `(10 + level*5).min(98)` for 0..19 — capped strictly below
+            100% so every reduced tier is distinguishable from "off."
+            Wired: `iterative_deepening()`'s `max_depth` now takes
+            `.min()` against the tier's depth cap (never overrides an
+            EXPLICIT shallower `go depth`, only ever reduces further).
+            `allocate_time()` in `time.rs` now takes a new
+            `TimeControl::skill_time_fraction_pct` field and applies it to
+            the movetime branch, the clock-based (movestogo/sudden-death)
+            branch, and the no-clock-info default fallback — deliberately
+            NOT applied to `infinite`/`ponder` (analysis, not strength) or
+            the fixed-depth/fixed-nodes sentinel branches (already governed
+            by the depth cap instead). `main.rs`: new `Skill Level` UCI
+            spin option (default/max 20, matching `MAX_SKILL_LEVEL`),
+            `setoption name Skill Level` handler (two-word name, same
+            parsing path as `Move Overhead`), applied in `cmd_go` to both
+            `main_info.skill_level` AND every helper thread's
+            `h_info.skill_level` (helpers must respect the same cap, or
+            they'd populate the shared TT with full-strength lines that
+            leak back into a low-skill main search).
+            NOT built this session: move-selection noise (weighted-random
+            choice among top MultiPV candidates, the Stockfish-style
+            mechanism 20.1 flagged as optional). Depth cap + time fraction
+            alone should already produce clearly distinguishable tiers;
+            noise is a plausible follow-up if match-runner validation
+            shows tiers are correctly ordered but too close together in
+            practice, not committed to yet.
+            STILL PENDING — the actual empirical validation: this session
+            could not run `uci_match_runner.rs` (no Rust toolchain in this
+            environment; GitHub Actions handles all building/testing per
+            project convention). All new logic has unit tests (skill.rs's
+            monotonicity/boundary tests, iterative.rs's depth-cap-vs-
+            explicit-depth tests, time.rs's fraction-scaling tests,
+            main.rs's option-wiring tests) and was reviewed by hand against
+            the existing test suite's patterns, but NONE of that is a
+            substitute for actual games — tier K beating tier K+1
+            convincingly and consistently is an empirical claim 20.1/20.2
+            always said needs match-runner confirmation, not code review.
+            NEXT SESSION START POINT: commit `skill.rs` (new),
+            `search/mod.rs`, `search/iterative.rs`, `search/time.rs`,
+            `main.rs` (all REPLACE), let GitHub Actions confirm the full
+            suite is still green, then run `uci_match_runner.rs` across
+            multiple seeds for several tier pairs (at minimum: level 0 vs
+            5, 5 vs 10, 10 vs 15, 15 vs 20) to confirm monotonic, convincing
+            win rates before calling any tier "done." If a pair is too
+            close, that's the point to reconsider move-selection noise.
 
 ---
 

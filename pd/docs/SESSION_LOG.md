@@ -7,6 +7,55 @@ Most recent session at TOP.
 
 ---
 
+## Session 66 — 2026-07-12 (Difficulty levels implemented — Phase 20.3 — code)
+
+**Built:** `src/search/skill.rs` (new) — 21-level `Skill Level` tier table.
+`skill_depth_cap(level)`: `None` at level 20 (default, uncapped), else
+`level + 1`. `skill_time_fraction_pct(level)`: `100` at level 20, else
+`(10 + level*5).min(98)`. Wired into `search/mod.rs` (`SearchInfo.
+skill_level: u8`, default `MAX_SKILL_LEVEL`, persists across
+`reset_for_search()` like `multipv`), `search/iterative.rs`
+(`max_depth.min(cap)` — never overrides an explicit shallower `go depth`,
+only reduces further), `search/time.rs` (new `TimeControl.
+skill_time_fraction_pct` field, applied to the movetime branch, the
+clock-based branch, and the no-clock-info fallback — NOT to infinite/
+ponder or the fixed-depth/nodes sentinel), and `main.rs` (new `Skill
+Level` UCI spin option 0..20 default 20, two-word `setoption` handler,
+applied in `cmd_go` to both the main thread's and every helper thread's
+`SearchInfo.skill_level` so Lazy SMP helpers can't leak full-strength
+lines into a low-skill main search via the shared TT).
+
+**Bugs fixed:** None — new feature, not a fix.
+
+**Decisions made:** None new — this session implements what D39 (Session
+64) and its Session 65 refinement already scoped; no fresh D-numbered
+entry.
+
+**Test risk flagged:** this sandbox has no Rust toolchain (`cargo`/`rustc`
+not available), and per project convention GitHub Actions handles all
+building/testing anyway — so none of this session's code was compiled or
+run here. All new/changed logic has unit tests written to match the
+existing suite's own patterns (skill.rs: monotonicity + boundary tests;
+iterative.rs: depth-cap-vs-explicit-depth tests; time.rs: fraction-scaling
+tests across every affected branch, explicit non-effect tests for the
+branches that should stay untouched; main.rs: two-word option parsing +
+clamping + default tests), and existing tests were re-read before editing
+to avoid touching anything already green, but this is a real risk to flag,
+not a substitute for CI actually running the suite.
+
+**Next session start point:** Commit `skill.rs` (new), `search/mod.rs`,
+`search/iterative.rs`, `search/time.rs`, `main.rs` (all REPLACE). Confirm
+GitHub Actions' full suite is still green. Then run `uci_match_runner.rs`
+across multiple seeds for at least these tier pairs: 0 vs 5, 5 vs 10, 10
+vs 15, 15 vs 20 — confirm monotonic, convincing win rates before marking
+any tier "done" (this is the empirical validation 20.1/20.2 always said
+was required; it has NOT happened yet — implementation ≠ validation). If
+any pair is too close, that's the point to reconsider the move-selection
+noise mechanism that was scoped as optional in 20.1 and deliberately not
+built this session.
+
+---
+
 ## Session 65 — 2026-07-11 (Difficulty levels: depth+movetime refinement — no code)
 
 **Built:** Nothing — continued scoping Phase 20, no implementation yet.
