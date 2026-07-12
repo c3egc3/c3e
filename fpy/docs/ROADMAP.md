@@ -185,17 +185,44 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         single-basic-block functions) — a one-time offline cost paid
         once per trained-weights update, not a runtime cost, and not
         blocking. **The training-pipeline item below is now unblocked.**
-  - [ ] Offline NNUE training pipeline (separate tool/repo, numpy/PyTorch,
-        outside FastPy's chess-engine dialect) to replace
-        `init_nnue_weights()`'s placeholder body with a literal
-        assignment block of real trained weights — the only remaining
-        blocker to wiring `evaluate_nnue()`/`evaluate_nnue_incremental()`
-        into `alpha_beta()`/`quiescence()`. Unblocked as of Session 39 —
-        the weight-embedding path is confirmed to work with the existing
-        transpiler, no new feature needed. See D-75.
+  - [x] Offline NNUE training pipeline (Session 40, see D-76): built as
+        three standalone tools in `fastpy-engine/training/` (separate
+        from FastPy's dialect per Core Rule 4/6 — plain Python + numpy,
+        nothing here runs inside the compiled engine):
+        - `generate_data.py` — self-play data generator using run.py's
+          Python-mode wrappers, weighted-random move selection
+        - `train_nnue.py` — numpy trainer, architecture matches
+          engine.py's `evaluate_nnue()` exactly (768→128 clipped-ReLU→1,
+          CLIP=127, SCALE=64), quantizes to int32 at export
+        - `embed_weights.py` — generates the literal `NNUE_W1[i] = ...`
+          assignment block from trained weights, confirmed safe at this
+          scale by D-75
+        Labels are the engine's own `evaluate()` (material + PST) over
+        119,413 self-play positions — a first-NNUE bootstrap distilling
+        a trusted classical evaluator, not search-based relabelling
+        (that's a natural follow-up once this network exists to seed
+        move ordering). `init_nnue_weights()`'s placeholder body (and
+        the now-unused `nnue_rand()` helper) replaced with the trained
+        literal block — 98,561 statements, `fastpy check`/`build`
+        verified clean (build ~94s at `-O3`, matching D-75's estimate).
+        Quantized-inference validation: MAE 5.0cp, corr 1.0000 against
+        `evaluate()` on held-out positions (expected — the network was
+        trained to reproduce this exact deterministic function; this is
+        NOT evidence of chess-playing strength beyond what `evaluate()`
+        already had). Full 243/243 test suite still passing, with
+        `test_nnue.py`'s placeholder-specific `[-128,127]` clamp tests
+        updated to a generic int32-sanity range (real trained biases,
+        e.g. `NNUE_B2[0]=-176`, aren't clipped like the old placeholder
+        was).
   - [ ] Wire `evaluate_nnue_incremental()` into `alpha_beta()`/
-        `quiescence()` once real trained weights exist — deliberately
-        not done over placeholder weights (see D-69 point 2)
+        `quiescence()` — unblocked as of Session 40, real trained
+        weights now exist (see D-76). Deliberately not done yet: this
+        network only reproduces `evaluate()`, so wiring it in now would
+        be a pure speed/robustness question (does the incremental
+        accumulator path hold up in real search, any perf regression
+        vs. `evaluate()`), not a strength question — worth its own
+        focused session with a benchmark run (`run_benchmark()`) before
+        and after, not bundled into the training-pipeline session.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

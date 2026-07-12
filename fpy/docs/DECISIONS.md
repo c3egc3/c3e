@@ -1260,3 +1260,101 @@ restriction there.
   **Outcome:** the offline NNUE training pipeline (ROADMAP, Phase 6) is
   unblocked. It can target the confirmed-working literal-assignment
   shape directly — no dependency on a not-yet-built FastPy feature.
+
+## D-76: Offline NNUE training pipeline built and run — engine.py now
+  ships real trained weights, not placeholder ones (Session 40). Direct
+  follow-through on D-75's unblock.
+
+  **What was built** — three standalone tools in the new
+  `fastpy-engine/training/` directory, all plain Python + numpy, none of
+  it FastPy dialect (Core Rule 4/6 — nothing here runs inside the
+  compiled engine, same "separate tool" boundary as `run.py` itself):
+  - `generate_data.py`: self-play data generator. Plays weighted-random
+    games (softmax over each candidate move's resulting `evaluate()`
+    score, not pure random, so the position distribution isn't dominated
+    by hanging-piece blunders) using `run.py`'s existing Python-mode
+    wrappers (`_generate_legal_moves_py`, `make_move`, `evaluate`).
+    Extracts each position's 768-dim binary feature vector matching
+    `nnue_accumulate()`'s exact `feature_base*64+sq` indexing, labels it
+    with `evaluate()`, and records `white_to_move`.
+  - `train_nnue.py`: numpy trainer, architecture identical to
+    `evaluate_nnue()` — `hidden = clip(X@W1+b1, 0, 127)`,
+    `output = hidden@W2+b2`, `score = output // 64` — trained directly
+    against this integer-semantics forward pass (straight-through
+    estimator for the clip's gradient, weights kept as floats during
+    training, rounded to int32 only at export). Adam optimizer, weight
+    clipping on W1/W2 (keeps quantized weights from saturating every
+    hidden unit given up to ~32 simultaneously active features), early
+    stopping on float validation loss.
+  - `embed_weights.py`: generates the literal `NNUE_W1[i] = <int>`
+    assignment block from the trained+quantized weights — the exact
+    pattern D-75 confirmed safe at this scale.
+
+  **A real bug found and fixed mid-session, not just tuning:** the first
+  several training attempts failed to learn anything (validation
+  correlation ~0, sometimes negative, regardless of learning rate,
+  regularization, or weight clipping — all of which were tried, in that
+  order, before finding the actual cause). Root cause: `evaluate()`'s
+  label is side-to-move-relative (flips sign depending on whose turn it
+  is), but the 768-dim feature vector is absolute (fixed white/black
+  identity, independent of whose turn it is) — exactly matching how
+  `evaluate_nnue()`'s architecture works, where `nnue_accumulate()`
+  reads the absolute bitboards and `nnue_output_from_hidden()` applies
+  the side-to-move sign flip only as a fixed *final* step, never learned
+  by the network. Training the network directly against the side-
+  relative label — without pre-applying that same flip to the training
+  target — means roughly half the training signal's sign is effectively
+  randomized relative to what a fixed function of absolute features can
+  predict. Confirmed via a closed-form check: a trivial "sum of known
+  material values per active feature" linear combination had -0.014
+  correlation with the raw label, and 0.998 correlation once the same
+  values were compared against the label with the white-to-move flip
+  pre-applied. Fix: `train_nnue.py` now computes
+  `raw_target = label if white_to_move else -label` and trains against
+  that; `embed_weights.py`'s output is then used exactly as
+  `nnue_output_from_hidden()` expects, no further conversion needed.
+
+  **Training data and result:** 2,000 self-play games, 60 plies max,
+  119,413 labelled positions (~44s/500 games generation cost). Trained
+  with early stopping (~40 epochs, ~60s). Final quantized-inference
+  validation (int32 forward pass, not the float training graph): MAE
+  5.0cp, correlation 1.0000 against `evaluate()` on held-out positions.
+  This is the *expected* result of a first-NNUE distillation bootstrap,
+  not evidence of playing-strength improvement — the network was
+  trained to reproduce `evaluate()` exactly, and does, up to
+  quantization rounding. It is not yet a better evaluator than
+  `evaluate()`; it is a compiled-form NNUE with real (non-random)
+  weights, which is what this session's scope was.
+
+  **What changed:** `engine.py`'s `init_nnue_weights()` placeholder body
+  (the `nnue_rand()`-based pseudo-random fill) replaced with a 98,561-
+  statement literal assignment block of the trained weights;
+  `nnue_rand()` itself removed (no longer referenced anywhere — checked
+  `tests/` and `run.py` first). `fastpy check` and `fastpy build
+  --optimize=O3` both verified clean (build: ~94s, matching D-75's
+  ~85-90s estimate for a function this size at `-O2`/`-O3`). Full
+  243/243 test suite re-run and passing, with `tests/test_nnue.py`'s
+  four `[-128,127]` clamp-range tests updated — that range was specific
+  to the placeholder's `nnue_rand() & 255 - 128` generator, not an
+  architectural invariant, and real trained biases aren't clipped that
+  way (e.g. `NNUE_B2[0]` is `-176`, outside the old test's bound).
+  Spot-checked `evaluate()` vs. `evaluate_nnue()` (Python-mode mirror)
+  on the start position and several early-game moves: consistently
+  within a few centipawns of each other, as expected from the reported
+  MAE.
+
+  **What this does NOT do:** `evaluate_nnue()`/
+  `evaluate_nnue_incremental()` are still not wired into
+  `alpha_beta()`/`quiescence()` — that's the next ROADMAP item,
+  deliberately kept separate (see ROADMAP.md's note on why: it's now a
+  speed/robustness question, not a strength one, since this network
+  currently only reproduces `evaluate()`).
+
+  **Outcome:** `engine.py` ships a real, non-random, trained NNUE for
+  the first time. The next natural steps are (1) wiring the incremental
+  path into search with a benchmark before/after, and (2) a second
+  training iteration using search-based relabelling (e.g. shallow
+  `alpha_beta()` scores instead of raw `evaluate()`) once (1) is done
+  and the incremental path is trusted in real search — that's how this
+  network could eventually exceed `evaluate()`'s playing strength rather
+  than just matching it.

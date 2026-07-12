@@ -4,6 +4,89 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 40 — Offline NNUE training pipeline built and run; engine.py now has real trained weights
+**Status:** COMPLETE ✅ — `engine.py`, `tests/test_nnue.py` changed; three new files under `training/`
+
+### `Continue` trigger — picked up Session 39's flagged next step
+Session 39 ended with the offline NNUE training pipeline unblocked and
+flagged as the clear next item. This session built and ran it.
+
+### What was built
+Three standalone tools in a new `fastpy-engine/training/` directory
+(plain Python + numpy, outside FastPy's dialect per Core Rule 4/6):
+`generate_data.py` (self-play data generator, weighted-random move
+selection, labels from `evaluate()`), `train_nnue.py` (numpy trainer
+matching `evaluate_nnue()`'s exact architecture — clipped-ReLU int32
+forward pass, not a generic float net converted after the fact), and
+`embed_weights.py` (generates the literal assignment block D-75
+confirmed safe at this scale).
+
+### A real bug, not just tuning
+The first several training attempts learned essentially nothing —
+validation correlation near zero no matter the learning rate,
+regularization, or weight clipping (all tried, in that order, before
+finding the actual cause). Root cause: `evaluate()`'s label flips sign
+by side to move; the feature vector doesn't. Training against the raw
+label without pre-applying that flip effectively randomizes half the
+training signal's sign. Confirmed with a closed-form check (a trivial
+material-sum linear combination: -0.014 correlation against the raw
+label, 0.998 once the same flip was applied to the target). Fixed in
+`train_nnue.py`; full writeup in D-76.
+
+### Result
+2,000 self-play games → 119,413 labelled positions. Trained with early
+stopping (~40 epochs). Quantized-inference validation: MAE 5.0cp, corr
+1.0000 against `evaluate()` — expected for a first-NNUE distillation
+bootstrap (the network was trained to reproduce `evaluate()`, and does).
+Not yet a strength improvement over `evaluate()` — that's the honest
+framing, see D-76.
+
+### What changed in the repos
+- `engine.py`: `init_nnue_weights()`'s placeholder body replaced with
+  the trained literal block (98,561 statements); `nnue_rand()` removed
+  (no longer referenced anywhere, confirmed via `tests/`/`run.py` grep).
+- `tests/test_nnue.py`: the four `[-128,127]` clamp-range tests were
+  specific to the placeholder's `nnue_rand() & 255 - 128` generator, not
+  an architectural invariant — updated to a generic int32-sanity range,
+  since real trained biases aren't clamped that way (`NNUE_B2[0]=-176`).
+  Module docstring and a couple of inline comments updated to stop
+  calling the network "untrained"/"placeholder".
+- New: `training/generate_data.py`, `training/train_nnue.py`,
+  `training/embed_weights.py`.
+
+### Verification
+- `fastpy check engine.py`: zero errors (~2.3s)
+- `fastpy build engine.py --optimize=O3`: clean, ~94s (matches D-75's
+  ~85-90s estimate for a function this size at `-O2`/`-O3`)
+- Full `fastpy-engine` suite: **243/243 passing**
+- Spot-check: `evaluate()` vs. `evaluate_nnue()` (Python-mode mirror) on
+  the start position and several early-game/no-queen positions —
+  consistently within a few centipawns, matching the reported MAE
+- `fastpy` suite not re-run this session (no changes to that repo)
+
+### Files changed
+- `fastpy-engine/engine.py` — REPLACE
+- `fastpy-engine/tests/test_nnue.py` — REPLACE
+- `fastpy-engine/training/generate_data.py` — NEW
+- `fastpy-engine/training/train_nnue.py` — NEW
+- `fastpy-engine/training/embed_weights.py` — NEW
+- Docs: `ROADMAP.md`, `DECISIONS.md` (D-76), `SESSION_LOG.md` (this entry)
+
+### Next session
+Wire `evaluate_nnue_incremental()` into `alpha_beta()`/`quiescence()` —
+now unblocked with real weights in place. Frame it as a speed/robustness
+question (benchmark via `run_benchmark()` before/after, confirm the
+incremental accumulator path holds up in real search) rather than a
+strength question, since this network currently only reproduces
+`evaluate()`. A second training iteration with search-based relabelling
+(shallow `alpha_beta()` scores instead of raw `evaluate()`) is the
+natural step after that, once the incremental path is trusted — that's
+the realistic route to this network eventually exceeding `evaluate()`'s
+playing strength. Re-run the baseline check (both repos' full test
+suites against freshly-pulled `main`) before trusting this log.
+
+---
+
 ## Session 39 — Weight-embedding scoping answered: `fastpy build` handles it as-is
 **Status:** COMPLETE ✅ — measurement session, no engine.py or transpiler code changed
 
