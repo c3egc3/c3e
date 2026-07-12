@@ -169,11 +169,27 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         feature-complete inference infrastructure (full recompute AND
         incremental paths, both tested, both fast/correct) waiting on a
         real training pipeline before it's worth wiring into search.
+  - [ ] **NEXT UP (decided Session 38, no code yet):** scope the
+        weight-embedding problem BEFORE any training work. FastPy's
+        compiled dialect has no file I/O and every array must start as
+        `[]` and be filled by a runtime init function (D-70's
+        convention, used by `init_nnue_weights()` itself for the
+        placeholder weights) — there is currently no path to get a real
+        trained network's ~98,600 values into a compiled binary at all.
+        Question to answer in one contained session: can `fastpy build`
+        handle a ~98,600-line literal assignment block in
+        `init_nnue_weights()`'s body as-is (untested at that scale, no
+        precedent), or does the transpiler need a real large-array-
+        literal feature first? Answer determines the actual shape of
+        the training-pipeline item below. See D-74 for why this was
+        chosen over Lazy SMP for the next session.
   - [ ] Offline NNUE training pipeline (separate tool/repo, numpy/PyTorch,
         outside FastPy's chess-engine dialect) to replace
         `init_nnue_weights()`'s placeholder body with real trained
         weights — the only remaining blocker to wiring `evaluate_nnue()`/
-        `evaluate_nnue_incremental()` into `alpha_beta()`/`quiescence()`
+        `evaluate_nnue_incremental()` into `alpha_beta()`/`quiescence()`.
+        Blocked on the weight-embedding scoping item above — don't start
+        this until that's answered.
   - [ ] Wire `evaluate_nnue_incremental()` into `alpha_beta()`/
         `quiescence()` once real trained weights exist — deliberately
         not done over placeholder weights (see D-69 point 2)
@@ -209,7 +225,21 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       fails low against everything else. Re-implemented from scratch;
       the Session 22 log/D-53 description of this was never actually
       committed to the code (see D-55). See D-57 for the real design.
-- [ ] Lazy SMP multi-core search
+- [ ] Lazy SMP multi-core search — DEFERRED behind the NNUE
+      weight-embedding scoping item above (decided Session 38, see D-74).
+      Two genuinely different projects hide under this one name: (a)
+      process-level parallelism (N independent OS processes each running
+      the existing binary, keep the best result — no transpiler changes,
+      doable in a normal session, but no shared TT between workers, so
+      no real synergy) vs. (b) real thread-based Lazy SMP (threads
+      sharing one TT with intentionally unsynchronized access — the
+      actual technique — needs `std::thread` support added to the
+      dialect itself, no existing precedent, multi-session commitment).
+      Decided against starting the easier-but-weaker (a) as a stopgap —
+      this arc hasn't taken the weaker-but-easier path anywhere else and
+      shouldn't start here. (b) is real future work, deliberately not
+      started until it can be its own dedicated multi-session arc rather
+      than squeezed in as "the other option" to NNUE scoping.
 - [ ] **Target: 1,000,000,000 NPS on modern multi-core hardware**
 - [x] Benchmark LMR / null move / aspiration windows / futility pruning
       node reduction (Session 19) — LMR dominates (~25x at depth 5 on

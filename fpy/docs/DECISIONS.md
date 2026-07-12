@@ -1136,3 +1136,67 @@ restriction there.
   Sessions 35/36 are now closed. The only open item on the NNUE arc
   (D-69 through D-73) is the offline training pipeline — everything else
   in that arc is shipped, tested, and unblocked.
+
+## D-74: Prioritize NNUE weight-embedding scoping over Lazy SMP (decided
+  end of Session 37, no code — a planning decision to pick up fresh).
+  With D-69 through D-73 all closed, two substantial items remained on
+  Phase 6: the NNUE training pipeline and Lazy SMP multi-core search.
+  Neither is a "just start typing" task the way the last several sessions
+  were, so before committing to either, the tradeoff was weighed
+  explicitly (asked directly: "what would you do in my place").
+
+  **Why NNUE weight-embedding scoping goes first:**
+  - Three sessions (34, 35, 36) already went into building NNUE inference
+    — full recompute, incremental accumulator, both verified bit-exact
+    against a 200-game/11,982-move randomized stress run plus a
+    committed pytest suite. That's real, correct, sunk infrastructure
+    sitting completely idle because of one specific missing piece: there
+    is currently no way to get a real trained network's weights into a
+    compiled binary at all (FastPy's dialect has no file I/O; every
+    array must start as `[]` and be filled by a runtime init function —
+    D-70's convention). Leaving that idle to go build something
+    unrelated undervalues the work already done and the momentum behind
+    finishing it.
+  - The blocking question is small and answerable in one session: can
+    `fastpy build` handle a ~98,600-line literal assignment block in
+    `init_nnue_weights()`'s body as-is, or does the transpiler need a
+    real large-array-literal feature first? That's a contained,
+    testable question with a clear yes/no/how-big-a-feature answer —
+    not an open-ended research task. It either unblocks the training
+    pipeline immediately or tells you precisely what needs building
+    before it can start. This is the same shape of problem as Session
+    35's array-field transpiler work: bounded, testable, one clear
+    unblocking outcome.
+  - Training a real network (self-play or PGN data, a training loop,
+    quantization-aware to match the int32/clipped-ReLU format already
+    built) only becomes a well-scoped task once this is answered — doing
+    it before would mean building a training pipeline with no confirmed
+    way to deliver its output into the engine at all.
+
+  **Why Lazy SMP goes second, not as a parallel "quick win":**
+  - It splits into two genuinely different projects: process-level
+    parallelism (N independent OS processes, no transpiler changes,
+    doable in one session, but no shared TT between workers — not real
+    Lazy SMP, no synergy) versus real thread-based Lazy SMP (shared TT
+    with intentionally unsynchronized access — needs `std::thread`
+    support added to the FastPy dialect itself, with no existing
+    precedent to build on, unlike array fields extending something that
+    already partially worked).
+  - Deliberately rejected taking the easier-but-weaker process-level path
+    as a stopgap: nothing else in this arc (Sessions 34-37) took a
+    weaker-but-easier route when a real version was identifiable, and
+    doing so here would ship something that looks done on the ROADMAP
+    but isn't the actual technique.
+  - Real thread-based Lazy SMP has "no partial credit": a half-built
+    shared-TT threading model is actively dangerous (data races,
+    Session-uncaught-class-of-bug) rather than merely incomplete, unlike
+    e.g. the accumulator work where each of the three sessions left a
+    genuinely working, tested increment. It deserves a session (or
+    several) deliberately cleared for it, not one squeezed in as the
+    fallback option to NNUE scoping.
+
+  **Outcome:** next session picks up with the weight-embedding scoping
+  question, no code written yet this session — this entry and the
+  corresponding ROADMAP.md items are the full extent of Session 38's
+  output. See ROADMAP.md's Phase 6 section for the exact next-step
+  framing.

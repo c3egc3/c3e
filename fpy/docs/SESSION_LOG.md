@@ -4,6 +4,57 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 38 — Planning only: NNUE scoping prioritized over Lazy SMP
+**Status:** COMPLETE ✅ — no code this session, decision + docs only
+
+### What happened
+Verified Session 37's GitHub commit was clean (user uploaded the right
+files, then accidentally left three stray duplicate copies of
+`emitter.py`/`parser.py`/`type_system.py` at the repo root alongside the
+correct `core/` versions — confirmed via a fresh tarball pull, not the
+CDN-cached `raw.githubusercontent.com` responses which initially looked
+stale; `core/emitter.py` had the real Session 37 fix throughout, the
+stray root copies were just clutter). User deleted the three stray files
+directly on GitHub; reconfirmed via a fresh tarball pull and a full test
+run: 367/367, no stray files, `core/` intact.
+
+With that housekeeping done, user asked what to work on next. Two
+substantial items remained on Phase 6: the NNUE training pipeline and
+Lazy SMP. Asked directly for a recommendation ("what would you do in my
+place") — argued for scoping the NNUE weight-embedding problem first
+(three sessions of working NNUE infrastructure sitting idle behind one
+specific, contained, answerable engineering question — see D-74 for the
+full reasoning) over starting Lazy SMP, including explicitly rejecting
+the easier-but-weaker process-level-parallelism version of Lazy SMP as a
+stopgap. User agreed and asked to record the decision for a fresh
+session rather than continuing immediately.
+
+### Decision recorded
+D-74 in DECISIONS.md — full rationale for the prioritization. ROADMAP.md
+updated: a new "NEXT UP" sub-item under Phase 6 spelling out the exact
+question to answer (`fastpy build` on a ~98,600-line literal assignment
+block: does it work as-is, or does the transpiler need a real large-
+array-literal feature?), the training-pipeline item marked as blocked on
+that answer, and the Lazy SMP item annotated with the two-path breakdown
+and why it's deliberately deferred rather than started as a parallel
+"quick win."
+
+### Next session
+Pick up directly with the weight-embedding scoping question — no ML
+work yet, just: can a ~98,600-element literal array assignment block be
+generated, type-checked, and compiled by the existing toolchain as-is?
+If yes, the training pipeline item unblocks immediately. If no (or if it
+compiles but is impractically slow/large), scope the actual transpiler
+feature needed (a real large-array-literal or external-data-loading
+mechanism) before touching anything ML-side.
+
+Re-run the Session 30/PROCESS baseline check (both repos' full test
+suites against freshly-pulled `main`) before starting — standard
+practice, and doubly worth it here since this session's own baseline
+check caught a real (if harmless) repo-hygiene issue.
+
+---
+
 ## Session 37 — Two follow-up cleanups: copy-aliasing fix, const-methods
 **Status:** COMPLETE ✅ — both non-blocking items from Sessions 35/36 closed
 
