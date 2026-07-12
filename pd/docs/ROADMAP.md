@@ -626,7 +626,7 @@
 
 ---
 
-## Phase 20 — Difficulty / Skill Levels ⏳ IMPLEMENTED, VALIDATION PENDING
+## Phase 20 — Difficulty / Skill Levels ⏳ VALIDATION IN PROGRESS (noise added, re-run pending)
 - [x] 20.1 — D39 (Session 64, scoping discussion only — no code this
             session): build depth-cap difficulty tiers (`Skill Level
             0..N` or similar), optionally with a little move-selection
@@ -751,6 +751,51 @@
             `.github/workflows/uci_match_runner.yml` (both REPLACE) on top
             of the Phase 20 files, confirm green, then actually run the 4
             tier-pair comparisons above before calling any tier "done."
+- [x] 20.4 — Session 67: ran the validation. First two attempts were
+            invalidated by test-setup mistakes, not code bugs (see
+            SESSION_LOG for the full story — GitHub's mobile "Run
+            workflow" form carrying over stale field values, and UCI-
+            options fields needing the FULL `setoption name Skill Level
+            value N` line rather than a bare number, which the engine
+            silently ignores as an unrecognized command). Once corrected
+            and verified via the workflow log's command echo:
+            0 vs 5: Elo -381.7 (tier 5 wins ~90%) — strong.
+            5 vs 10: Elo -436.4 (tier 10 wins ~92.5%) — strong.
+            10 vs 15: Elo -8.7 (48.8%) — statistical tie, NOT separated.
+            15 vs 20: Elo -52.5 (57.5%) — real but modest.
+            Diagnosis: not a bug — a well-known engine-strength-vs-depth
+            shape (huge Elo gains in the first few plies, fast-diminishing
+            returns once the search is already reasonably deep for the
+            time budget; Stockfish's own Skill Level 15-20 have the same
+            closeness for the same reason). Depth-cap tiers 10+ landed in
+            the region where extra depth barely changes the chosen move
+            anymore.
+            Fix (Gokul deferred the specific choice to Claude): built the
+            move-selection noise mechanism 20.1 always flagged as the
+            fallback for this exact situation, rather than just
+            compressing the option's upper range or leaving it
+            undocumented — noise fixes the actual separation problem
+            instead of hiding it. `skill.rs` gained
+            `skill_noise_window_cp(level)` (0 at level 20 = no-op, `(20 -
+            level) * 8` cp for 0..19) plus a small embedded xorshift64 PRNG
+            (no new crate dependency) and `pick_noisy_move_index()` —
+            picks uniformly among root candidates within the window rather
+            than always the single best move. `iterative.rs` wires it in
+            after the main depth loop, reusing the existing Phase 19
+            `search_multipv_slot()` machinery to gather alternative root
+            candidates rather than duplicating a second root-search path.
+            IMPORTANT: noise applies to every capped tier (0-19), not just
+            the two problem pairs — the 0-vs-5/5-vs-10 numbers above are
+            now stale relative to the shipped code and need re-validating
+            alongside 10-vs-15/15-vs-20, not just the pairs that failed.
+            NEXT SESSION START POINT: commit `search/skill.rs` and
+            `search/iterative.rs` (both REPLACE), confirm green, then
+            re-run ALL FOUR tier pairs (same methodology: full setoption
+            lines, movetime 1000, confirm the log echo before trusting any
+            result) and compare against this session's pre-noise baseline
+            above. If 10-15/15-20 are still too close even with noise, the
+            next lever is widening the noise-window formula's coefficient
+            (currently a flat `*8` per level), not a structural rewrite.
 
 ---
 

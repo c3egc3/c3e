@@ -7,7 +7,96 @@ Most recent session at TOP.
 
 ---
 
-## Session 66 — 2026-07-12 (Difficulty levels implemented — Phase 20.3 — code)
+## Session 67 — 2026-07-12 (Skill Level validation + move-selection noise — Phase 20.4)
+
+**Built:** Ran the empirical validation Session 66 left pending. Root
+cause of two false starts along the way (both user error, not code bugs,
+worth recording so they don't repeat): (1) the `uci_match_runner.yml`
+"Run workflow" form on mobile can carry over stale values from a previous
+run if fields aren't manually cleared — one run silently reused
+`num_games=100` instead of the intended 40; (2) the `engine_a/b_uci_
+options` fields need the FULL command (`setoption name Skill Level value
+N`), not just the bare number — a bare `"0"`/`"20"` gets sent as a raw
+line the engine doesn't recognize as any known UCI command and is
+silently ignored, so the engine just stays at its compiled-in default.
+Both runs that hit this looked like ~50/50 "no difference" results,
+which would have been mistaken for a depth-cap bug if not caught by
+reading the workflow log's command echo (top of the "Run UCI pinned-ref
+match" step) — added a rule of thumb going forward: always check that
+echo line on a new/reconfigured run before trusting its result.
+
+**Corrected validation results (all field-verified via log echo):**
+- 0 vs 5: Elo -381.7 (tier 5 wins ~90%) — strong ✅
+- 5 vs 10: Elo -436.4 (tier 10 wins ~92.5%) — strong ✅
+- 10 vs 15: Elo -8.7 (48.8%, statistical tie) — **not separated** ❌
+- 15 vs 20: Elo -52.5 (tier 20 wins 57.5%) — real but modest
+
+**Bugs fixed:** None in the shipped code — the "10 vs 15 loses" result
+from an earlier, less-carefully-verified run turned out to also be a
+field-entry artifact (small sample without a confirmed echo), not a
+depth-cap defect; the properly-verified 40-game rerun shows a tie, not an
+inversion.
+
+**Decisions made (Phase 20.4, no new D-number — extends D39):** The
+10-vs-15 tie isn't a bug — it's the well-known shape of engine strength
+vs. depth (huge gains in the first few plies, fast-diminishing returns
+once the search is already reasonably deep for the time budget; even
+Stockfish's own Skill Level 15-20 are notoriously close for the same
+reason). Decided — with Gokul deferring the specific fix choice to
+Claude — to add move-selection noise rather than leave it undocumented or
+just compress the option's upper range, since noise fixes the actual
+separation problem instead of just hiding it, and 20.1 always flagged
+this as the fallback for exactly this situation.
+
+**Move-selection noise, implemented this session:** `skill.rs` gained
+`skill_noise_window_cp(level)` — `0` at Skill Level 20 (no-op, matches
+every other Skill Level mechanism's backward-compat pattern), `(20 -
+level) * 8` cp for 0..19 (level 0 -> 160cp, level 19 -> 8cp) — plus a
+small embedded xorshift64 PRNG (no new crate dependency; deliberately
+avoids `SystemTime::now()`, which this code also needs to stay safe under
+because `iterative_deepening()` compiles to wasm32 too) and
+`pick_noisy_move_index()`, which picks uniformly among root candidates
+within the window rather than always the single best one. `iterative.rs`
+wires it in right after the main depth loop: gathers up to 3 root
+candidates via the existing `search_multipv_slot()` (Phase 19) machinery
+(reused, not duplicated), then swaps in a noisy pick when one applies,
+updating `result.best_move`/`score`/`pv[0]` to stay internally consistent.
+Gated identically to the depth cap/time fraction — zero behavior change
+at the default Skill Level.
+
+**Test risk flagged:** same as every session in this sandbox — no Rust
+toolchain here, nothing was compiled. New tests (skill.rs: noise-window
+monotonicity + boundary + PRNG-selection tests; no iterative.rs tests
+added this session for the noise wiring itself, since it needs a live
+multi-candidate root position to meaningfully test and the existing
+`fixed_depth_tc`/`start_pos()` test fixtures don't reliably produce
+close-enough alternate root moves to assert on — flagging this as a real
+test gap, covered instead by the match-runner re-validation below) were
+hand-verified against the existing suite's patterns only.
+
+**Important:** noise applies to EVERY capped tier (0-19), not just
+10-15/15-20 — it's a strict superset addition on top of the existing
+depth cap, layered onto the SAME tiers that were already well-separated.
+That means the 0-vs-5 and 5-vs-10 numbers above are now stale relative to
+the shipped code, not just the two problem pairs — all four need a fresh
+run before any tier is called "done," not just the two that failed.
+
+**Next session start point:** Commit `search/skill.rs` and
+`search/iterative.rs` (both REPLACE, on top of everything from Sessions
+66/this one). Confirm the full suite is still green. Then re-run ALL FOUR
+tier pairs through the workflow (`uci_match_runner.yml`) — same
+methodology as this session: `pre_tuning_ref`/`post_tuning_ref` both
+`main`, full `setoption name Skill Level value N` strings in both
+UCI-options fields (never a bare number), `movetime_ms` 1000, `num_games`
+at least 40, and CONFIRM the log echo before trusting any result. Compare
+against this session's pre-noise baseline (0v5 -381.7, 5v10 -436.4, 10v15
+-8.7, 15v20 -52.5) to see whether noise closed the 10-15/15-20 gaps
+without meaningfully eroding the already-strong 0-5/5-10 gaps. If the
+upper pairs are still too close even with noise, the next lever is
+widening the noise-window formula's coefficient (currently a flat `*8`
+per level) rather than a structural rewrite.
+
+---
 
 **Built:** `src/search/skill.rs` (new) — 21-level `Skill Level` tier table.
 `skill_depth_cap(level)`: `None` at level 20 (default, uncapped), else
