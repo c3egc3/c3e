@@ -96,6 +96,55 @@ upper pairs are still too close even with noise, the next lever is
 widening the noise-window formula's coefficient (currently a flat `*8`
 per level) rather than a structural rewrite.
 
+**Follow-up same session (still 2026-07-12) — real bug found and fixed:**
+Gokul ran the re-validation. 0-vs-5 improved (Elo -759.1, even more
+lopsided) and 15-vs-20 went from marginal to decisive (Elo -240.8) — both
+correct-direction improvements from noise. But 5-vs-10 came back
+INVERTED: three separate runs (40, 50, 60 games) all had Skill Level 5
+beating Skill Level 10 — cumulatively 85-64-1 across 150 games (57%),
+Elo roughly +30 to +60 in the wrong direction each time. Three consistent
+runs in the same direction ruled out sampling noise as the explanation.
+
+Reviewed the code for state leakage (`age_history()`, `reset_for_search()`)
+and time-budget overruns (`is_time_up()`'s deadline source) first — found
+neither; the noise-candidate-gathering searches correctly share the same
+`time_allocated_ms` deadline as the main search and can't corrupt the next
+move's state.
+
+Root cause (design flaw, not a crash-bug): `skill_noise_window_cp()` used
+a flat centipawn threshold to decide which alternate candidates were
+eligible for noisy selection. But root-move score gaps shrink as search
+gets deeper — a deeper search converges on more genuinely-close
+alternatives. So level 10's nominally TIGHTER window (80cp, at depth 11)
+was actually catching MORE eligible candidates in practice than level 5's
+nominally WIDER window (120cp, at depth 6), where shallow search's larger
+natural score gaps rarely fell inside 120cp at all. Net effect: the
+"weaker" tier (10) was deviating from its best move MORE often than the
+"stronger" tier (5), inverted from intent — independent of the window
+values' own correct ordering.
+
+**Fix:** added `skill_noise_trigger_pct(level)` — a separate probability
+gate (`(20 - level) * 4`, so level 0 = 80%, level 19 = 4%) checked BEFORE
+the cp window. This directly ties deviation FREQUENCY to Skill Level,
+independent of how clustered any given position's candidates happen to be
+at that depth; the cp window still applies after a triggered roll, now
+purely as a safety bound rather than the sole frequency control. Added a
+regression-guard test (`test_trigger_pct_is_independent_of_depth`) pinning
+`trigger_pct(5) > trigger_pct(10)` specifically, since that's the exact
+ordering that was backwards before.
+
+**Decisions made:** None new-numbered — this is a bug fix within the
+already-decided noise mechanism (20.4), not a new architectural choice.
+
+**Next session start point (updated):** Commit the newly-fixed
+`search/skill.rs` (REPLACE — `iterative.rs` from earlier this session is
+unchanged, no need to re-commit it) on top of everything else from this
+session. Confirm green. Then re-run 5-vs-10 specifically first (it's the
+one with a confirmed-wrong direction to verify is now fixed) at 50+ games,
+full setoption lines, movetime 1000 — confirm it now favors tier 10. If
+that holds, re-run the other three pairs (0v5, 10v15, 15v20) to get a full
+clean ladder under the fixed mechanism before calling Phase 20 validated.
+
 ---
 
 **Built:** `src/search/skill.rs` (new) — 21-level `Skill Level` tier table.

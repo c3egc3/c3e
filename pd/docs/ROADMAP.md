@@ -626,7 +626,7 @@
 
 ---
 
-## Phase 20 — Difficulty / Skill Levels ⏳ VALIDATION IN PROGRESS (noise added, re-run pending)
+## Phase 20 — Difficulty / Skill Levels ⏳ BUG FOUND & FIXED, RE-VALIDATION PENDING
 - [x] 20.1 — D39 (Session 64, scoping discussion only — no code this
             session): build depth-cap difficulty tiers (`Skill Level
             0..N` or similar), optionally with a little move-selection
@@ -796,6 +796,34 @@
             above. If 10-15/15-20 are still too close even with noise, the
             next lever is widening the noise-window formula's coefficient
             (currently a flat `*8` per level), not a structural rewrite.
+- [x] 20.5 — Session 67 (cont.): re-validation surfaced a real bug in
+            20.4's noise mechanism. 0-vs-5 and 15-vs-20 improved with noise
+            (Elo -759.1 and -240.8 respectively — both correct direction,
+            more decisive than before). But 5-vs-10 came back INVERTED
+            across three separate runs (40/50/60 games, 150 total, 57%
+            cumulative in the wrong direction) — Skill Level 5 beating
+            Skill Level 10, ruling out sampling noise as the explanation.
+            Reviewed for state leakage and time-budget overruns first,
+            found neither. Root cause: `skill_noise_window_cp()`'s flat
+            centipawn threshold doesn't account for root-move score gaps
+            shrinking as search gets deeper — level 10's nominally
+            TIGHTER window (80cp @ depth 11) was catching MORE eligible
+            candidates in practice than level 5's nominally WIDER window
+            (120cp @ depth 6, where shallow search's larger natural score
+            gaps rarely fell inside 120cp at all). Deviation frequency was
+            an accidental side effect of depth-dependent score clustering,
+            not actually controlled by Skill Level as intended.
+            Fix: added `skill_noise_trigger_pct(level)` — `(20 - level) *
+            4`, checked BEFORE the cp window — so deviation FREQUENCY is
+            now a direct, depth-independent function of Skill Level; the
+            cp window applies only after a triggered roll, as a safety
+            bound. Regression-guard test added pinning
+            `trigger_pct(5) > trigger_pct(10)` specifically.
+            NEXT SESSION START POINT: commit the fixed `search/skill.rs`
+            (REPLACE — `iterative.rs` unchanged, no need to re-commit),
+            confirm green, re-run 5-vs-10 first (50+ games) to confirm the
+            fix, then re-run the other three pairs for a full clean ladder
+            before calling Phase 20 validated.
 
 ---
 
