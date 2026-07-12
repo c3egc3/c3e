@@ -4,6 +4,78 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 41 — evaluate_nnue_incremental() wired into alpha_beta()/quiescence()
+**Status:** COMPLETE ✅ — `engine.py`, `run.py`, `tests/test_phase4.py`, `tests/test_phase6.py` changed
+
+### `Start next` — picked up Session 40's flagged next step
+Session 40 ended with real trained weights in place and this wiring item
+flagged as the clear next step, explicitly framed as a speed/robustness
+question rather than a strength one.
+
+### Baseline first
+Ran `run_benchmark()` (Python-mode) at startpos and a tactical FEN,
+depths 1-5, on the pre-wiring classical-`evaluate()` search, before
+touching any code — needed something to compare against.
+
+### What changed
+`find_best_move()` now initialises `board.acc` via `init_accumulator()`
+at the root (same lazy-init convention as `board.hash`/`ZK_TABLE`).
+`alpha_beta()`'s futility static eval and `quiescence()`'s stand-pat both
+switched from `evaluate()` to `evaluate_nnue_incremental()`. Every
+`make_move()` call inside the actual search tree (`alpha_beta()`'s move
+loop, `quiescence()`'s capture loop, `find_best_move()`'s root loop) is
+now `make_move_with_accumulator()`, so `board.acc` stays correct
+end-to-end. `run.py`'s Python-mode mirrors (`_alpha_beta_py`,
+`_quiescence_py`, `_find_best_move_py`) updated identically, reusing the
+`_init_accumulator_py()` wrapper Session 36 already built for this.
+
+### Test fallout (both fixes are correctness updates, not workarounds)
+Two test files' `starting_board()` helpers call `_alpha_beta_py`/
+`_quiescence_py` directly, bypassing `_find_best_move_py()`'s own
+`board.acc` init — both updated to call `_init_accumulator_py()` too, now
+that every board handed to these functions carries the same
+precondition `find_best_move()` guarantees. Two other tests had asserted
+quiescence's stand-pat equals `evaluate()` exactly for the (symmetric)
+starting position — true only while stand-pat called `evaluate()`
+directly; updated to compare against `evaluate_nnue_incremental()`, the
+function actually under test now. Full writeup: D-77.
+
+### Benchmark result — an honest finding, not a clean pass
+Node counts shift under NNUE eval, in both directions: startpos depth 5
+went from 38,849 to 266,642 nodes (~6.9x); a tactical FEN went ~1.5x up
+at depth 4 but ~0.76x (down) at depth 5. Leading hypothesis (not
+confirmed): startpos is exactly eval-symmetric under `evaluate()` (score
+0), and NNUE's small nonzero value there perturbs which branches
+futility/null-move pruning cut. Flagged as ROADMAP's new NEXT UP item
+rather than either dismissed or over-interpreted.
+
+### Verification
+- `fastpy check engine.py`: zero errors
+- `fastpy build engine.py --optimize=O3`: clean, ~88s
+- Full `fastpy-engine` suite: **243/243 passing**
+- Benchmark before/after captured at startpos + one tactical FEN, depths
+  1-5 (see D-77's table)
+- `fastpy` suite not re-run this session (no changes to that repo)
+
+### Files changed
+- `fastpy-engine/engine.py` — REPLACE
+- `fastpy-engine/run.py` — REPLACE
+- `fastpy-engine/tests/test_phase4.py` — REPLACE
+- `fastpy-engine/tests/test_phase6.py` — REPLACE
+- Docs: `ROADMAP.md`, `DECISIONS.md` (D-77), `SESSION_LOG.md` (this entry)
+
+### Next session
+Investigate the node-count sensitivity above with a few more benchmark
+positions before trusting NNUE-driven search for real play — confirm or
+rule out the symmetric-startpos hypothesis. After that, the natural step
+is a second training iteration using search-based relabelling (shallow
+`alpha_beta()` scores instead of raw `evaluate()`) — the realistic route
+to this network exceeding `evaluate()`'s playing strength rather than
+just matching it. Re-run the baseline check (both repos' full test
+suites against freshly-pulled `main`) before trusting this log.
+
+---
+
 ## Session 40 — Offline NNUE training pipeline built and run; engine.py now has real trained weights
 **Status:** COMPLETE ✅ — `engine.py`, `tests/test_nnue.py` changed; three new files under `training/`
 

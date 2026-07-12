@@ -214,15 +214,37 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         updated to a generic int32-sanity range (real trained biases,
         e.g. `NNUE_B2[0]=-176`, aren't clipped like the old placeholder
         was).
-  - [ ] Wire `evaluate_nnue_incremental()` into `alpha_beta()`/
-        `quiescence()` — unblocked as of Session 40, real trained
-        weights now exist (see D-76). Deliberately not done yet: this
-        network only reproduces `evaluate()`, so wiring it in now would
-        be a pure speed/robustness question (does the incremental
-        accumulator path hold up in real search, any perf regression
-        vs. `evaluate()`), not a strength question — worth its own
-        focused session with a benchmark run (`run_benchmark()`) before
-        and after, not bundled into the training-pipeline session.
+  - [x] Wire `evaluate_nnue_incremental()` into `alpha_beta()`/
+        `quiescence()` (Session 41, see D-77). `find_best_move()` now
+        initialises `board.acc` via `init_accumulator()` at the root,
+        every `make_move()` call in the search tree
+        (`alpha_beta()`/`quiescence()`/`find_best_move()`) is
+        `make_move_with_accumulator()`, and static evaluation
+        (futility's `static_eval`, quiescence's stand-pat) reads
+        `evaluate_nnue_incremental()` instead of `evaluate()`. Python-
+        mode mirrors in `run.py` (`_alpha_beta_py`/`_quiescence_py`/
+        `_find_best_move_py`) updated identically. `fastpy check`/
+        `build -O3` clean, full 243/243 suite passing (two tests
+        updated — they'd asserted quiescence's stand-pat equals
+        `evaluate()` exactly, which no longer holds now that stand-pat
+        reads a close-but-not-identical NNUE approximation; two test
+        helper `starting_board()`s now initialise `board.acc` since
+        `_alpha_beta_py`/`_quiescence_py` are called directly in those
+        files, bypassing `_find_best_move_py()`'s own init). Benchmark
+        before/after: node counts shift under NNUE eval (up to ~7x at
+        one depth/position, down at another) — expected, not a bug (see
+        D-77 for why), but a real finding, not a clean "no regression."
+  - [ ] **NEXT UP:** investigate the node-count sensitivity D-77 flagged
+        — the ~7x increase at startpos depth 5 in particular is worth
+        understanding before trusting NNUE-based search for real play.
+        Leading hypothesis: startpos is exactly eval-symmetric under
+        `evaluate()` (score 0), and NNUE's ~2-5cp noise breaks that
+        symmetry asymmetrically, changing which branches futility/null-
+        move pruning cut — worth confirming with a few more benchmark
+        positions before concluding it's benign. Second training
+        iteration with search-based relabelling (shallow `alpha_beta()`
+        scores instead of raw `evaluate()`) is the natural next step
+        after that, once this network is trusted in real search.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

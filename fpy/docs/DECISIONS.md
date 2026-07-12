@@ -1358,3 +1358,100 @@ restriction there.
   and the incremental path is trusted in real search — that's how this
   network could eventually exceed `evaluate()`'s playing strength rather
   than just matching it.
+
+## D-77: `evaluate_nnue_incremental()` wired into `alpha_beta()`/
+  `quiescence()` (Session 41). Direct follow-through on D-76's flagged
+  next step, framed as a speed/robustness question, not a strength one.
+
+  **What changed, in `engine.py`:**
+  - `find_best_move()`: now calls `board = init_accumulator(board)`
+    right after `board.hash = compute_hash(board)` — same lazy-init
+    convention, same call site — so `board.acc` is correct before any
+    recursive call reads it.
+  - `alpha_beta()`: futility pruning's `static_eval` now reads
+    `evaluate_nnue_incremental(board)` instead of `evaluate(board)`; the
+    move loop's `make_move(board, moves[i])` is now
+    `make_move_with_accumulator(board, moves[i])`.
+  - `quiescence()`: stand-pat now reads `evaluate_nnue_incremental(board)`;
+    its capture loop's `make_move()` is now `make_move_with_accumulator()`.
+  - `find_best_move()`'s own root move loop: `make_move()` →
+    `make_move_with_accumulator()`.
+  - Left alone, deliberately: `generate_captures()`'s legality-check
+    `make_move()` call (the resulting board is discarded immediately
+    after `is_in_check()`, never searched, so there's no accumulator to
+    keep correct) and `make_null_move()` (doesn't touch any bitboard, so
+    `board.acc` carries over unchanged with no diff needed).
+
+  **`run.py`'s Python-mode mirrors** (`_alpha_beta_py`, `_quiescence_py`,
+  `_find_best_move_py`) updated identically, using the pre-existing
+  `_init_accumulator_py()` wrapper (built in Session 36 for exactly this
+  purpose — see D-70). `_find_best_move_py()` now calls
+  `board = _init_accumulator_py(board)` at its top, mirroring
+  `find_best_move()`.
+
+  **Test fallout, and why each fix is correct, not a workaround:**
+  - `tests/test_phase4.py` and `tests/test_phase6.py`'s `starting_board()`
+    helpers construct a bare `BoardState()` and call `_alpha_beta_py`/
+    `_quiescence_py` *directly*, bypassing `_find_best_move_py()`'s own
+    `board.acc` init — so `board.acc` was still `[]` (D-70's Python-mode
+    empty-list convention) when `evaluate_nnue_incremental()` tried to
+    read it, raising `IndexError`, not a silent wrong answer (the
+    silent-wrong-answer risk `evaluate_nnue_incremental()`'s docstring
+    warns about is specific to the *compiled* path, where `acc` is a
+    fixed-size array that reads as zeros rather than raising). Fixed by
+    having both helpers call `_init_accumulator_py()` too — the correct
+    fix, since every board handed to these functions now has the same
+    precondition `find_best_move()` itself guarantees.
+  - `test_phase4.py::test_quiet_position_equals_static_eval` and
+    `::test_depth0_returns_qsearch` asserted quiescence's stand-pat (and
+    therefore `alpha_beta(depth=0)`'s result) equals `evaluate()` exactly
+    for the quiet starting position (both were `0`, since `evaluate()`
+    is exactly symmetric there). That equality was true only because
+    stand-pat used to call `evaluate()` directly — now that it calls
+    `evaluate_nnue_incremental()` (a close but not bit-identical
+    approximation, see D-76's MAE), the two tests' premise no longer
+    holds. Both updated to compare against `evaluate_nnue_incremental()`
+    — the function actually under test — instead of `evaluate()`.
+
+  **Benchmark, before (classical `evaluate()`) vs. after (NNUE):** run via
+  `run_benchmark()` (Python-mode, so absolute NPS reflects interpreter
+  overhead more than true compiled speed — node counts are the
+  meaningful signal here, not raw NPS).
+
+  | position | depth | nodes before | nodes after |
+  |---|---|---|---|
+  | startpos | 5 | 38,849 | 266,642 (~6.9x) |
+  | tactical FEN¹ | 4 | 162,191 | 238,344 (~1.5x) |
+  | tactical FEN¹ | 5 | 442,825 | 335,441 (~0.76x) |
+
+  ¹ `r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4`
+
+  **Honest read of this table:** node counts shift meaningfully in both
+  directions, not a clean "no regression." Leading hypothesis for the
+  startpos outlier: `evaluate()` is exactly `0` at the startpos (perfect
+  material/PST symmetry), while `evaluate_nnue_incremental()` returns a
+  small nonzero value there (`2`, per D-76's spot-check) — futility
+  pruning and null-move pruning both compare the static eval against
+  margins/beta, and a value sitting exactly on a symmetric tie-breaking
+  boundary vs. one perturbed a few centipawns off it can change which
+  branches get cut, especially early in a search tree built from a
+  highly symmetric position. Not confirmed — flagged in ROADMAP.md as
+  the next thing to actually check, not asserted as fact here.
+
+  **What this does NOT establish:** this is not a playing-strength
+  result (D-76 already noted the network only reproduces `evaluate()`,
+  it doesn't exceed it) and not a settled performance verdict (the
+  node-count swings above need more positions before concluding
+  anything about typical-case behavior). What it does establish: the
+  incremental accumulator path is wired correctly end-to-end
+  (`fastpy check`/`build -O3` clean, full 243/243 suite passing,
+  `find_best_move()` → `alpha_beta()` → `quiescence()` all correctly
+  threading `board.acc` through `make_move_with_accumulator()`) and the
+  engine doesn't crash, hang, or produce obviously-broken output with
+  NNUE driving search — the actual bar this session was scoped to clear.
+
+  **Outcome:** `evaluate_nnue_incremental()` is live in real search, not
+  just tested in isolation. Next: understand the node-count sensitivity
+  (ROADMAP's new NEXT UP item) before trusting this for real play, then
+  the search-based-relabelling training iteration D-76 flagged as the
+  route to actually exceeding `evaluate()`'s strength.
