@@ -177,26 +177,31 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
   - [ ] Wire `evaluate_nnue_incremental()` into `alpha_beta()`/
         `quiescence()` once real trained weights exist — deliberately
         not done over placeholder weights (see D-69 point 2)
-  - [ ] Emitter: struct methods emit `const` unconditionally (discovered
-        during D-70, not fixed — self-contained, no NNUE dependency).
-        `core/emitter.py`'s `_emit_function` needs to detect whether a
-        method mutates `self` and conditionally drop `const`. Not
-        currently a blocker — every existing `BoardState` method is a
-        pure accessor, and every struct mutation in this codebase
-        (including the accumulator's) goes through a free function
-        instead — but worth fixing so future method-style mutators
-        aren't forced into free-function style.
-  - [ ] Python-mode `copy.copy(board)` list-aliasing pitfall (discovered
-        during D-71, worked around with `run.py`'s
-        `_copy_board_with_acc_py()`, not fixed at the source): shallow
-        `copy.copy()` shares any list-valued field's reference between
-        "copies" instead of duplicating it. Only matters for `acc` today
-        (the only array-typed field), but will matter again for any
-        future array field. A real fix would give `BoardState` a
-        `__copy__`/`__deepcopy__` in `run.py`'s Python-mode layer (not
-        `engine.py` — Core Rule 6, no Python-only code there) so every
-        existing `copy.copy(board)` call site is automatically safe
-        without each one needing to know about this.
+  - [x] Emitter: struct methods emit `const` unconditionally (Session 37
+        / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
+        helper (walks `IRAssign`/`IRAugAssign` targets through
+        `IRIf`/`IRWhile`/`IRFor`/`IRMatch`, same tree-walk shape as
+        variable hoisting) and only emits `const` when the method body
+        has no direct `self.field`/`self.field[i]` write. Verified with
+        a standalone compiled-and-run test (mutating + read-only methods
+        on the same struct, correct C++ emitted and correct runtime
+        behavior) and 9 new/updated tests in `test_emitter.py`
+        (`TestConstMethodDetection`). `engine.py` reconfirmed unaffected
+        — every existing `BoardState` method is a pure accessor and
+        keeps emitting `const` exactly as before. 367/367 (fastpy),
+        243/243 (fastpy-engine, unaffected).
+  - [x] Python-mode `copy.copy(board)` list-aliasing pitfall (Session 37
+        / D-72) — fixed at the source with `BoardState.__copy__`/
+        `__deepcopy__`, monkey-patched onto the class in `run.py`
+        (dunder methods are Python-only, can't live in `engine.py` —
+        Core Rule 6). Generic over any list-valued field (iterates
+        `self.__dict__`, doesn't hardcode `acc` by name), so it stays
+        correct if a second array field is ever added. Session 36's
+        `_copy_board_with_acc_py()` helper is retired — every
+        `copy.copy(board)` call site across the whole codebase is now
+        automatically safe. 6 new tests
+        (`TestBoardStateCopyPatch`). 243/243 (fastpy-engine, 237 prior
+        + 6 new).
 - [x] Futility pruning
 - [x] `go depth N` timing harness (node counting + NPS reporting, Session 18)
 - [x] Singular extensions (Session 24) — excluded-move verification search

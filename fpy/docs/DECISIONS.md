@@ -1037,3 +1037,102 @@ restriction there.
   session, all three of D-69's follow-up items are done; NNUE is
   feature-complete infrastructure waiting on a training pipeline that
   doesn't exist yet.
+
+## D-72: BoardState.__copy__/__deepcopy__ (Session 37) — fixes Session 36's
+  `copy.copy()` list-aliasing pitfall at the source instead of leaving it
+  as a helper-function workaround. `_copy_board_with_acc_py()` (D-71) is
+  retired; every existing and future `copy.copy(board)`/
+  `copy.deepcopy(board)` call site across `run.py` and every test file is
+  now automatically safe, with no need for any caller to know the pitfall
+  ever existed.
+
+  Monkey-patched onto `BoardState` in `run.py`, not defined as a method
+  inside `engine.py`'s class body — dunder methods are Python-only
+  convenience with no compiled-C++ equivalent, and `engine.py` contains
+  FastPy dialect only (Core Rule 6: no Python-only code there). The
+  implementation is generic over *any* list-valued field (iterates
+  `self.__dict__.items()` checking `isinstance(value, list)`) rather than
+  hardcoding `acc` by name, so it stays correct without modification if a
+  second array-typed struct field is ever added — the ROADMAP item this
+  closes was written broadly for exactly that reason.
+
+  Compiled C++ has no equivalent concern: a struct's fixed-size array
+  member is a true value member, genuinely duplicated byte-for-byte on
+  struct copy. This patch exists purely for the Python-mode execution
+  path, same category as every other Python-mode-only fix documented in
+  D-69 through D-71.
+
+  6 new tests in `tests/test_nnue_accumulator.py`
+  (`TestBoardStateCopyPatch`): duplication vs. reference identity for
+  both `copy.copy()` and `copy.deepcopy()`, mutation isolation, scalar
+  fields still copy correctly, the empty-list (`[]`, uninitialized `acc`)
+  case still works, and a generic test using a synthetic extra list field
+  to confirm the patch doesn't hardcode `acc` by name. Full suite:
+  fastpy-engine **243/243** (237 prior + 6 new). `fastpy` unaffected
+  (unchanged this task).
+
+## D-73: Conditional `const` on struct methods (Session 37) — closes the
+  limitation discovered and deliberately not fixed during D-70. Struct
+  methods now emit `const` unless the method's own body directly assigns
+  to `self.field` or `self.field[index]` (scalar or array-element writes
+  — the latter only possible at all since D-70). Before this, every
+  method emitted `const` unconditionally
+  (`core/emitter.py`'s `_emit_function`, `const_suffix = " const" if
+  in_struct else ""`), which meant a genuinely mutating method failed to
+  compile with "assignment of read-only location" — never exercised
+  before this session because every pre-existing `BoardState` method
+  happens to be a pure accessor (`white_pieces()`, `black_pieces()`,
+  etc.); every actual struct mutation in both repos goes through a free
+  function taking the struct by value instead (`make_move()`'s pattern).
+
+  Implementation: a new `_method_mutates_self()` helper recursively walks
+  a method body's `IRAssign`/`IRAugAssign` statements (through `IRIf`,
+  `IRWhile`, `IRFor`, `IRMatch` — the same statement-tree shapes
+  `_collect_typed_scalars()` already walks for variable hoisting) looking
+  for any target string starting with `"self."`. Deliberately scoped to
+  DIRECT self-mutation within the method's own body only — does not
+  follow calls to other methods. There's no existing case of transitive
+  self-mutation through a nested method call anywhere in either repo (see
+  above: mutation already goes through free functions, not method
+  chains), so a method that only mutates `self` via calling another
+  method would still incorrectly emit `const` — narrower than a full
+  fix, but strictly better than the unconditional-`const` status quo,
+  and sufficient for every real use case in this codebase today.
+
+  Verified with a standalone test file (`/tmp/const_method_test.py`, not
+  committed): a struct with a mutating `fill_self()` (array-field element
+  writes in a loop), a mutating `bump_total()` (scalar aug-assign), and a
+  read-only `sum_self()`. Emitted C++ correctly dropped `const` on the
+  first two and kept it on the third; compiled with
+  `g++ -std=c++20 -O2` and **run** — `fill_self()` correctly populated
+  the array, `bump_total()` correctly incremented the scalar twice,
+  `sum_self()` correctly read the result (`sum=60 vals=0,10,20,30
+  total=2`, matching hand-computed expected values).
+
+  9 new/updated tests in `tests/test_emitter.py`
+  (`TestConstMethodDetection`, 8 new): pure accessor still emits `const`,
+  scalar self-assignment drops it, array-field-element assignment drops
+  it, `self.x += 1` drops it, mutation inside a `while` loop drops it,
+  mutation inside both branches of an `if` drops it, a **negative** test
+  confirming a purely-local (non-`self`) reassignment does NOT
+  incorrectly drop `const`, and a sanity check that free functions never
+  get a `const` suffix regardless of what they mutate (const-ness only
+  applies to struct methods). One existing test
+  (`test_self_subscript_write_strips_self_in_method`, D-70) had a stale
+  comment explicitly describing the now-fixed limitation — updated to
+  reflect the fix and given an additional assertion that `const` is
+  correctly absent.
+
+  Full suite: `fastpy` **367/367** (359 prior + 8 new,
+  net of the one updated test).
+  `fastpy-engine`'s `engine.py` reconfirmed unaffected: every existing
+  `BoardState` method is a pure accessor, so every one of them keeps
+  emitting `const` exactly as before — confirmed by grepping the emitted
+  C++ for all four accessor methods (`white_pieces()`, `black_pieces()`,
+  `all_pieces()`, `empty_squares()`), all still ending in `const {`.
+  `fastpy check`/`fastpy build --optimize=O3` both clean.
+
+  With D-72 and D-73, both non-blocking follow-up items filed during
+  Sessions 35/36 are now closed. The only open item on the NNUE arc
+  (D-69 through D-73) is the offline training pipeline — everything else
+  in that arc is shipped, tested, and unblocked.

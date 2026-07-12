@@ -4,6 +4,89 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 37 — Two follow-up cleanups: copy-aliasing fix, const-methods
+**Status:** COMPLETE ✅ — both non-blocking items from Sessions 35/36 closed
+
+### Task selection
+User asked "which is easy to implement" across the remaining open items
+(training pipeline, Lazy SMP, the two filed-but-not-fixed follow-ups from
+D-70/D-71). Answered with a ranked assessment; user picked the two
+smallest, contained items — copy-aliasing fix first, then const-methods.
+
+### 1. BoardState.__copy__/__deepcopy__ (D-72)
+Fixes Session 36's `copy.copy()` list-aliasing pitfall at the source
+instead of leaving it as a helper function every caller had to remember
+to use. Monkey-patched onto `BoardState` in `run.py` (dunder methods are
+Python-only, can't live in `engine.py` — Core Rule 6). Generic over any
+list-valued field rather than hardcoding `acc` by name, so it stays
+correct without changes if a second array field is ever added.
+`_copy_board_with_acc_py()` is retired; `tests/test_nnue_accumulator.py`
+updated to use plain `copy.copy()` throughout, now safe everywhere.
+
+6 new tests (`TestBoardStateCopyPatch`): duplication vs. reference
+identity for both `copy()` and `deepcopy()`, mutation isolation, scalar
+fields unaffected, the empty-list (`acc == []`, never initialised) case,
+and a generic test confirming the patch doesn't hardcode `acc` by name.
+
+### 2. Conditional `const` on struct methods (D-73)
+Closes the limitation D-70 discovered and deliberately left unfixed.
+`core/emitter.py`'s `_emit_function` now calls a new
+`_method_mutates_self()` helper — walks a method body's
+`IRAssign`/`IRAugAssign` targets through `IRIf`/`IRWhile`/`IRFor`/
+`IRMatch` (same tree shape `_collect_typed_scalars()` already walks for
+hoisting) looking for a `self.`-prefixed target — and only emits `const`
+when none is found. Deliberately scoped to direct self-mutation within
+the method's own body; doesn't follow calls to other methods, since
+nothing in either repo needs that (every mutation already goes through
+free functions taking the struct by value).
+
+Verified with a standalone compiled-and-run test (not committed): a
+struct with a mutating `fill_self()`, a mutating `bump_total()`, and a
+read-only `sum_self()` — correct `const` presence/absence in the emitted
+C++, compiled clean, and run: `sum=60 vals=0,10,20,30 total=2`, matching
+hand-computed expected values.
+
+9 new/updated tests (`TestConstMethodDetection`, 8 new + 1 fixed): pure
+accessor keeps `const`, scalar/array-field/aug-assign self-mutation all
+correctly drop it, mutation inside `while`/`if` bodies is detected, a
+negative test confirms a purely-local reassignment doesn't falsely drop
+`const`, and free functions are confirmed to never get a `const` suffix
+at all. One existing test's comment explicitly described this limitation
+as unfixed — updated to reflect the fix.
+
+### Verification
+- `fastpy` full suite: **367/367** (359 prior + 8 new, net of one
+  updated test)
+- `fastpy-engine` full suite: **243/243** (237 prior + 6 new)
+- `fastpy check engine.py` → zero errors; `engine.py` reconfirmed
+  unaffected by the const-method change — every existing `BoardState`
+  method is a pure accessor and all four (`white_pieces()`,
+  `black_pieces()`, `all_pieces()`, `empty_squares()`) still emit `const`
+  exactly as before (checked by grepping the emitted C++)
+- `fastpy build --optimize=O3` → compiles clean
+- Both `engine.py` and `run.py` still `ast.parse()` clean
+
+### Next session
+With D-72 and D-73 closed, every non-blocking item filed during the
+NNUE arc (Sessions 34-36) is done. Two real candidates remain, both
+substantial:
+- **NNUE training pipeline** — the only remaining blocker to wiring NNUE
+  into search. Flagged last session as having an unscoped sub-problem
+  underneath the ML work itself: FastPy's compiled dialect has no file
+  I/O and every array must start as `[]` and be filled by a runtime init
+  function (D-70's convention) — there's currently no path to get
+  ~98,600 trained weight values into the compiled binary at all. Needs
+  its own scoping session before any training work starts.
+- **Lazy SMP** — two paths discussed: process-level parallelism (easy,
+  no transpiler changes, but not real Lazy SMP — no shared TT, so no
+  synergy between workers) vs. real thread-based Lazy SMP (needs
+  `std::thread` support added to the dialect itself — no existing
+  precedent, bigger scope than any single session so far in this arc).
+- Re-run the Session 30/PROCESS baseline check (both repos' full test
+  suites against freshly-pulled `main`) before trusting this log.
+
+---
+
 ## Session 36 — Incremental NNUE accumulator (the payoff)
 **Status:** COMPLETE ✅ — all three of D-69's NNUE follow-up items now done
 
