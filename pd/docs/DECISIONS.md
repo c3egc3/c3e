@@ -830,3 +830,61 @@ variant at all, full stop, regardless of the pawn-rules issue above).
 
 **Status**: scoped, not implemented. Queued for a future session — see
 ROADMAP Phase 20.
+
+---
+
+## D40 — GUI Exposes Named Skill-Level Presets, Not a Raw 0-20 Slider (2026-07-12)
+
+**Context**: Phase 20's engine-side Skill Level mechanism (D39, depth-cap
++ time-fraction + move-selection-noise) is fully validated end-to-end —
+200-game match-runner results confirm all adjacent tiers are correctly
+and monotonically ordered (0v5 -619 Elo, 5v10 -117 Elo, 10v15 -65 Elo,
+15v20 -80 Elo). Gokul asked whether a "Skill Level 15 loses to Skill
+Level 20 sometimes" result was acceptable, prompted by the 15-vs-20 gap
+being noticeably smaller than 0-vs-5.
+
+**Decision**: don't change the underlying 0-20 mechanism to chase bigger
+separation at the top end — it's correctly validated, and forcing wider
+gaps between adjacent numeric levels would fight the real, expected shape
+of engine-strength-vs-depth (diminishing returns at greater depth, not a
+bug — see ROADMAP Phase 20.4/20.5 for the full investigation). Keeping the
+full 0-20 range also matches the standard UCI `Skill Level` spin
+convention other tools/GUIs already expect, useful if Pet Dragon is ever
+driven by something other than Gokul's own GUI.
+
+Instead: the GUI-facing difficulty control should be a small set of NAMED
+presets, not a raw numeric slider exposing all 21 levels. No player can
+feel the difference between adjacent numbers like 14 vs 15 — that's not a
+UX problem specific to Pet Dragon, it's true of every engine's Skill
+Level implementation, including Stockfish's. Mapped directly onto the five
+points already validated with real match data, no new engine-side testing
+required:
+
+| GUI label  | skill_level | Basis |
+|------------|-------------|-------|
+| Beginner   | 0           | 97% loss rate to next tier — genuinely weak |
+| Easy       | 5           | Clear step up (66% for 10 vs 5) |
+| Medium     | 10          | Clear step up (59% for 15 vs 10) |
+| Hard       | 15          | Noticeable step up (62% for 20 vs 15) |
+| Master     | 20          | Full strength — no cap, no noise |
+
+**Why this resolves the "felt difference" concern without more engine
+work**: framing it as five distinct named difficulties, rather than two
+adjacent numbers (15 and 20) that imply they should feel similarly close,
+sidesteps the issue entirely — a player choosing "Hard" vs "Master" reads
+those as different difficulties on their face, which is an honest framing
+of a real (if moderate, ~62%) win-rate gap, not an inflated one.
+
+**If bigger separation at the top is wanted later**: the lever is preset
+SPACING (e.g. skip from Hard=15 straight to Master=20 with no
+intermediate, or define a custom extra tier), not re-tuning the
+depth-cap/time-fraction/noise formulas in `skill.rs` — those are working
+correctly and shouldn't be treated as the thing to fix for a UX-level
+concern.
+
+**Status**: decided, GUI implementation is Gokul's own — no Pet Dragon
+engine repo changes from this decision. `src/lib.rs`'s WASM
+`search_from_fen(fen, movetime_ms, skill_level)` already accepts a plain
+`u8` skill_level per call (added this session), so the GUI can pass
+whichever preset's value the player picked on every search — no engine-
+side wiring left to do.

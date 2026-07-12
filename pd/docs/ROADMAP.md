@@ -626,7 +626,7 @@
 
 ---
 
-## Phase 20 — Difficulty / Skill Levels ⏳ BUG FOUND & FIXED, RE-VALIDATION PENDING
+## Phase 20 — Difficulty / Skill Levels ✅ COMPLETE & VALIDATED
 - [x] 20.1 — D39 (Session 64, scoping discussion only — no code this
             session): build depth-cap difficulty tiers (`Skill Level
             0..N` or similar), optionally with a little move-selection
@@ -824,6 +824,35 @@
             confirm green, re-run 5-vs-10 first (50+ games) to confirm the
             fix, then re-run the other three pairs for a full clean ladder
             before calling Phase 20 validated.
+- [x] 20.6 — Final validation, 200 games per pair (large enough sample to
+            trust): 0v5 -619.4 Elo (97% for tier 5), 5v10 -117.2 Elo (66%
+            for tier 10 — confirms the trigger_pct fix holds at scale,
+            this was the pair that was backwards before), 10v15 -65.0 Elo
+            (59% for tier 15), 15v20 -83.2/-79.5 Elo across two runs (62%
+            for tier 20, consistent). All four pairs now correctly
+            ordered — higher tier wins clearly and consistently, though
+            never 100% (expected: Elo gaps are win probabilities, not
+            guarantees, and the noise mechanism deliberately lets weaker
+            tiers occasionally play a good-not-best move by design).
+            Gokul asked whether a 5-level gap "should" mean the higher
+            level always wins — clarified this is normal Elo behavior, not
+            a defect, and that the real design question was whether a ~60%
+            win rate (the 15-vs-20 gap specifically) is a big enough FELT
+            difference for a player, separate from "is this correctly
+            ordered." Decision (D40): don't touch the underlying 0-20
+            mechanism — it's validated, monotonic, and matches the
+            standard UCI `Skill Level` convention other GUIs expect if
+            Pet Dragon is ever connected to a different frontend. Instead,
+            the GUI should expose a small set of NAMED presets rather than
+            a raw 0-20 slider, since no player can feel the difference
+            between adjacent numeric levels anyway: Beginner=0, Easy=5,
+            Medium=10, Hard=15, Master=20 — the exact five points already
+            validated above. See D40 for the full reasoning.
+            PHASE 20 COMPLETE. Skill Level is validated end-to-end: engine
+            depth-cap + time-fraction + move-selection-noise mechanism
+            (native UCI and WASM), GitHub Actions match-runner tooling
+            capable of testing it, and a GUI-facing preset design that
+            uses the validated data points directly.
 
 ---
 

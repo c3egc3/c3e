@@ -7,6 +7,105 @@ Most recent session at TOP.
 
 ---
 
+## Session 68 — 2026-07-12 (Phase 20 closed out — final validation, pawn-rule regression tests, WASM skill_level, GUI preset decision)
+
+**Built/validated, in order:**
+
+1. **Final Skill Level validation, 200 games/pair.** All four tier pairs
+   now correctly and monotonically ordered: 0v5 -619.4 Elo (97%), 5v10
+   -117.2 Elo (66% — confirms the `skill_noise_trigger_pct` fix from
+   Session 67 holds at a much larger sample), 10v15 -65.0 Elo (59%),
+   15v20 -83.2/-79.5 Elo across two runs (62%, consistent). **Phase 20 is
+   now complete.** See ROADMAP 20.6.
+
+2. **Pawn-rule correctness Q&A led to real test additions, not just
+   discussion.** Gokul asked pointed questions about whether Pet Dragon's
+   custom rank-1/8 pawn starts could cause double-push or en-passant bugs
+   (e.g. a pawn reaching rank 2 via a single push incorrectly gaining a
+   second double-push; a pawn of one color landing on a square recorded as
+   the other color's start). Traced through the actual code each time
+   rather than answering from general chess-engine knowledge (this
+   project's pawn rules are custom, so nothing about them can be assumed):
+   confirmed `PawnStartMap`'s `Option<Color>` design already prevents the
+   cross-color scenario safely, and confirmed `make_move.rs`'s
+   `DoublePush`/en-passant handling already derives everything from the
+   actual move's `from` square rather than a hardcoded rank. Both were
+   already correct — but found the en-passant-after-rank-1/8-push path had
+   NO direct test coverage, only inspection-level confidence. Added
+   `test_en_passant_after_rank1_double_push` and its Black-side
+   counterpart `test_en_passant_after_rank8_double_push` to
+   `movegen/pawns.rs` (full end-to-end: play the double push via
+   `make_move`, assert the EP target lands on the passed-through square
+   not the destination rank, confirm the capture is actually offered).
+   Also tightened the pre-existing `test_black_double_push_from_rank8`,
+   which silently no-op-passed if no rank-8 pawn turned up in 200 seeds,
+   to hard-fail like the White version already did, and equalized both
+   tests' seed search ranges to 200 (was 100 vs 200, asymmetric).
+
+3. **WASM binding gained a skill_level parameter.** Gokul is building his
+   own GUI and asked where `search_from_fen` is exposed to find its
+   signature — found it in `src/lib.rs`, and found it had NO skill_level
+   parameter at all (every WASM search silently ran full-strength, since
+   `SearchInfo::new()` defaults to `MAX_SKILL_LEVEL`). Decided (his call,
+   deferred to Claude) to add it as a 3rd plain parameter —
+   `search_from_fen(fen, movetime_ms, skill_level)` — rather than a
+   separate stateful setter function, since this WASM API is otherwise
+   fully stateless (fen and movetime are already passed fresh every call,
+   no persistent "engine session" object anywhere in `lib.rs`); a setter
+   would've been the first piece of global mutable state in an otherwise
+   clean design, and a "did I remember to configure it first" footgun for
+   a browser dev. Clamps defensively to `MAX_SKILL_LEVEL` rather than
+   erroring on an out-of-range value, mirroring the native UCI
+   `setoption` handler's own clamping.
+
+4. **Fixed the two existing demo pages' now-broken calls.** `web/index.html`
+   (Gokul's actual in-progress GUI — NOT a stale demo, it already has real
+   pawn_starts/extended-FEN handling built in) and `index.html` both called
+   the old 2-arg `search_from_fen(fen, ms)`. Per Gokul's instruction,
+   updated both to pass `20` (full strength) explicitly rather than
+   leaving them broken or deleting them — one-line change plus an
+   explanatory comment in each, nothing else touched.
+
+5. **D40 decided: GUI should expose named presets, not a raw 0-20
+   slider.** Gokul asked whether it's acceptable that Skill Level 15
+   sometimes loses to Skill Level 20 (a fair question — prompted by the
+   15-vs-20 gap being visibly smaller than 0-vs-5). Clarified this is
+   normal Elo behavior (a ~62% win rate, not 100%, is what a moderate Elo
+   gap actually means) rather than a defect, then reframed the real
+   design question as a UX one: is the top-end gap big enough to FEEL
+   different to a player. Decided not to touch the validated engine
+   mechanism to chase artificially bigger gaps (would fight the real,
+   expected diminishing-returns shape of engine strength vs. depth).
+   Instead: GUI exposes five named presets (Beginner/Easy/Medium/Hard/
+   Master = skill_level 0/5/10/15/20) mapped directly onto the already-
+   validated data points — zero new engine testing needed. Full reasoning
+   in D40.
+
+**Bugs fixed:** None in this session's own new code — the pawn-rule
+investigation confirmed existing logic was already correct (closed a
+*test-coverage* gap, not a bug). The skill_noise_trigger_pct fix that
+made 5-vs-10 finally correct was Session 67's fix; this session's 200-game
+runs are what confirmed it holds at scale.
+
+**Decisions made:** D40 (GUI preset design — see DECISIONS.md).
+
+**Test risk flagged:** same standing note as every session — no Rust
+toolchain in this sandbox, nothing was compiled here. New pawn-rule tests
+and the `lib.rs` signature change were hand-verified against the existing
+suite's patterns and cross-checked against the actual fetched source
+(not written from memory of "how chess usually works," given this
+project's custom rules) but still need GitHub Actions to confirm.
+
+**Next session start point:** Commit, in order: `movegen/pawns.rs`
+(REPLACE — 2 new EP tests + tightened rank-8 test), `src/lib.rs` (REPLACE
+— skill_level param), `web/index.html` and `index.html` (REPLACE — 1-line
+fix each). Confirm full suite green. Phase 20 is DONE — next session
+should start by asking Gokul what's next on the roadmap (no Phase 21 is
+defined yet as of this entry) rather than assuming more Skill Level work
+is needed.
+
+---
+
 ## Session 67 — 2026-07-12 (Skill Level validation + move-selection noise — Phase 20.4)
 
 **Built:** Ran the empirical validation Session 66 left pending. Root
