@@ -169,27 +169,30 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         feature-complete inference infrastructure (full recompute AND
         incremental paths, both tested, both fast/correct) waiting on a
         real training pipeline before it's worth wiring into search.
-  - [ ] **NEXT UP (decided Session 38, no code yet):** scope the
-        weight-embedding problem BEFORE any training work. FastPy's
-        compiled dialect has no file I/O and every array must start as
-        `[]` and be filled by a runtime init function (D-70's
-        convention, used by `init_nnue_weights()` itself for the
-        placeholder weights) — there is currently no path to get a real
-        trained network's ~98,600 values into a compiled binary at all.
-        Question to answer in one contained session: can `fastpy build`
-        handle a ~98,600-line literal assignment block in
-        `init_nnue_weights()`'s body as-is (untested at that scale, no
-        precedent), or does the transpiler need a real large-array-
-        literal feature first? Answer determines the actual shape of
-        the training-pipeline item below. See D-74 for why this was
-        chosen over Lazy SMP for the next session.
+  - [x] Weight-embedding scoping question answered (Session 39, no
+        engine.py/transpiler changes — a measurement session, see D-75):
+        **yes, `fastpy build` handles a ~98,600-line literal assignment
+        block as-is. No new transpiler feature is needed.** A synthetic
+        `init_nnue_weights_literal()` matching NNUE_W1/B1/W2/B2's exact
+        sizes (98,304 + 128 + 128 + 1 = 98,561 literal `ARR[i] = value`
+        statements in one function body) was parsed, type-checked,
+        emitted, compiled at `-O0`/`-O2`/`-O3`, and run — correct output
+        confirmed by reading back a specific array element through the
+        compiled binary's exit code (`NNUE_W1[100]` — 67 expected, 67
+        returned). The only real cost is compile time, not a functional
+        limitation: `-O0` compiles in ~4s, but `-O2`/`-O3` take ~85-90s
+        for this one function (a known GCC pathology with very large
+        single-basic-block functions) — a one-time offline cost paid
+        once per trained-weights update, not a runtime cost, and not
+        blocking. **The training-pipeline item below is now unblocked.**
   - [ ] Offline NNUE training pipeline (separate tool/repo, numpy/PyTorch,
         outside FastPy's chess-engine dialect) to replace
-        `init_nnue_weights()`'s placeholder body with real trained
-        weights — the only remaining blocker to wiring `evaluate_nnue()`/
-        `evaluate_nnue_incremental()` into `alpha_beta()`/`quiescence()`.
-        Blocked on the weight-embedding scoping item above — don't start
-        this until that's answered.
+        `init_nnue_weights()`'s placeholder body with a literal
+        assignment block of real trained weights — the only remaining
+        blocker to wiring `evaluate_nnue()`/`evaluate_nnue_incremental()`
+        into `alpha_beta()`/`quiescence()`. Unblocked as of Session 39 —
+        the weight-embedding path is confirmed to work with the existing
+        transpiler, no new feature needed. See D-75.
   - [ ] Wire `evaluate_nnue_incremental()` into `alpha_beta()`/
         `quiescence()` once real trained weights exist — deliberately
         not done over placeholder weights (see D-69 point 2)

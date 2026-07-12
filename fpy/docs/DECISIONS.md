@@ -1200,3 +1200,63 @@ restriction there.
   corresponding ROADMAP.md items are the full extent of Session 38's
   output. See ROADMAP.md's Phase 6 section for the exact next-step
   framing.
+
+## D-75: Weight-embedding scoping answered — `fastpy build` handles a
+  ~98,600-line literal assignment block as-is, no transpiler feature
+  needed (Session 39). Directly answers the question D-74 flagged as the
+  next session's sole job.
+
+  **Method:** built a synthetic, throwaway test file (not committed to
+  either repo) matching `init_nnue_weights()`'s exact array shapes —
+  `NNUE_W1[98304]`, `NNUE_B1[128]`, `NNUE_W2[128]`, `NNUE_B2[1]`, total
+  98,561 elements — with a single function body containing one literal
+  `ARR[i] = <int>` statement per element (random values in [-128, 127],
+  matching the real placeholder weights' range), instead of a generator
+  loop. Ran `fastpy check`, `fastpy emit`, and `fastpy build` at `-O0`,
+  `-O2`, and `-O3` against it.
+
+  **Result — works, no new feature needed:**
+  - `fastpy check`: ~3.9s, zero errors.
+  - `fastpy emit`: ~2.2s, produces a 98,590-line / 2.5MB `.cpp` file.
+  - `fastpy build --optimize=O0`: ~4.3s total, compiles clean.
+  - `fastpy build --optimize=O2` / `-O3`: ~86-89s total — the entire
+    added cost sits in the g++ optimization pass, not in FastPy's own
+    parse/type-check/emit pipeline (which stays ~2-4s regardless of
+    optimization level). This is a known GCC pathology with very large
+    single-basic-block functions (tens of thousands of independent
+    scalar array stores in one function body give several O2/O3 passes
+    superlinear work), not a FastPy limitation.
+  - **Correctness confirmed end-to-end, not just "it compiles":** built
+    a variant whose `main()` returns `NNUE_W1[100]` (canonicalized into
+    the `0-255` exit-code range) instead of `0`, ran the actual compiled
+    binary, and got back the exact expected value (`67`) computed
+    independently in Python from the same random seed — proves the
+    literal-assignment path produces correct values in the compiled
+    binary, not just a clean compile.
+
+  **Why this settles it:** the ~85-90s cost is a one-time, offline cost
+  paid once per trained-weights update (whenever `init_nnue_weights()`'s
+  placeholder body is replaced with real trained values and the engine
+  is rebuilt) — not a per-run or per-search cost, and not something a
+  chess engine's actual users (a UCI GUI running the already-compiled
+  binary) ever pay. It's slower than ideal for rapid iteration during
+  training-pipeline development, but not a blocker; if it ever becomes
+  annoying, the mitigation is splitting the one `init_nnue_weights()`
+  body into several smaller init functions (e.g. one per array), which
+  should let g++ optimize each independently and in parallel — not
+  attempted here since nothing currently needs it, but noted for
+  whoever builds the actual training pipeline.
+
+  **What this does NOT do:** no changes to `core/parser.py`,
+  `core/type_system.py`, or `core/emitter.py` — the existing
+  literal-subscript-assignment support (already used throughout the
+  codebase, e.g. `TT_HASH[idx] = h`) already handles this at scale
+  without modification. No changes to `engine.py` either — the
+  synthetic test file was standalone and is not part of either repo.
+  The real `init_nnue_weights()` still has its placeholder
+  splitmix64-based body; swapping it for a literal block of real
+  trained weights is the training pipeline's job, not this session's.
+
+  **Outcome:** the offline NNUE training pipeline (ROADMAP, Phase 6) is
+  unblocked. It can target the confirmed-working literal-assignment
+  shape directly — no dependency on a not-yet-built FastPy feature.
