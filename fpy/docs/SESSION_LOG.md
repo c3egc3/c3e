@@ -4,6 +4,67 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 42 — Node-count sensitivity investigated: D-77's hypothesis was wrong
+**Status:** COMPLETE ✅ — investigation only, no source files changed in either repo
+
+### `Next` — picked up Session 41's flagged next step
+Session 41 ended with the startpos depth-5 node-count blowup (~7x) under
+NNUE-driven search flagged for investigation, with a specific (untested)
+hypothesis about pruning-margin sensitivity to eval-symmetry.
+
+### The hypothesis was wrong — disproved directly
+Disabled null-move pruning and futility pruning entirely (one at a time,
+then both together) and re-ran the startpos depth-5 benchmark under NNUE
+eval: node count stayed at ~266,600 regardless. Whatever's driving the
+increase, it isn't those two heuristics reacting to near-zero eval noise.
+
+### Actual cause, confirmed
+Isolated cold-TT (no iterative-deepening warm-up) depth-5-only search
+from the warm (depths 1-5, shared TT) search `run_benchmark()` actually
+runs, for both evaluators (swapping `evaluate_nnue_incremental` for
+`evaluate()` via a one-line monkeypatch for a fair comparison):
+
+|  | cold depth-5-only | warm (iterative 1-5) | warm-up speedup |
+|---|---|---|---|
+| classical | 247,542 | 38,849 | ~6.4x |
+| NNUE | 376,385 | 266,642 | ~1.4x |
+
+Per-node cost is comparable without warm-up (~1.5x, not ~7x). The gap is
+almost entirely iterative deepening's TT-based move-ordering warm-up
+being far less effective under NNUE — confirmed directly: classical
+`evaluate()` picks the same best move (`b1c3`) at every depth 1-5 at this
+position; NNUE flips to `h2h4` at depth 4, back to `b1c3` at depth 5,
+destroying the hash-move hint depth 5 would otherwise get from depth 4.
+
+### Why, and why it's not a bug
+The network approximates `evaluate()` well in aggregate (D-76: MAE
+5.0cp) but a few centipawns of noise can flip the ranking of moves
+within that noise band — and the starting position is an unusually bad
+case for this, being the most wide-open/symmetric position in the game
+with many genuinely close-valued opening moves. Expected consequence of
+training an *approximation*, not a wiring defect (D-77's changes remain
+confirmed correct — nothing was touched this session).
+
+### Verification
+No code changes — investigation only, via Python-mode monkeypatching
+and `run_benchmark()`. No need to re-run `fastpy check`/`build`/the test
+suite since nothing in either repo changed.
+
+### Files changed
+- None in either repo. Docs only: `ROADMAP.md`, `DECISIONS.md` (D-78),
+  `SESSION_LOG.md` (this entry).
+
+### Next session
+D-76's originally-flagged next step is now doubly motivated: a second
+training iteration using search-based relabelling (shallow `alpha_beta()`
+scores instead of raw `evaluate()`) should both improve accuracy and
+reduce the depth-to-depth move-ranking flips that hurt iterative
+deepening's warm-up benefit at positions like startpos. That's the clear
+next substantial item. Re-run the baseline check (both repos' full test
+suites against freshly-pulled `main`) before trusting this log.
+
+---
+
 ## Session 41 — evaluate_nnue_incremental() wired into alpha_beta()/quiescence()
 **Status:** COMPLETE ✅ — `engine.py`, `run.py`, `tests/test_phase4.py`, `tests/test_phase6.py` changed
 

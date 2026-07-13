@@ -234,17 +234,29 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         before/after: node counts shift under NNUE eval (up to ~7x at
         one depth/position, down at another) — expected, not a bug (see
         D-77 for why), but a real finding, not a clean "no regression."
-  - [ ] **NEXT UP:** investigate the node-count sensitivity D-77 flagged
-        — the ~7x increase at startpos depth 5 in particular is worth
-        understanding before trusting NNUE-based search for real play.
-        Leading hypothesis: startpos is exactly eval-symmetric under
-        `evaluate()` (score 0), and NNUE's ~2-5cp noise breaks that
-        symmetry asymmetrically, changing which branches futility/null-
-        move pruning cut — worth confirming with a few more benchmark
-        positions before concluding it's benign. Second training
-        iteration with search-based relabelling (shallow `alpha_beta()`
-        scores instead of raw `evaluate()`) is the natural next step
-        after that, once this network is trusted in real search.
+  - [x] Node-count sensitivity investigated (Session 42, see D-78) —
+        the pruning-margin symmetry hypothesis from D-77 was WRONG,
+        disproved directly (disabling futility + null-move pruning
+        entirely doesn't change the startpos depth-5 node count at
+        all). Real cause, confirmed: iterative deepening's TT-based
+        move-ordering warm-up is far less effective under NNUE eval at
+        this position — classical eval gets ~6.4x fewer nodes from the
+        depths-1..4 warm-up before depth 5, NNUE only gets ~1.4x,
+        because NNUE's best-move ranking flips between depths (`h2h4`
+        at depth 4, back to `b1c3` at depth 5) where classical eval
+        picks the same move at every depth. Per-node search cost is
+        actually comparable cold (no iterative warm-up): 247,542 nodes
+        classical vs. 376,385 NNUE, ~1.5x, not the ~7x the warm
+        comparison suggested. Not a bug — an expected consequence of
+        training a network to approximate rather than exactly reproduce
+        `evaluate()`'s ranking of near-equal moves, worse at a wide-open
+        symmetric position like startpos where many opening moves are
+        genuinely close in value. Second training iteration with
+        search-based relabelling (shallow `alpha_beta()` scores instead
+        of raw `evaluate()`) is the natural next step — training against
+        actual search-consistent targets, not just `evaluate()`'s
+        material+PST snapshot, should make move rankings more stable
+        across depths too, not just improve raw accuracy.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

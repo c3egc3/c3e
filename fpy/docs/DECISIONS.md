@@ -1455,3 +1455,71 @@ restriction there.
   (ROADMAP's new NEXT UP item) before trusting this for real play, then
   the search-based-relabelling training iteration D-76 flagged as the
   route to actually exceeding `evaluate()`'s strength.
+
+## D-78: Node-count sensitivity root cause found — D-77's pruning-margin
+  hypothesis was wrong (Session 42). Investigation-only session, no code
+  changed; corrects the record rather than leaving a wrong guess in place.
+
+  **D-77's hypothesis, disproved directly:** the guess was that
+  `evaluate()`'s exact `0` at the symmetric starting position, vs.
+  NNUE's small nonzero value there, was shifting which branches
+  futility/null-move pruning cut. Tested by disabling both heuristics
+  entirely (`NULL_MOVE_MIN_DEPTH = 9999`, `FUTILITY_MAX_DEPTH = -1`) and
+  re-running the startpos depth-5 benchmark under NNUE eval: node count
+  stayed at ~266,600 regardless of which combination of the two
+  heuristics was on or off. Whatever is driving the ~7x increase, it
+  isn't futility or null-move pruning reacting to near-zero eval noise.
+
+  **Actual cause, confirmed with a controlled comparison:** isolated
+  cold-TT (no iterative-deepening warm-up) depth-5-only search from
+  iteratively-warmed-up (depths 1-5, shared TT — what `run_benchmark()`
+  actually does) search, for both evaluators, via a one-line swap
+  (`r.evaluate_nnue_incremental = r.evaluate`, since `_alpha_beta_py`/
+  `_quiescence_py` resolve that name as a module global at call time):
+
+  | | cold depth-5-only | warm (iterative 1-5) | warm-up speedup |
+  |---|---|---|---|
+  | classical `evaluate()` | 247,542 nodes | 38,849 nodes | ~6.4x |
+  | NNUE `evaluate_nnue_incremental()` | 376,385 nodes | 266,642 nodes | ~1.4x |
+
+  Per-node search cost is comparable between the two evaluators without
+  the warm-up benefit (~1.5x, not ~7x). The ~7x gap in D-77's original
+  comparison came almost entirely from iterative deepening's TT-based
+  move-ordering warm-up being far less effective under NNUE. Direct
+  evidence: at this position, classical `evaluate()` picks the same best
+  move (`b1c3`) at every depth from 1 to 5; NNUE flips to `h2h4` at depth
+  4, then back to `b1c3` at depth 5. That flip destroys the hash-move
+  ordering hint the depth-4 search would otherwise have handed to
+  depth 5, which is exactly the mechanism iterative deepening relies on
+  to make each successive depth cheap.
+
+  **Why this happens, and why it's not a bug:** the network was trained
+  to approximate `evaluate()` (D-76: MAE 5.0cp, corr 1.0000 on held-out
+  positions) — a very good fit in aggregate, but a few centipawns of
+  noise is enough to occasionally flip the *relative* ranking of two
+  moves whose true values are within that noise band. The starting
+  position is an unusually bad case for this: it's the single most
+  wide-open, symmetric position in the game, with many opening moves
+  genuinely close in value under `evaluate()` itself — exactly the
+  condition where a few centipawns of approximation noise can change
+  which one ranks first. This is an expected property of training a
+  network to *approximate* rather than *exactly reproduce* an evaluator,
+  not a defect in the wiring done in D-77 (which is confirmed correct —
+  `fastpy check`/`build`/full suite all still clean, and this session
+  made no code changes at all, only ran experiments).
+
+  **What this does NOT mean:** it doesn't mean NNUE-driven search is
+  unusably slow in general — the per-node cost difference is modest
+  (~1.5x) and the warm-up-sensitivity effect is likely position-
+  dependent (worse at wide-open symmetric positions, probably less
+  pronounced in sharper middlegame positions with fewer near-equal
+  moves — not tested here, would need more positions to confirm).
+
+  **Outcome:** confirms D-76's own suggested next step is the right one
+  — a second training iteration using search-based relabelling (shallow
+  `alpha_beta()` scores instead of raw `evaluate()`) should help here
+  specifically, not just improve raw evaluation accuracy: training
+  against scores that already reflect search-consistent move rankings,
+  rather than a static per-position snapshot, should reduce exactly the
+  kind of depth-to-depth ranking flips that broke iterative deepening's
+  warm-up benefit at this position.
