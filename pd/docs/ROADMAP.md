@@ -369,7 +369,7 @@
 ---
 
 
-## Phase 17 — Elo A/B Testing & NNUE Retraining ⏳ (17.5 core infra question still open, see note below)
+## Phase 17 — Elo A/B Testing & NNUE Retraining ✅ CLOSED (parked, D34/D41 — optional enhancement, not blocking)
 - [x] 17.1 — NNUE blend weight made runtime-configurable via UCI
              `NNUEWeight` option (spin, 0-100, default 25 = D23). Replaces
              the compile-time `NNUE_BLEND_WEIGHT` const. weight=0 skips the
@@ -485,6 +485,23 @@
             the clamp is a safety net worth keeping regardless of weight,
             weight_decay/grad_clip_norm are now correct defaults for any
             future NNUE training, eval_diag.rs is a reusable diagnostic tool.
+- [x] 17.9 — RE-PARKED (D41, Session 69). Tested 17.6's stated revisit
+            condition: hidden_size=128 (4x capacity), same 286,659-row
+            dataset as the parked hidden_size=32 baseline, everything else
+            unchanged — a clean single-variable test. Result: val_loss
+            0.51655 (best epoch 3/10) vs baseline's 0.51636 (epoch 4/10) —
+            slightly worse, and overfit one epoch earlier (val_loss climbed
+            to 0.53169 by epoch 10). More capacity did not break the
+            ceiling; it just overfit the same limited signal faster. No
+            match_runner sweep run — val_loss regression already rules the
+            network out, and re-confirming a negative result costs Actions
+            minutes for no new information (D19/D20). This is the 5th
+            independent lever (after 17.6's 4) landing in the same place.
+            NNUEWeight stays 0%. Phase 16/17 CLOSED as an optional,
+            not-currently-worthwhile enhancement — the core engine (Phases
+            0-20) is complete and Elo-validated without it. Revisit only
+            alongside a genuinely larger, dedicated self-play data effort
+            (500K-1M+ rows), not another architecture-size bump alone.
 - [x] 17.7 — Session 56: 3 match_runner.yml runs, post Phase-14 Texel
             tuning, using the EXISTING tool (see note below on its real
             limitation). All 3 confirm tuned-HCE (0%) beats every NNUE

@@ -888,3 +888,49 @@ engine repo changes from this decision. `src/lib.rs`'s WASM
 `u8` skill_level per call (added this session), so the GUI can pass
 whichever preset's value the player picked on every search — no engine-
 side wiring left to do.
+
+## D41 — Re-Park NNUE After hidden_size=128 Test Confirms D34's Ceiling (2026-07-13)
+
+**Decision**: Tested D34's stated revisit condition (`hidden_size=128+`,
+deliberately bigger architecture) on the exact same 286,659-row dataset
+as the parked `hidden_size=32` baseline, isolating hidden_size as the
+only changed variable. Result: val_loss=0.51655 (best epoch 3/10) vs the
+parked baseline's val_loss=0.51636 (best epoch 4/10) — 4x the hidden-layer
+capacity produced a marginally *worse* val_loss and overfit one epoch
+earlier (val_loss rose to 0.53169 by epoch 10, a +0.0151 climb from best).
+`NNUEWeight` stays 0% (unchanged since D25). No match_runner Elo sweep
+run against this network — the val_loss regression already rules it out
+as an improvement, and burning an Actions run to reconfirm a negative
+result contradicts D19/D20's efficiency stance. NNUE work is re-parked;
+Phase 16/17 stay closed as an optional, not-currently-worthwhile
+enhancement on top of an otherwise-complete, Elo-validated engine
+(Phases 0-20 all done).
+
+**Why**: This is the 5th independent lever (after D34's data retrain,
+clamp, and clamp+regularization) landing in the same ~70-72%
+average-opponent-score / ~0.516 val_loss neighborhood, each time via a
+genuinely different mechanism. Four different fixes plus one architecture
+change all converging on the same ceiling is much stronger evidence of a
+structural limit than of an undiscovered hyperparameter or under-sized
+network. More parameters on the same data classically overfits faster
+rather than learning more — which is exactly what happened (earlier best
+epoch, steeper post-peak divergence) — not a coincidence.
+
+**Rejected**: Immediately pursuing D34's other stated lever — a genuinely
+bigger self-play dataset (500K-1M+ rows via a dedicated Kaggle job) —
+rejected for now, not because it's wrong in principle, but because NNUE
+is explicitly an optional strength enhancement (Phase 16's own scoping)
+on an engine that's already complete and Elo-validated through Phase 20.
+Spending a new, expensive, separately-scoped data-generation effort to
+chase an optional feature isn't currently the best use of session budget.
+Also rejected: running the match_runner sweep anyway for completeness —
+rejected because the val_loss comparison is already conclusive and
+directly comparable (identical data, identical everything else but
+hidden_size), so the sweep would only spend Actions minutes to reconfirm
+a known answer.
+
+**Revisit**: only if/when a genuinely larger, dedicated self-play data
+effort (not incremental) is undertaken separately — at that point retest
+hidden_size=32 AND hidden_size=128 on the new data to see whether more
+data alone breaks the ceiling before re-attempting bigger architectures.
+Until then, NNUE stays parked and out of scope for regular sessions.

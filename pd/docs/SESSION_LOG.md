@@ -7,6 +7,58 @@ Most recent session at TOP.
 
 ---
 
+## Session 69 — 2026-07-13 (hidden_size=128 NNUE test — negative, re-parked, D41)
+
+**Built/tested:**
+
+1. **Triggered `train_nnue.yml` with hidden_size=128** (accumulator_size
+   unchanged at 256), reusing the exact same 286,659-row dataset as the
+   parked hidden_size=32 baseline (4 Kaggle self-play batches, seeds
+   100/200/300/900, 750 games each, recovered from GitHub Release assets
+   at tags 100/200/300/900 — the committed `data/selfplay/
+   selfplay_data_seed0_n3000.txt` was found to be empty, 1 byte, not
+   usable) + the 50,000-row Lichess sample (verified via run
+   `28721456844`, confirmed completed/successful before use).
+
+2. **Result: val_loss=0.51655 (best epoch 3/10)** vs the parked
+   hidden_size=32 baseline's val_loss=0.51636 (best epoch 4/10) — slightly
+   *worse*, and overfit one epoch earlier. train_loss kept falling through
+   epoch 10 (0.48798) while val_loss climbed to 0.53169 — classic
+   overfitting signature, more parameters fitting the same limited signal
+   faster rather than learning new positional understanding.
+
+3. **No match_runner Elo sweep run.** The val_loss regression already
+   rules this network out as an improvement over what's parked; spending
+   an Actions run to reconfirm a known-negative result isn't worth it
+   (D19/D20 efficiency stance). `NNUEWeight` stays 0%.
+
+**Decision:** D41 — re-park NNUE. This was D34's own stated revisit
+condition (hidden_size=128+, isolated as the only variable vs the parked
+baseline) and it landed in the same place as D34's original 4 attempts —
+5 independent levers now, all converging on the same ~0.516 val_loss /
+~70-72% ceiling. Also clarified for Gokul: NNUE was never "the last task
+for a proper engine" — Phases 0-20 (search, HCE, Texel tuning, Syzygy,
+UCI, WASM, difficulty levels) are complete and Elo-validated; NNUE was
+always scoped as an optional enhancement (Phase 16's own title). Not
+worth a dedicated bigger-data Kaggle effort right now for an optional
+feature on an already-complete engine. Phase 16/17 formally closed.
+
+**Housekeeping note (not actioned this session):** `data/selfplay/
+selfplay_data_seed0_n3000.txt` in the repo is empty (1 byte) despite its
+filename implying 3000 games of data. Low priority (not blocking — the
+Release-asset URLs work fine as the real data source) but worth either
+deleting the stale file or replacing it with real content next time
+someone touches `data/selfplay/`.
+
+**Next session start point:** No NNUE work pending. Pick up from
+ROADMAP's Housekeeping section (Node20 deprecation on 2 workflow files,
+no upstream fix yet — check if one's shipped) or the stale test-count
+recompute, or whatever Gokul brings next. If NNUE ever resumes, D41 says
+start with a genuinely bigger self-play dataset (500K-1M+ rows, dedicated
+Kaggle job), not another hidden_size bump on the current data.
+
+---
+
 ## Session 68 — 2026-07-12 (Phase 20 closed out — final validation, pawn-rule regression tests, WASM skill_level, GUI preset decision)
 
 **Built/validated, in order:**
