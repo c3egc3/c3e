@@ -4,6 +4,94 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 43 — Second (v2) NNUE training pass, search-based labels — big node-count win, unvalidated strength
+**Status:** COMPLETE ✅ — `engine.py`, `tests/test_phase4.py` changed; `training/generate_data.py`, `training/embed_weights.py` extended
+
+### `Continue`/`Next` — picked up Session 42's flagged next step
+Session 42 confirmed v1's node-count sensitivity traced back to
+depth-to-depth move-ranking instability, and flagged search-based
+relabelling as the fix to actually try.
+
+### What was built
+`generate_data.py` gained `--label-mode search`: labels now come from a
+shallow classical `alpha_beta()` search instead of a static `evaluate()`
+snapshot, with NNUE bypassed during generation so v2 doesn't train
+against v1's own approximation error. Timing tests showed depth 3
+(~2.35s/position) and depth 2 (~0.84s/position) were impractical for a
+dataset this session could generate — used depth 1 (~0.03s/position,
+still resolves immediate tactics via quiescence) and a much smaller
+dataset than v1: 8,478 positions from ~150 games, built up across 14
+small chunks (discovered mid-session that `nohup`/background processes
+don't persist between tool calls in this sandbox — had to generate
+synchronously in small pieces instead).
+
+### Result
+Validated in-memory against D-77/D-78's exact benchmark positions before
+committing to anything: node counts dropped dramatically — startpos
+depth 5 from v1's 266,642 to 14,429 (better than classical eval's own
+38,849), the tactical FEN's depth 5 from 335,441 to 5,109. Best-move
+choice also far more stable across depths on the tactical position.
+Interesting wrinkle: v1's "move-ranking stability" framing doesn't fully
+explain it — v2 actually flips its startpos best-move choice *more*
+often than v1 did, yet still searches far fewer nodes. Better working
+hypothesis (not confirmed): it's about score decisiveness/magnitude
+(reflecting real tactical swings from search-based labels), not ranking
+stability per se. Full writeup: D-79.
+
+### A real mistake, caught and fixed before delivery
+First attempt at embedding v2's weights into `engine.py` used the wrong
+function boundary and deleted ~98,500 lines of unrelated engine code
+(everything between `init_nnue_weights()` and `evaluate_nnue()`, which
+turned out not to be adjacent — `nnue_accumulate()` and the entire rest
+of the engine sit in between). Caught immediately by `fastpy check`
+failing to import `nnue_accumulate` and the test suite erroring on
+missing names — never presented as a deliverable. Recovered by
+re-pulling `fastpy-engine`'s `main` branch fresh (which already had
+Session 39-41's committed changes — confirmed via `diff` against every
+file before trusting it), then redoing the splice against the *correct*
+next function, confirmed by direct inspection this time. Full incident
+writeup in D-79.
+
+### Other fallout
+One test fix: `test_respects_window` asserted a fail-soft
+`alpha_beta()`'s result stays within its search window — never a true
+invariant for fail-soft search (only fail-hard clamps to the window),
+just hadn't been violated under v1's smaller score range. Widened to a
+sanity bound.
+
+### Verification
+- `fastpy check engine.py`: zero errors
+- `fastpy build --optimize=O3`: hit the CLI's internal 120s timeout this
+  run (some run-to-run variance around D-75's ~85-90s estimate) —
+  verified instead via `fastpy emit` + direct `g++` with the project's
+  standard flags (no timeout), compiled clean, stub binary runs and
+  exits 0 (Core Rule 6: compiled `main()` is a documented no-op, UCI is
+  Python-mode only)
+- Full `fastpy-engine` suite: **243/243 passing**
+- Node-count benchmark re-confirmed against the actual committed
+  `engine.py`, not just the in-memory weight patch — identical numbers
+- `fastpy` suite not re-run this session (no changes to that repo)
+
+### Files changed
+- `fastpy-engine/engine.py` — REPLACE (v2 weights)
+- `fastpy-engine/tests/test_phase4.py` — REPLACE
+- `fastpy-engine/training/generate_data.py` — REPLACE (search-label mode)
+- `fastpy-engine/training/embed_weights.py` — REPLACE (--note argument)
+- Docs: `ROADMAP.md`, `DECISIONS.md` (D-79), `SESSION_LOG.md` (this entry)
+
+### Next session
+v2's result is a search-efficiency win, not a validated playing-strength
+one — nothing this session measured actual move quality. Worth checking
+v2 isn't just pruning aggressively via cruder scores before trusting it
+for real play (sample its chosen moves against classical eval's on
+non-trivial positions, or a small self-play match between v1/v2/
+classical), and worth testing beyond the two opening/early-middlegame
+positions carried over from D-77/D-78 — endgame behavior is untested.
+Re-run the baseline check (both repos' full test suites against
+freshly-pulled `main`) before trusting this log.
+
+---
+
 ## Session 42 — Node-count sensitivity investigated: D-77's hypothesis was wrong
 **Status:** COMPLETE ✅ — investigation only, no source files changed in either repo
 

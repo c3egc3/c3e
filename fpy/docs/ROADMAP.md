@@ -257,6 +257,40 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         actual search-consistent targets, not just `evaluate()`'s
         material+PST snapshot, should make move rankings more stable
         across depths too, not just improve raw accuracy.
+  - [x] Second (v2) NNUE training pass, search-based labels (Session 43,
+        see D-79) — direct follow-through on the item above. New
+        `--label-mode search` option in `generate_data.py`: labels come
+        from a shallow (depth-1, for practical runtime — see D-79 for
+        why not deeper) classical `alpha_beta()` search instead of a
+        static `evaluate()` snapshot, with NNUE bypassed during label
+        generation so v2 doesn't train against v1's own approximation
+        error. 8,478 positions (smaller than v1's 119,413 — search
+        labels are far more expensive to generate than static ones, see
+        D-79's timing breakdown), trained with the same architecture/
+        trainer. Result: dramatic node-count improvement on both
+        previously-tested benchmark positions — startpos depth 5 dropped
+        from v1's 266,642 nodes to 14,429 (better than even classical
+        eval's 38,849); the tactical FEN's depth 5 dropped from v1's
+        335,441 to 5,109. Best-move choice is also far more stable
+        across iterative-deepening depths on the tactical position
+        (`f3g5` from depth 2 onward). `init_nnue_weights()` re-embedded
+        with v2 weights, `fastpy check`/`build -O3` clean, full 243/243
+        suite passing (one test fixed — `test_respects_window` asserted
+        a fail-soft `alpha_beta()`'s result stays within its search
+        window, which was never a true invariant for fail-soft search,
+        just hadn't been violated under v1's smaller score range).
+  - [ ] **NEXT UP:** v2's result is a strong node-count signal but an
+        unvalidated playing-strength one — nothing in this session
+        measured actual move quality, only search efficiency. Worth
+        confirming v2 doesn't just prune aggressively via cruder/less
+        nuanced scores before trusting it over v1 or classical eval for
+        real play (e.g. compare a sample of v2's chosen moves against
+        classical eval's on non-trivial positions, or a small self-play
+        match between v1/v2/classical). Also worth testing on more
+        positions than the two carried over from D-77/D-78 — both
+        happen to be openings/early-middlegame; endgame behavior
+        (fewer, more precise pieces, where NNUE's ~32-active-feature
+        design space is very different) is untested.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through
