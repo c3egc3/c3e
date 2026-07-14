@@ -297,20 +297,44 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         signal there and produces close to arbitrary output. **v2 should
         NOT replace v1 as a blanket default without addressing this** —
         see the new NEXT UP item below for options.
-  - [ ] **NEXT UP:** address v2's endgame blind spot before considering
-        it a real upgrade over v1. Options, not yet evaluated against
-        each other: (1) augment the training set with explicit endgame
-        positions (K+P vs K, K+R vs K, a few others) generated directly
-        rather than hoping self-play games reach them, since most
-        self-play games in this codebase's generator don't run long
-        enough to simplify down to bare endgames; (2) a simple material-
-        count-gated fallback (use classical `evaluate()`/v1 below some
-        piece-count threshold, v2 above it) — cheap but inelegant, and
-        against the spirit of a single unified evaluator; (3) blend v1
-        and v2 (ensemble or v1-as-regularizer during v2's training) to
-        keep v1's broader coverage while gaining v2's search-efficiency
-        win in positions it's actually seen. No recommendation yet —
-        needs its own session to weigh these properly.
+  - [x] v2's endgame blind spot addressed (Session 45, see D-81) — went
+        with option (1) from the three weighed in D-80: augment the
+        training set with explicit sparse-endgame positions generated
+        directly (19 `ENDGAME_BAGS` piece configurations — K+P vs K, K+R
+        vs K, K+Q vs K, K+N vs K, K+B vs K, and pairings like K+R vs K+P,
+        K+Q vs K+R — placed on random legal squares, not hoped for via
+        self-play). Rejected (2) material-count-gated fallback as
+        inelegant/against a unified-evaluator design, and (3) v1/v2
+        blending as unnecessary once (1) directly fixes the actual gap
+        (missing training signal), rather than working around it.
+        `generate_data.py` gained `random_endgame_board()` +
+        `generate_endgame_samples()` + `--endgame-count`; v3's dataset is
+        v2-scale self-play (151 games, same depth-1 search-based labels)
+        plus 3,200 explicit endgame positions (11,505 total, ~28%
+        endgame vs. v2's near-zero). **Confirmed fixed:** D-80's exact
+        K+P vs K position — every one of White's 8 legal moves scored
+        directly — no longer has `e2d3` as a rated-worst outlier (v2:
+        -40, the only negative score; v3: 146, mid-pack among all-
+        positive scores). **Confirmed preserved/improved:** startpos
+        depth-5 node count 10,584 (v2: 14,429 — better still), same
+        `g1f3` best move. **Real trade-off found, not hidden:** the
+        tactical FEN's depth-5 node count rose to 55,905 (v2: 5,109) —
+        worse than v2 on this specific position, though still far better
+        than v1's 335,441; best move unchanged (`f3g5`) at depth 5.
+        5-position spot-check (D-80's exact set) re-run: no blunders
+        found, checkmate detection still correct. `fastpy check` clean,
+        `fastpy build`/direct `g++ -O3` clean (~151s, matches D-75/D-79/
+        D-80 estimate), full 243/243 suite passing with zero test
+        changes needed this time.
+  - [ ] **NEXT UP:** v3 traded some of v2's tactical-middlegame search
+        efficiency for endgame correctness — worth understanding whether
+        that's an inherent tension (diluting a small hidden layer's
+        capacity across a more diverse position distribution) or fixable
+        with more hidden units / more targeted endgame data. Also worth
+        a broader move-quality spot check than D-80's 5 positions before
+        fully trusting v3 (e.g. a small v2-vs-v3 self-play match), and
+        confirming the K+P vs K fix generalizes to other pawn-endgame
+        configurations, not just the one exact FEN tested.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

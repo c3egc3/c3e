@@ -1721,3 +1721,90 @@ restriction there.
   **What this does NOT do:** propose or evaluate a fix — that's
   correctly scoped as its own session (ROADMAP's new NEXT UP item lists
   three candidate approaches, deliberately without a recommendation yet).
+
+## D-81: v2's endgame blind spot fixed via explicit endgame training data
+  (v3), not a fallback or blend (Session 45). Chose option (1) of the
+  three D-80 laid out without a recommendation.
+
+  **Why option (1), not (2) or (3):** D-80's root cause was a training-
+  data gap, not a model-capacity or architecture problem — v2's 150
+  self-play games (D-79) are short (55-ply cap) and middlegame-heavy, so
+  they essentially never simplify down to bare few-piece endgames. A
+  material-count-gated classical/v2 fallback (2) would work but abandons
+  the single-unified-evaluator design this arc has been building toward,
+  papering over the gap rather than closing it. Blending v1 and v2 (3)
+  doesn't obviously help either — v1 (D-77) has the same self-play-only
+  data source as v2, just with static instead of search-based labels, so
+  it likely has a similar (untested, but no reason to expect otherwise)
+  endgame blind spot rather than genuine additional endgame coverage to
+  blend in. Directly generating the missing position type is the more
+  honest fix.
+
+  **What was built:** `training/generate_data.py` gained
+  `random_endgame_board(rng, bag)` — places a `bag` of piece-field names
+  (always both kings plus 1-2 extra pieces) on random distinct squares,
+  rejecting placements with pawns on rank 1/8, adjacent kings, or the
+  side NOT to move left in check (`is_in_check()` — its own docstring
+  confirms it checks exactly this: the side that just moved). 19
+  `ENDGAME_BAGS` configurations cover single-piece endgames (K+P/R/Q/N/B
+  vs K, both colors) and simple two-extra-piece pairings (K+R vs K+P,
+  K+Q vs K+R, K+P vs K+P, etc.). `generate_endgame_samples()` labels
+  these the same way as self-play positions (shared `label_fn`, so
+  `--label-mode search`'s depth-1 classical-search labels apply
+  identically) and mixes them into the same output array via a new
+  `--endgame-count` CLI flag — no schema change, `train_nnue.py` and
+  `embed_weights.py` needed zero modifications.
+
+  **Dataset:** v3 = v2-scale self-play (151 games via `--label-mode
+  search --label-depth 1`, matching D-79's methodology exactly, chunked
+  across 4 sandbox calls due to the same per-call wall-clock limits
+  D-79 hit) + 3,200 `ENDGAME_BAGS` positions. Endgame generation is
+  extremely cheap (3,200 positions in 3.4s vs. self-play's ~7s/game) —
+  sparse positions have few legal moves and resolve fast in the depth-1
+  + quiescence label search. 11,505 total positions, ~28% endgame
+  (v2's was effectively ~0%).
+
+  **Confirmed fixed — direct re-run of D-80's own benchmark:** scored
+  all 8 legal moves in the exact K+P vs K FEN
+  (`8/8/8/4k3/8/4P3/4K3/8 w - - 0 1`) with v3's quantized weights.
+  `e2d3` (the textbook king-opposition move) was v2's only negative
+  score (-40) and the outlier worst move; under v3 it scores **146**,
+  solidly positive and in the same range as every other legal move (all
+  8 moves now score 120-175). Not a perfect match to classical eval's
+  ranking, but the specific defect D-80 found — an OOD network producing
+  arbitrary output that actively prefers a bad retreat — is gone.
+
+  **Confirmed preserved/improved:** startpos depth-5 node count actually
+  *improved* over v2 (10,584 vs v2's 14,429, both far better than v1's
+  266,642 and classical's 38,849 warm baseline), same `g1f3` best move
+  choice.
+
+  **A real trade-off, reported honestly rather than smoothed over:** the
+  tactical FEN from D-77/D-78/D-79/D-80
+  (`r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4`)
+  regressed on node count — 55,905 under v3 vs. v2's 5,109 (still far
+  better than v1's 335,441). Best move unchanged (`f3g5` at depth 5,
+  matching v2). Plausible explanation, not independently confirmed:
+  spreading a 128-hidden-unit network's limited capacity across a more
+  diverse (now endgame-inclusive) position distribution costs it some of
+  the very sharp, single-family specialization that gave v2 its
+  extreme tactical-position efficiency — a capacity/diversity trade-off,
+  not obviously a bug. Flagged as the new ROADMAP NEXT UP item rather
+  than either ignored or over-interpreted as a fixed conclusion.
+
+  **Broader re-check:** re-ran all 5 of D-80's spot-check positions
+  (K+P vs K, K+R vs K, Italian opening, Fool's-mate sanity check, closed
+  middlegame) at depth 4 — no blunders found in any of them, checkmate
+  detection still correct (Fool's mate returns "no legal moves").
+
+  **Verification:** exact same splice-boundary discipline D-79's
+  incident established — confirmed `def init_nnue_weights()` at line
+  2257 and the very next function `def nnue_accumulate()` at line
+  100827 by direct grep before editing, then verified programmatically
+  that every line before/after the replaced block is byte-identical to
+  the original file (not just visually spot-checked). `fastpy check`:
+  zero errors. `fastpy build`/direct `g++ -O3` (project's standard
+  flags): clean compile, ~151s (matches D-75/D-79/D-80's estimate),
+  binary runs and exits 0 (documented `main()` no-op stub — Core Rule 6,
+  UCI is Python-mode only). Full 243/243 test suite passing — unlike
+  D-79, **no test updates were needed this session**.

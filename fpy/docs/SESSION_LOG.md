@@ -4,6 +4,86 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 45 — v3: fixed v2's endgame blind spot with explicit endgame training data
+**Status:** COMPLETE ✅ — `fastpy-engine/engine.py`,
+`fastpy-engine/training/generate_data.py` changed
+
+### `Go` — picked up Session 44's flagged NEXT UP item
+Session 44 (D-80) confirmed v2 has a real endgame regression (rates the
+textbook K+P vs K opposition move as the worst of 8 legal moves) and
+left three unweighed options in ROADMAP for fixing it. This session
+weighed them and picked one.
+
+### Decision: augment training data (option 1), not a fallback or blend
+Chose to generate explicit sparse-endgame positions directly rather than
+hope self-play reaches them (option 2, a material-count-gated classical/
+v2 fallback, was rejected as inelegant and against the single-unified-
+evaluator design; option 3, blending v1/v2, was rejected since v1 likely
+shares the same self-play-only data gap). Full reasoning in D-81.
+
+### What was built
+`generate_data.py` gained `random_endgame_board()` (places a bag of
+piece-field names on random legal squares — pawns not on rank 1/8, kings
+not adjacent, side-not-to-move not in check) and 19 `ENDGAME_BAGS`
+configurations (K+P/R/Q/N/B vs K both colors, plus simple pairings like
+K+R vs K+P). New `--endgame-count` flag mixes these into the same output
+array as self-play positions, labelled identically.
+
+### Dataset and training
+v3 = 151 self-play games (same depth-1 search-based labels as v2, D-79)
++ 3,200 endgame positions = 11,505 total (~28% endgame vs. v2's ~0%).
+Self-play generation chunked across 4 sandbox calls (same wall-clock
+constraint D-79 hit); endgame generation was ~2000x faster per-position
+(sparse positions, cheap depth-1 search) — 3,200 positions in 3.4s.
+Trained with the unmodified `train_nnue.py` (no schema changes needed).
+
+### Result — the specific regression is fixed, with a new honest trade-off
+Re-ran D-80's exact K+P vs K benchmark (all 8 legal moves scored
+directly): `e2d3` was v2's only negative score (-40, the outlier worst
+move) — under v3 it scores **146**, solidly positive alongside every
+other legal move (120-175 range). The defect is gone. Startpos depth-5
+node count *improved* over v2 (10,584 vs 14,429, same `g1f3` best move).
+**But** the tactical FEN from D-77/D-78/D-79/D-80 regressed on node
+count: 55,905 under v3 vs v2's 5,109 (still far better than v1's
+335,441; same `f3g5` best move at depth 5). Working hypothesis, not
+confirmed: spreading the network's fixed 128-hidden-unit capacity across
+a more diverse (now endgame-inclusive) distribution costs some of v2's
+narrow tactical-position specialization. Re-ran all 5 of D-80's spot-
+check positions at depth 4 — no blunders found, checkmate detection
+still correct. Full writeup: D-81.
+
+### Verification
+- Applied D-79's own lesson: confirmed `init_nnue_weights()` (line 2257)
+  and the immediate next function `nnue_accumulate()` (line 100827) by
+  direct grep before splicing, then verified programmatically (not just
+  visually) that every line outside the replaced block is byte-identical
+  to the original file.
+- `fastpy check engine.py`: zero errors
+- `fastpy build`/direct `g++ -O3` (project's standard flags): clean
+  compile (~151s, matches D-75/D-79/D-80's estimate), binary runs and
+  exits 0 (documented no-op `main()` stub, Core Rule 6)
+- Full `fastpy-engine` suite: **243/243 passing, zero test changes
+  needed** (unlike D-79, which needed one)
+- `fastpy` suite (367/367) and `fastpy-engine` suite (243/243) both
+  re-verified against freshly-pulled `main` at the *start* of this
+  session too, per the standing D-61/D-65 process rule
+
+### Files changed
+- `fastpy-engine/engine.py` — REPLACE (v3 weights)
+- `fastpy-engine/training/generate_data.py` — REPLACE (endgame generator)
+- Docs: `ROADMAP.md`, `DECISIONS.md` (D-81), `SESSION_LOG.md` (this entry)
+
+### Next session
+v3's tactical-middlegame node-count trade-off (worse than v2, still far
+better than v1) is a real, not-yet-understood cost — worth checking
+whether it's an inherent capacity/diversity tension or fixable (more
+hidden units, more/better-targeted endgame data). Also worth a broader
+move-quality check than D-80's 5 positions (e.g. a small v2-vs-v3
+self-play match) and confirming the K+P vs K fix generalizes beyond the
+one exact FEN tested, before calling v3 a settled upgrade over v2.
+
+---
+
 ## Session 44 — v2's move quality spot-checked: confirmed real endgame regression
 **Status:** COMPLETE ✅ — investigation only, no source files changed in either repo
 
