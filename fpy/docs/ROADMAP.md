@@ -279,18 +279,38 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         a fail-soft `alpha_beta()`'s result stays within its search
         window, which was never a true invariant for fail-soft search,
         just hadn't been violated under v1's smaller score range).
-  - [ ] **NEXT UP:** v2's result is a strong node-count signal but an
-        unvalidated playing-strength one — nothing in this session
-        measured actual move quality, only search efficiency. Worth
-        confirming v2 doesn't just prune aggressively via cruder/less
-        nuanced scores before trusting it over v1 or classical eval for
-        real play (e.g. compare a sample of v2's chosen moves against
-        classical eval's on non-trivial positions, or a small self-play
-        match between v1/v2/classical). Also worth testing on more
-        positions than the two carried over from D-77/D-78 — both
-        happen to be openings/early-middlegame; endgame behavior
-        (fewer, more precise pieces, where NNUE's ~32-active-feature
-        design space is very different) is untested.
+  - [x] Move-quality spot-check done (Session 44, see D-80) — confirmed
+        the exact concern this item flagged: v2's node-count win doesn't
+        come for free. Compared classical/v1/v2 on 5 diverse positions
+        (2 endgames, an opening, a checkmate sanity check, a closed
+        middlegame). Opening/middlegame: all three broadly agree or pick
+        defensible alternatives, v2 still searching far fewer nodes.
+        **Endgame: a real regression, not a hypothetical one.** In a bare
+        K+P vs K position, v2 rates the textbook-correct king-opposition
+        move (`e2d3`) at **-40** (i.e. bad for White) while classical
+        eval rates the same move **+115** (good) — confirmed by scoring
+        every legal move directly, not just comparing final search
+        picks. Near-certain cause: v2's training set (150 short,
+        middlegame-heavy self-play games, D-79) contains almost no
+        sparse endgame positions (a bare K+P vs K has only 2 of 768
+        features active), so the network has no reliable training
+        signal there and produces close to arbitrary output. **v2 should
+        NOT replace v1 as a blanket default without addressing this** —
+        see the new NEXT UP item below for options.
+  - [ ] **NEXT UP:** address v2's endgame blind spot before considering
+        it a real upgrade over v1. Options, not yet evaluated against
+        each other: (1) augment the training set with explicit endgame
+        positions (K+P vs K, K+R vs K, a few others) generated directly
+        rather than hoping self-play games reach them, since most
+        self-play games in this codebase's generator don't run long
+        enough to simplify down to bare endgames; (2) a simple material-
+        count-gated fallback (use classical `evaluate()`/v1 below some
+        piece-count threshold, v2 above it) — cheap but inelegant, and
+        against the spirit of a single unified evaluator; (3) blend v1
+        and v2 (ensemble or v1-as-regularizer during v2's training) to
+        keep v1's broader coverage while gaining v2's search-efficiency
+        win in positions it's actually seen. No recommendation yet —
+        needs its own session to weigh these properly.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

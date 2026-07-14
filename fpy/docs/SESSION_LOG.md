@@ -4,6 +4,62 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 44 — v2's move quality spot-checked: confirmed real endgame regression
+**Status:** COMPLETE ✅ — investigation only, no source files changed in either repo
+
+### `Continue to next` — picked up Session 43's flagged next step
+Session 43 (D-79) got a strong node-count win from v2 but explicitly
+flagged that nothing had validated actual move quality, only search
+efficiency. This session checked.
+
+### What was done
+Compared classical eval, v1, and v2's chosen move + node count at depth
+4 across 5 positions: K+P vs K endgame, K+R vs K endgame, the Italian
+opening from D-77/D-78, a Fool's-mate checkmate sanity check, and a
+closed middlegame structure.
+
+### Result — mixed, and one real problem found
+Opening/middlegame positions: no red flags. All three agree or v2 picks
+a defensible sharper alternative, consistently with far fewer nodes
+(matches D-79). Checkmate detection: correct for all three.
+
+**Endgame is where it breaks.** In a bare K+P vs K position, v2 rates
+the textbook-correct king-opposition move (`e2d3`) as **-40** (i.e. bad
+for White) while classical eval rates the same move **+115** (good) —
+confirmed by scoring all 8 legal moves directly, not just comparing
+final search picks. Near-certain cause: v2's training set (150 short,
+middlegame-heavy self-play games) contains almost no sparse endgame
+positions, so the network has no real signal there and produces close
+to arbitrary output on inputs that sparse. Full table and reasoning in
+D-80.
+
+### What this means
+v2 (currently embedded in `engine.py` per D-79) should NOT be treated as
+a strict upgrade over v1 — it's good in the middlegame territory it was
+trained on, unreliable in sparse endgames. Not reverted this session
+(the middlegame node-count win is real and worth keeping for now), but
+flagged clearly rather than left as an implied clean win.
+
+### Verification
+No code changes — investigation only, via Python-mode weight-swapping
+and direct move scoring. No need to re-run `fastpy check`/`build`/the
+test suite since nothing in either repo changed.
+
+### Files changed
+- None in either repo. Docs only: `ROADMAP.md`, `DECISIONS.md` (D-80),
+  `SESSION_LOG.md` (this entry).
+
+### Next session
+Address v2's endgame blind spot before calling it a real upgrade.
+ROADMAP lists three candidate approaches (augment training data with
+explicit endgame positions; a material-count-gated classical/v2
+fallback; blending v1 and v2) without a recommendation yet — that
+weighing is real work for its own session. Re-run the baseline check
+(both repos' full test suites against freshly-pulled `main`) before
+trusting this log.
+
+---
+
 ## Session 43 — Second (v2) NNUE training pass, search-based labels — big node-count win, unvalidated strength
 **Status:** COMPLETE ✅ — `engine.py`, `tests/test_phase4.py` changed; `training/generate_data.py`, `training/embed_weights.py` extended
 
