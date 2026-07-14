@@ -1961,3 +1961,100 @@ restriction there.
   weights/dataset/spliced engine copy exist only in the sandbox
   workspace, not delivered — they're not a candidate artifact, just
   scaffolding for this investigation.
+
+## D-84: native UCI play — a hand-written C++ wrapper around the
+  already-compiled search, not a change to engine.py (Session 48)
+
+  Asked directly whether the engine is "ready for game play." Answer at
+  the time: correctness yes, but real gameplay only happened via
+  `python3 run.py`'s pure-Python UCI loop — the compiled `./engine`
+  binary's `main()` is a deliberate no-op stub (Core Rule 6), so none of
+  the project's actual value proposition (Python-to-C++ transpiler,
+  compiled speed) was reachable during play. This session closed that
+  gap.
+
+  **Discovery that simplified the whole task:** `engine.py` already
+  contains a fully compiled `find_best_move()`, `generate_legal_moves()`,
+  `make_move()`, `alpha_beta()`, and `perft()` — the entire search stack
+  exists in the FastPy dialect and compiles to real C++ today. `fastpy
+  check`/`fastpy build` were already exercising these every session
+  (that's what "clean compile" has meant all along); they just had no
+  caller outside `perft` and the test suite. Nothing needed to be added
+  to engine.py at all.
+
+  **What was built — deliberately outside engine.py, respecting Core
+  Rule 6:**
+  - `native/uci_main.cpp` — hand-written C++ (not FastPy dialect) UCI
+    protocol loop, FEN parsing, and iterative-deepening/time-management
+    orchestration around the compiled search functions. This mirrors
+    what `run.py` already does in Python mode for the same reason:
+    I/O and timing logic don't belong in the FastPy dialect, only the
+    speed-critical search does.
+  - `training/build_uci_engine.py` — emits `engine.cpp` via FastPy's own
+    emit path (not a separate reimplementation), strips the known no-op
+    `main()` stub (refuses to proceed if the stub text doesn't match
+    exactly, rather than blindly regexing — protects against silently
+    corrupting a build if `engine.py`'s `main()` ever changes),
+    concatenates with `uci_main.cpp` into one translation unit, compiles
+    with the project's standard flags.
+
+  **Why one concatenated translation unit, not separate compilation +
+  linking:** FastPy emits a single self-contained `.cpp` with no header
+  — splitting cleanly would mean hand-writing a header of forward
+  declarations for everything `uci_main.cpp` needs (`BoardState`,
+  `find_best_move`, `generate_legal_moves`, `make_move`, `compute_hash`,
+  `init_accumulator`, `PROMO_*`/`CASTLE_*` constants, `INF`/`NEG_INF`,
+  `nodes_reset`/`nodes_get`) and keeping it in sync by hand. Simple
+  concatenation avoids that entire maintenance burden; the two files
+  already declare/define in a compatible order once concatenated.
+
+  **A real, pre-existing gap found along the way, not introduced here:**
+  `engine.py` has no `PROMO_ROOK` constant — the compiled move generator
+  only ever produces Q/B/N promotions. `uci_main.cpp` doesn't paper over
+  this; a GUI-requested rook underpromotion simply won't match any
+  legal move. Flagged in `ENGINE_ARCHITECTURE.md` rather than silently
+  worked around.
+
+  **Verification:**
+  - `perft(5)` from startpos via the compiled build = **4,865,609**,
+    exactly matching the documented Phase 3 baseline — move generation
+    correctness confirmed in the actual compiled artifact, not just
+    inferred from `engine.py`'s source matching `run.py`'s.
+  - Depth-1 search from startpos matches Python mode bit-for-bit: same
+    node count (41), same score (48cp).
+  - K+P vs K (D-80's benchmark) still picks a sane, non-blundering move
+    (`e2f3`, positive score at every depth) in the native build —
+    confirms the NNUE fix from D-81 survived the new entry point, as it
+    should (same weights, same eval code, only the driver changed).
+  - Both `go movetime N` and `go wtime/btime/winc/binc` time-management
+    paths tested directly and produce sane depth progressions.
+  - `ucinewgame`/`position startpos`/`position fen ... moves ...` all
+    tested and apply moves correctly.
+  - Checkmate detection confirmed correct (Fool's-mate position returns
+    `bestmove 0000`, UCI's standard "no legal move" response).
+  - Observed throughput: **~1.5M nodes/sec** at deeper iterative-
+    deepening depths from startpos, vs. Python mode's low-thousands —
+    roughly 50-150x depending on position/depth, not a single fixed
+    multiplier (shallow depths are dominated by fixed overhead in both
+    drivers, so the speedup ratio grows with depth).
+  - Full existing 243/243 test suite re-run afterward, unchanged and
+    still passing — confirms `engine.py` truly wasn't touched (diffed
+    directly against the pre-session copy to be sure, not just assumed).
+
+  **Two honest limitations, not smoothed over:**
+  - Time management only checks elapsed time *between* completed
+    depths, not during one — a slow-to-search depth can overshoot the
+    allocated budget by that depth's entire duration (observed directly:
+    a 2,400ms budget produced an 8,601ms final iteration). Fine for
+    casual play with generous time controls; not tournament-grade.
+  - The native driver's iterative deepening always searches full-width
+    (`NEG_INF`/`INF`) at every depth, unlike whatever windowing (if any)
+    `run.py`'s Python driver uses — so on near-equal positions the two
+    can pick different (both reasonable, cp-neighbors) best moves. Seen
+    directly on the standing tactical-FEN benchmark: Python picks
+    `f3g5`, native picks `b1c3`, 2-3cp apart at depth 5. Not a
+    correctness bug, just two different search drivers around the same
+    evaluator not being guaranteed to break ties identically.
+
+  **`engine.py` and `training/generate_data.py` unchanged this session**
+  — this was a build-tooling/wrapper addition only.

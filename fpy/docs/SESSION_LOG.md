@@ -4,6 +4,92 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 48 — native UCI play: real gameplay at compiled speed, not just Python mode
+**Status:** COMPLETE ✅ — new `fastpy-engine/native/uci_main.cpp`,
+`fastpy-engine/training/build_uci_engine.py`; `docs/ENGINE_ARCHITECTURE.md`
+updated (stale phase table fixed too); `engine.py` and
+`training/generate_data.py` unchanged
+
+### "Do it" — asked directly whether the engine was ready for game play
+Answered honestly: correctness yes (rules, UCI protocol, evaluation all
+solid per Sessions 44-47), but real play only ever happened via
+`python3 run.py`'s pure-Python UCI loop — the compiled `./engine`
+binary's `main()` is a deliberate no-op stub (Core Rule 6), so the
+project's actual value proposition (compiled C++ speed) was never
+reachable during play. Told to close that gap.
+
+### Key discovery: nothing needed to be added to engine.py
+`engine.py` already contains a complete, compiled search stack —
+`find_best_move()`, `generate_legal_moves()`, `make_move()`,
+`alpha_beta()`, `perft()` — that `fastpy check`/`fastpy build` have been
+exercising every session already. It just had no caller outside
+`perft`/the test suite. This meant the whole task was "give it a caller"
+rather than "build a search engine in C++."
+
+### What was built, deliberately outside engine.py
+- `native/uci_main.cpp` — hand-written C++ (explicitly not FastPy
+  dialect; Core Rule 6 still applies to engine.py itself) implementing
+  the real UCI protocol loop, FEN parsing, and iterative-deepening/time
+  management around the compiled search functions.
+- `training/build_uci_engine.py` — emits `engine.cpp` via FastPy's own
+  emit path, strips the known no-op `main()` stub (refuses to proceed
+  if the stub doesn't match exactly, rather than blind-regexing),
+  concatenates with `uci_main.cpp` into one translation unit, compiles
+  with the project's standard flags. Full rationale for the
+  single-translation-unit approach (vs. separate compile+link) in D-84.
+
+### A real, pre-existing gap surfaced, not introduced
+`engine.py` has no `PROMO_ROOK` constant — the compiled move generator
+has never supported rook underpromotion. Documented in
+`ENGINE_ARCHITECTURE.md` rather than papered over; a GUI-requested rook
+underpromotion simply won't match any legal move.
+
+### Verification
+- `perft(5)` from startpos via the compiled build = **4,865,609**,
+  exactly matching the documented Phase 3 baseline.
+- Depth-1 search from startpos matches Python mode bit-for-bit (same
+  node count, same score).
+- K+P vs K (D-80's benchmark) still picks a sane move through the new
+  entry point — confirms the D-81 NNUE fix survived, as expected (same
+  weights, same eval, only the driver changed).
+- Both `go movetime N` and `go wtime/btime/winc/binc` tested directly.
+- Checkmate detection correct (`bestmove 0000` on Fool's mate).
+- ~1.5M nodes/sec observed at deeper depths — roughly 50-150x over
+  Python mode, position/depth-dependent, not a single fixed multiplier.
+- Full 243/243 test suite re-run afterward, unchanged — and `engine.py`
+  diffed directly against the pre-session copy to confirm it truly
+  wasn't touched, not just assumed.
+
+### Two limitations documented honestly, not hidden
+Time management only checks between completed depths (a slow depth can
+overshoot the budget by its own full duration — observed directly: a
+2,400ms budget produced an 8,601ms final iteration). And the native
+driver's full-width iterative deepening can pick a different
+(comparably-scored) best move than Python mode on near-equal positions,
+since the two drivers don't use the same windowing. Both written up in
+`ENGINE_ARCHITECTURE.md`'s new "Native UCI Play" section.
+
+### Also fixed: ENGINE_ARCHITECTURE.md's stale phase table
+It still said Phase 4 ("competitive engine") was "🔄 Next" and Phase 5
+("NNUE") was "⏳ not started" — both have been done for many sessions.
+Fixed, with a note pointing at DECISIONS/SESSION_LOG as the actual
+source of truth going forward rather than this summary table.
+
+### Files changed
+- `fastpy-engine/native/uci_main.cpp` — NEW
+- `fastpy-engine/training/build_uci_engine.py` — NEW
+- Docs: `ENGINE_ARCHITECTURE.md` (phase table fix + new section),
+  `ROADMAP.md`, `DECISIONS.md` (D-84), `SESSION_LOG.md` (this entry)
+
+### Next session
+No specific task queued. Worth considering: tighter mid-search time
+checks for the native driver, reconciling the two drivers' search
+windowing so they don't diverge on near-equal positions, adding
+`PROMO_ROOK` support (low value but a real gap), or something unrelated
+to search/UCI entirely. Needs a decision at the start of next session.
+
+---
+
 ## Session 47 — node-count "diversity dilution" hypothesis tested: mixed/inconclusive, closing out the D-81 arc
 **Status:** COMPLETE ✅ — investigation only, no files changed
 (`engine.py`, `training/generate_data.py` unmodified; production remains

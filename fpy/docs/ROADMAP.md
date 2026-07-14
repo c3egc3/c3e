@@ -368,6 +368,42 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         NNUE iterations, or a fresh area of the engine/transpiler
         entirely) — needs a decision at the start of next session rather
         than defaulting to more NNUE work for its own sake.
+  - [x] Native UCI play (Session 48, see D-84) — asked directly whether
+        the engine was ready for game play; answer was "correctness yes,
+        but real play only happened at Python speed" since `./engine`'s
+        `main()` is a deliberate no-op stub. Built `native/uci_main.cpp`
+        (hand-written C++, not FastPy dialect, deliberately outside
+        engine.py per Core Rule 6) + `training/build_uci_engine.py`
+        (emits engine.cpp via FastPy's own path, strips the known
+        no-op main stub, concatenates, compiles). Discovered
+        `engine.py` already had a complete compiled search stack
+        (`find_best_move`, `generate_legal_moves`, `make_move`,
+        `alpha_beta`, `perft`) with no caller outside tests/perft —
+        nothing needed adding to engine.py itself. Verified: perft(5)
+        from startpos = 4,865,609 (matches documented baseline exactly),
+        depth-1 search matches Python mode bit-for-bit, K+P vs K fix
+        survives the new entry point, both `movetime` and
+        `wtime/btime` time management tested, checkmate detection
+        correct, ~1.5M nodes/sec observed (~50-150x over Python mode,
+        position/depth-dependent). Two honest limitations documented in
+        `ENGINE_ARCHITECTURE.md` rather than hidden: time management can
+        overshoot by up to one full depth (checks only between depths,
+        not during), and the native driver's full-width search can pick
+        a different (comparably-scored) best move than Python mode on
+        near-equal positions. Also surfaced and documented a real
+        pre-existing gap found along the way: `engine.py` has no
+        `PROMO_ROOK` — rook underpromotion was never supported, not
+        something this session introduced. `engine.py` and
+        `training/generate_data.py` unchanged; full 243/243 suite
+        re-verified unchanged afterward.
+  - [ ] **NEXT UP:** no specific task queued. Options worth considering:
+        tighten the native UCI driver's time management (mid-search time
+        checks, not just between-depth), reconcile the two search
+        drivers' windowing so they don't pick different moves on
+        near-equal positions, add `PROMO_ROOK` support to the move
+        generator (low value, real gap), or move on to something
+        unrelated to search/UCI entirely. Needs a decision at the start
+        of next session.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

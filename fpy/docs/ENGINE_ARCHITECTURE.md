@@ -355,8 +355,16 @@ g-c-3/fastpy-engine   (GPL v3) — uses the tool
 Build command:
     cd fastpy-engine/
     fastpy build engine.py --optimize O3
-    ./engine
+    ./engine     # exits 0 immediately — main() is a no-op stub, see below
 ```
+
+**`./engine` doesn't play games.** `fastpy build` compiles `engine.py`
+correctly, but its `main()` is a deliberate no-op stub (Core Rule 6),
+so running `./engine` just proves the build succeeded. To actually play:
+- `python3 run.py` — Python-mode UCI, correct, works today, slow
+  (thousands of nodes/sec).
+- `./fastpy_engine_uci` (built via `training/build_uci_engine.py`) —
+  native-speed UCI, see "Native UCI Play" below.
 
 **Dependency at build time only.** The compiled `engine` binary is standalone C++.
 No Python, no FastPy, no runtime dependency of any kind.
@@ -374,6 +382,91 @@ These licenses are compatible — using a MIT tool to build GPL software is fine
 | 1 | ✅ Done | Functional transpiler | Parser, type system, emitter, intrinsics, CLI |
 | 2 | ✅ Done | Functional engine | All piece move gen, castling, en passant, promotions |
 | 3 | ✅ Done | Correct engine | Sliding rays, check detection, legal move filter, perft(5)=4,865,609 |
-| 4 | 🔄 Next | Competitive engine | Move ordering, quiescence search, PST evaluation, transposition table |
-| 5 | ⏳ | Elite engine | NNUE, LMR, futility pruning |
+| 4 | ✅ Done | Competitive engine | Move ordering, quiescence search, PST evaluation, transposition table |
+| 5 | ✅ Done | Elite engine | NNUE (v1→v3, see DECISIONS D-77 through D-83), LMR, futility pruning |
+| 6 | ✅ Done | Native UCI play (Session 48, D-84) | `native/uci_main.cpp` + `training/build_uci_engine.py` — real gameplay at compiled speed, not just Python-mode |
+
+(This table was stale for a while — Phase 4/5 were actually completed
+across several sessions before anyone updated it here. Check
+`docs/DECISIONS.md` and `docs/SESSION_LOG.md` for what's really been
+built; this table is a summary, not the source of truth.)
+
+---
+
+## Native UCI Play (Session 48 / D-84)
+
+Until Session 48, the only way to actually *play* against the engine was
+`python3 run.py`'s Python-mode UCI loop (`_iterative_deepening_py`,
+`_alpha_beta_py`, etc. — pure Python, correct but slow, thousands of
+nodes/sec). The compiled `./engine` binary's `main()` was, and still is,
+a deliberate no-op stub (Core Rule 6: engine.py stays FastPy dialect
+only, no `__main__`/I/O) — it existed purely to prove `engine.py`
+compiles clean, not to actually play games.
+
+`native/uci_main.cpp` closes that gap without touching engine.py or the
+FastPy dialect surface at all. It's hand-written C++ (not FastPy
+dialect — Core Rule 6 still applies to engine.py itself) that:
+
+- implements the real UCI protocol loop (`uci`/`isready`/`ucinewgame`/
+  `position`/`go`/`quit`) and FEN parsing,
+- calls directly into engine.py's already-compiled search functions —
+  `find_best_move()`, `generate_legal_moves()`, `make_move()`,
+  `compute_hash()`, `init_accumulator()` — which turned out to already
+  exist in the FastPy dialect (`fastpy check`/`fastpy build` were
+  already exercising them; they just had no caller outside `perft`/
+  tests before this),
+- does iterative deepening and UCI time management (`movetime`,
+  `wtime`/`btime`/`winc`/`binc`) itself, in hand-written C++, mirroring
+  what `run.py`'s `_iterative_deepening_py` does in Python mode — this
+  orchestration is I/O/timing logic, not speed-critical search, so it
+  belongs here rather than in the FastPy dialect.
+
+`training/build_uci_engine.py` builds it: emits `engine.cpp` via
+FastPy's own emit path, strips the known no-op `main()` stub (refuses to
+proceed if that stub doesn't match exactly — protects against silently
+stripping something that changed), concatenates with
+`native/uci_main.cpp`, and compiles with the project's standard flags
+(C++20, `-O3 -march=native -mpopcnt -mbmi -mbmi2 -fno-exceptions
+-fno-rtti`).
+
+```
+cd fastpy-engine/
+python3 training/build_uci_engine.py --fastpy-path /path/to/fastpy
+./fastpy_engine_uci
+```
+
+**Verified (Session 48):** `perft(5)` from startpos = 4,865,609, matching
+the documented Phase 3 baseline exactly — move generation is correct in
+the compiled build. Depth-1 search from startpos matches the Python
+engine bit-for-bit (same node count, same score). ~1.5M nodes/sec
+observed at deeper iterative-deepening depths from startpos, vs. Python
+mode's low-thousands nps — roughly **50-150x**, depending on position and
+depth, not a single fixed multiplier.
+
+**Known limitations, honestly listed rather than hidden:**
+- **No rook underpromotion.** `engine.py` itself has no `PROMO_ROOK`
+  constant — the compiled move generator only ever produces Q/B/N
+  promotions. This is a pre-existing gap in `engine.py`, not something
+  introduced by the UCI wrapper; a GUI requesting `...=R` will find no
+  matching legal move and the position command silently stops applying
+  moves at that point. Vanishingly rare in practice (rook
+  underpromotion is almost never the correct choice), but real.
+- **Time management can overshoot by up to one full depth.** The
+  iterative-deepening loop only checks elapsed time *between* depths,
+  not during a depth's search — so if depth N's search itself takes
+  longer than the remaining budget, it still runs to completion before
+  the loop notices and stops. Seen directly in testing: a 2,400ms
+  budget (from `wtime 60000`) produced an 8,601ms depth-11 iteration.
+  Fine for casual/engine-vs-engine play with generous time controls;
+  would need a proper mid-search time check (or a node-count budget) for
+  tournament-strength time management.
+- **Best move can differ from Python mode's choice in near-equal
+  positions.** E.g. the standing tactical-FEN benchmark: Python mode
+  picks `f3g5`, the native binary picks `b1c3`, at depth 5, with scores
+  2-3cp apart (well within noise for a roughly-equal position). Not a
+  bug — the two iterative-deepening drivers use different windowing
+  (the native wrapper always searches full-width `NEG_INF`/`INF`; it
+  doesn't replicate whatever aspiration-window narrowing, if any,
+  `run.py`'s Python-mode driver uses), so tie-breaking between
+  near-equal moves isn't guaranteed to match.
 | 6 | ⏳ | 1B NPS | Lazy SMP multi-core, BMI2 magic bitboards |
