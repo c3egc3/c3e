@@ -1808,3 +1808,85 @@ restriction there.
   binary runs and exits 0 (documented `main()` no-op stub — Core Rule 6,
   UCI is Python-mode only). Full 243/243 test suite passing — unlike
   D-79, **no test updates were needed this session**.
+
+## D-82: v2-vs-v3 self-play match confirms v3 is a genuine overall
+  upgrade — 10-0-6, v3 never lost (Session 46, follow-up to D-81)
+
+  D-81 fixed v2's endgame blind spot but found a real, unexplained
+  trade-off: worse node-count efficiency on the D-77/D-78/D-79/D-80
+  tactical FEN. ROADMAP flagged this as needing a broader check than
+  D-80's 5-position static spot-check before trusting v3 as a settled
+  upgrade. This session built that check.
+
+  **Harness (`training/self_play_match.py`, new, generic/reusable):**
+  loads two `engine.py`+`run.py` directories as independent module pairs
+  in a single process via a sys.modules alias-swap trick — `run.py`'s
+  `from engine import (...)` binds to whatever module is registered
+  under the name `'engine'` at that exact import moment, so registering
+  engine A's module, importing A's `run.py`, then re-registering to
+  engine B's module before importing B's `run.py` gives two live,
+  never-crossing sets of function references in one process (no
+  subprocess/UCI-text overhead). Each engine keeps its own `BoardState`;
+  after either side picks a move, the UCI string is applied to both
+  boards independently so they stay in lockstep as the same game.
+
+  **Why an opening book, not repeated startpos games:** both engines are
+  fully deterministic (no randomness anywhere in search or move
+  ordering), so replaying startpos N times with the same color
+  assignment produces the identical game N times — confirmed directly
+  (two "repeat" games in an early test run were byte-for-byte identical
+  in move list). 8 fixed opening FENs × 2 color assignments = 16 genuinely
+  independent games instead.
+
+  **Bug caught and fixed before the real run:** the first harness draft
+  checked `if not legal:` on `_generate_legal_moves_py()`'s return value
+  — but that function returns a `(moves, count)` tuple, which is always
+  truthy regardless of `count`, so checkmate/stalemate detection never
+  fired. A second bug in the same draft reused the variable name `moves`
+  for both the legal-move-list unpack and the outer game's move-log
+  list, silently clobbering the log. Both fixed (unpack into
+  `legal_moves, legal_count`, check `count == 0`) and verified against a
+  short game with a real checkmate before trusting the full run.
+
+  **Result — 200ms/move, max 100 plies, TT cleared between games:**
+
+  | | v2 wins | v3 wins | draws |
+  |---|---|---|---|
+  | 16 games | 0 | 10 | 6 |
+
+  v3 never lost a single game, in either color, in any of the 8 opening
+  lines. As White, v3 scored 6 wins + 2 draws (0 losses); as Black
+  (i.e. v2 as White), v3 scored 4 wins + 4 draws (0 losses). This is a
+  much stronger signal than D-80's static 5-position spot-check: it's
+  the two networks' full search-and-evaluate pipelines actually playing
+  real games against each other, across varied openings, not just
+  scored move lists at a handful of hand-picked positions.
+
+  **Interpretation:** D-81's tactical-FEN node-count regression is real
+  and still unexplained, but it is not costing v3 practical strength —
+  whatever the network lost in raw node-count efficiency on that one
+  benchmark position, it more than made up for in overall play quality,
+  most plausibly because the endgame blind spot D-80 found was actively
+  costing v2 games (the 72-ply and 92-ply checkmates v3 delivered as
+  Black are consistent with converting a simplified, endgame-adjacent
+  position v2 couldn't navigate correctly). The node-count question is
+  downgraded from "blocking" to "open, lower-priority, intellectual
+  completeness" in ROADMAP.
+
+  **K+P vs K generalization re-checked:** scored all legal moves
+  directly (not just via search) on two more configurations beyond
+  D-80/D-81's exact FEN — a rook-pawn (a-file) endgame and an advanced
+  central e-pawn with immediate promotion available. Both score sanely:
+  no negative-score outliers in the rook-pawn case, and promotion
+  (`e7e8q`, 885) correctly valued far above every non-promoting
+  alternative in the advanced-pawn case. The D-81 fix isn't overfit to
+  the one FEN D-80 happened to test.
+
+  **No engine.py or generate_data.py changes this session** — this was
+  a validation-only session. `self_play_match.py` is a new dev tool
+  (kept generic — `--engine-a-dir`/`--engine-b-dir`, not v2/v3-specific
+  — so future NNUE iterations can reuse it directly) but is not part of
+  the compiled FastPy dialect surface and is not subject to `fastpy
+  check` (it's a plain-Python harness that imports `run.py`/`engine.py`
+  from two on-disk directories, comparable to `tests/` or
+  `training/generate_data.py`).

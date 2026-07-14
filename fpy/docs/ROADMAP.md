@@ -326,15 +326,33 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         `fastpy build`/direct `g++ -O3` clean (~151s, matches D-75/D-79/
         D-80 estimate), full 243/243 suite passing with zero test
         changes needed this time.
-  - [ ] **NEXT UP:** v3 traded some of v2's tactical-middlegame search
-        efficiency for endgame correctness — worth understanding whether
-        that's an inherent tension (diluting a small hidden layer's
-        capacity across a more diverse position distribution) or fixable
-        with more hidden units / more targeted endgame data. Also worth
-        a broader move-quality spot check than D-80's 5 positions before
-        fully trusting v3 (e.g. a small v2-vs-v3 self-play match), and
-        confirming the K+P vs K fix generalizes to other pawn-endgame
-        configurations, not just the one exact FEN tested.
+  - [x] Broader v2-vs-v3 validation done (Session 46, see D-82): built a
+        generic two-directory self-play match harness
+        (`training/self_play_match.py`) and ran a 16-game match (8 fixed
+        opening lines × both colors — engines are deterministic, so
+        repeating one line is zero additional signal; varying the
+        opening is what actually generates independent games) at 200ms/
+        move. **Result: v3 never lost a single game — 10 wins, 6 draws,
+        0 losses**, across every opening and both colors. This
+        supersedes D-80's 5-position static spot-check as the strongest
+        evidence yet that v3 is a genuine overall upgrade, not merely a
+        fix that happened to trade away net strength for the tactical-
+        FEN node-count cost D-81 found. Also re-ran the K+P vs K
+        generalization check on two more configurations (a rook-pawn
+        endgame, an advanced central pawn with promotion available) —
+        both score sanely (no negative-score outliers, promotion
+        correctly valued far above all alternatives), so the D-81 fix
+        isn't overfit to the one exact FEN D-80 tested.
+  - [ ] **NEXT UP:** the tactical-FEN node-count regression D-81 found
+        (v3: 55,905 nodes vs v2: 5,109 on the D-77/D-78/D-79/D-80
+        benchmark position, depth 5) is still unexplained, even though
+        Session 46's match result shows it isn't costing v3 games in
+        practice. Worth understanding whether it's an inherent capacity/
+        diversity tension in the 128-hidden-unit network (try: same v3
+        dataset, larger hidden layer, see if the node count recovers)
+        or something else — mostly out of intellectual completeness at
+        this point rather than urgency, since the match result already
+        answered the practical "is v3 actually better" question.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

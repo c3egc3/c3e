@@ -4,6 +4,75 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 46 — v2-vs-v3 self-play match: v3 confirmed a genuine upgrade (10-0-6)
+**Status:** COMPLETE ✅ — new `fastpy-engine/training/self_play_match.py`;
+no `engine.py`/`generate_data.py` changes (validation-only session)
+
+### `Continue` — picked up Session 45's flagged NEXT UP items
+Session 45 (D-81) fixed v2's endgame blind spot with v3 but left a real,
+unexplained trade-off (worse node count on the standing tactical-FEN
+benchmark) and flagged that D-80's 5-position spot-check was thin
+evidence for calling v3 settled. This session addressed both flagged
+follow-ups: build a real v2-vs-v3 match, and re-check the K+P vs K fix
+on more than one FEN.
+
+### Built a generic two-engine self-play match harness
+`training/self_play_match.py` loads two `engine.py`+`run.py` directories
+as independent module pairs in one process (sys.modules alias-swap
+trick, no subprocess/UCI overhead — see D-82 for the mechanism), plays
+them against each other across a small fixed opening book (8 lines × 2
+colors = 16 games), and appends results to a TSV as it goes so a
+multi-call session can resume mid-match. Kept generic
+(`--engine-a-dir`/`--engine-b-dir`) rather than v2/v3-specific, so it's
+reusable for whatever comes after v3.
+
+### Caught and fixed two real bugs in the harness before trusting it
+`_generate_legal_moves_py()` returns `(moves, count)`, not a bare list —
+an early `if not legal:` check was always False regardless of count, so
+checkmate/stalemate never fired and games misreported as "no move
+returned." A second bug reused the variable name `moves` for both the
+per-ply legal-move unpack and the outer move-log list, clobbering the
+log. Both fixed and re-verified against a short real-checkmate game
+before running the full match. Also discovered along the way: both
+engines are fully deterministic, so repeated startpos games with the
+same color assignment are identical — switched to an 8-opening book so
+16 games are actually 16 independent data points, not 2 repeated 8
+times.
+
+### Result: v3 never lost — 10 wins, 6 draws, 0 losses across 16 games
+200ms/move, 100-ply cap, TT cleared between games, 8 openings × both
+colors. v3 as White: 6W-2D-0L. v3 as Black (v2 as White): 4W-4D-0L. This
+is a much stronger signal than D-80's static spot-check — the full
+search pipelines actually playing real games, not just scored move
+lists at a handful of positions. Full analysis and interpretation in
+D-82.
+
+### K+P vs K fix generalization re-checked on 2 more configurations
+Scored all legal moves directly on a rook-pawn (a-file) endgame and an
+advanced central e-pawn with promotion available — both sane (no
+negative-score outliers; promotion correctly valued far above
+alternatives in the advanced-pawn case). D-81's fix isn't overfit to the
+one exact FEN D-80 tested.
+
+### Files changed
+- `fastpy-engine/training/self_play_match.py` — NEW
+- `fastpy-engine/training/v2_vs_v3_match_results.tsv` — NEW (raw match
+  log, optional/informational — not required for reproducing the result,
+  which is fully described in D-82)
+- Docs: `ROADMAP.md`, `DECISIONS.md` (D-82), `SESSION_LOG.md` (this entry)
+
+### Next session
+D-81's tactical-FEN node-count regression (v3: 55,905 vs v2: 5,109
+nodes, depth 5) is still unexplained but downgraded to low-priority —
+Session 46 already answered the practical question (is v3 actually
+better? yes, decisively). If picked up: try the same v3 dataset with a
+larger hidden layer and see if node-count efficiency recovers, which
+would confirm it's a capacity/diversity tension rather than something
+else. Otherwise, v3 can reasonably be treated as the new baseline going
+forward.
+
+---
+
 ## Session 45 — v3: fixed v2's endgame blind spot with explicit endgame training data
 **Status:** COMPLETE ✅ — `fastpy-engine/engine.py`,
 `fastpy-engine/training/generate_data.py` changed
