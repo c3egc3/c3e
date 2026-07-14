@@ -1109,3 +1109,93 @@ interpolated levels (1-4, 6-9, 11-14, 16-19), replace those specific
 `ELO_TABLE` entries with measured values rather than re-deriving the
 whole table — the 5 anchor-derived entries (0, 5, 10, 15, 20) would stay
 as-is unless Gokul chooses different absolute anchors again.
+
+## D44 — Fix Shallow cmd_go Wiring Tests; Fixes a Real Elo/Time-Fraction Bug (2026-07-14)
+
+**Decision**: Gokul flagged that several `cmd_go` wiring tests (added in
+D42/D43, plus two pre-existing ones they copied their shape from —
+`test_cmd_go_applies_skill_level_to_search` and
+`test_cmd_go_applies_move_overhead_to_time_control`) only verified that
+`EngineState` fields weren't unexpectedly mutated, not that the search
+thread actually received the configured value. True: `cmd_go` never
+writes `skill_level`/`contempt`/etc. back to `EngineState` either way
+(it only reads them once into local variables before spawning the
+search thread), so those assertions passed unconditionally regardless
+of whether the thread closure used the right value — a copy-paste bug
+like `main_info.contempt = 0` instead of `= contempt` would have sailed
+through every one of them.
+
+**Fix, in two parts:**
+
+1. **`wait_for_search()` now returns `Option<SearchInfo>`** instead of
+   `()`. It already joined the search thread and received its actual
+   `SearchInfo` back (`returned_info`) — it just discarded everything
+   except `history`/`countermoves`/`correction_history` after copying
+   those into `self.info`. Now it returns the full joined struct too.
+   Backward compatible: `Option<T>` isn't `#[must_use]`, so every
+   existing call site (`state.wait_for_search();` as a bare statement)
+   keeps compiling unchanged with zero warnings — confirmed via a clean
+   `cargo check --bins`. Required adding `#[derive(Clone)]` to
+   `CorrectionHistory` (`search/pruning.rs`) — needed so
+   `wait_for_search()` can copy `correction_history` into `self.info`
+   while also returning the whole `SearchInfo` it came from, without a
+   partial-move conflict. Safe: it's just `Vec<[i32;2]>` + `usize`.
+
+2. **Extracted `effective_skill_level(state: &EngineState) -> u8`
+   and `build_time_control(state: &EngineState, line: &str, skill_level:
+   u8) -> TimeControl`** as pure, standalone functions — the
+   UCI_LimitStrength/UCI_Elo override logic and the `go`-line-to-
+   `TimeControl` construction, respectively, previously both inlined
+   directly in `cmd_go`. Both are directly unit-testable without
+   spawning or joining any thread.
+
+**Real bug this surfaced**: `build_time_control`'s extraction required
+looking at exactly when `tc.skill_time_fraction_pct` got computed
+relative to the Elo-override logic — and they were in the wrong order.
+D43's `cmd_go` computed `tc.skill_time_fraction_pct` from
+`state.skill_level` directly, then only LATER (right before the thread
+spawn) computed the Elo-overridden `skill_level` used for the depth cap.
+So with `UCI_LimitStrength` active, the depth cap correctly used the
+Elo-derived level, but the TIME BUDGET still used the raw, possibly
+irrelevant `Skill Level` setting. Concretely: a `UCI_Elo` request
+mapping to a low Skill Level got the correct shallow depth cap paired
+with a full, unreduced time budget — precisely the "searches shallow
+then sits idle for the rest of its allocation, looking broken rather
+than weak" failure mode Session 65 built the depth+time pairing to
+prevent in the first place (see D39/skill.rs's own header comment).
+Fixed by resolving `effective_skill_level(state)` once, up front in
+`cmd_go`, and threading that single value into both
+`build_time_control` and the later per-thread `SearchInfo` construction
+— they can no longer diverge, by construction, not by convention.
+
+**Tests rewritten** (all now assert on real, thread-verified or
+pure-function values instead of state-field non-mutation):
+- `test_cmd_go_applies_skill_level_to_search` — now checks
+  `wait_for_search()`'s returned `SearchInfo.skill_level` directly.
+- `test_cmd_go_applies_contempt_to_search` — same pattern for `contempt`.
+- `test_cmd_go_applies_move_overhead_to_time_control` — now calls
+  `build_time_control()` directly and checks `overhead_ms`/`movetime`.
+- Split the old `test_limit_strength_enabled_overrides_skill_level`
+  into `test_effective_skill_level_ignores_elo_when_limit_strength_off`
+  and `test_effective_skill_level_uses_elo_when_limit_strength_on`
+  (fast, pure, exact) plus one genuine end-to-end integration test,
+  `test_cmd_go_search_reflects_elo_override_not_raw_skill_level`, that
+  deliberately sets `skill_level` and the Elo-derived level to
+  *disagree* (20 vs 3) and confirms the joined `SearchInfo` reflects the
+  Elo-derived one — the specific case a state-field check could never
+  distinguish.
+- New regression test for the bug above,
+  `test_build_time_control_uses_elo_derived_skill_level_not_raw`.
+
+**Why extraction over a test-only escape hatch**: considered adding a
+`#[cfg(test)]`-gated field to stash the built `SearchInfo` somewhere
+`EngineState` exposes, instead of widening `wait_for_search`'s return
+type. Rejected — that pattern only helps tests, adds permanent
+production-code surface area (a field that exists solely to be read
+back out in a different build configuration) for zero production
+benefit, and doesn't fix the `TimeControl`/time-fraction ordering bug
+at all (that bug lived in inline logic with no return value to widen).
+Extracting the two pure functions fixes both the testability gap AND
+the real bug simultaneously, and leaves `cmd_go` itself easier to read
+as a bonus — the effective-skill-level resolution is now a single,
+named, one-line step instead of duplicated inline logic in two places.

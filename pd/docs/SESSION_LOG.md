@@ -7,7 +7,7 @@ Most recent session at TOP.
 
 ---
 
-## Session 70 — 2026-07-14 (UCI completeness: Ponder, Contempt, real eval bar; UCI_Elo initially declined then reversed — D43)
+## Session 70 — 2026-07-14 (UCI completeness: Ponder, Contempt, real eval bar; UCI_Elo declined then reversed; shallow-test fix surfaces real time-fraction bug — D42/D43/D44)
 
 **Built:**
 
@@ -104,17 +104,45 @@ measurements vs. interpolation vs. Gokul's own chosen anchors, kept
 visibly separate throughout — is in D43. D39 itself was NOT rewritten;
 only its specific rejection of an Elo number was overridden.
 
-**Next session start point:** two pending verifications, in this order.
-(1) Trigger the Actions wasm-pack build, confirm it succeeds, load the
-actual game, confirm the eval bar renders real values instead of
-erroring — if it fails, the likely culprits are named directly in
-D42/ROADMAP 21.3. (2) Run `cargo test`, confirm the new skill.rs/main.rs
-tests from the UCI_Elo work (D43) pass — these were compile-checked
-locally but never run for real, same standing verification gap as
-everything else in this sandbox. Separately, the stale root `index.html`
-/ deploy-pipeline mismatch (discovered earlier this session) is worth
-its own dedicated look whenever there's room — not blocking, but real
-drift between source and deployed.
+**Later still the same session — fixed shallow cmd_go wiring tests
+(D44):** Gokul correctly flagged that several `cmd_go` tests (the new
+D42/D43 ones, plus two pre-existing ones they copied their shape from)
+only checked that `EngineState` fields weren't mutated, never that the
+spawned search thread actually received the configured value — a real
+gap, not just a style nit, since `cmd_go` never writes those fields
+back either way. Fixed properly rather than patched: widened
+`wait_for_search()` to return the joined thread's actual `SearchInfo`
+(`Option<SearchInfo>`, backward compatible — `Option` isn't
+`#[must_use]`, so every existing bare-statement call site keeps
+compiling with zero warnings), and extracted `effective_skill_level()`
+and `build_time_control()` as pure, directly-testable functions instead
+of inline logic. Doing the extraction carefully surfaced a real bug in
+the process: `tc.skill_time_fraction_pct` was computed from
+`state.skill_level` BEFORE the Elo-override logic ran, so
+`UCI_LimitStrength` correctly overrode the depth cap but silently left
+the time budget on the raw (possibly full-strength) setting — exactly
+the "shallow search, then sits idle" failure mode Session 65 built the
+depth+time pairing to prevent. Fixed by resolving the effective skill
+level once, up front, and threading that single value everywhere.
+Added `#[derive(Clone)]` to `CorrectionHistory` (needed for the
+`wait_for_search()` widening). All 5 affected tests rewritten to assert
+on real returned/computed values instead of state non-mutation, plus
+one new regression test specifically for the time-fraction bug.
+
+**Next session start point:** three pending verifications now, in this
+order. (1) Trigger the Actions wasm-pack build, confirm it succeeds,
+load the actual game, confirm the eval bar renders real values instead
+of erroring — if it fails, the likely culprits are named directly in
+D42/ROADMAP 21.3. (2) Run `cargo test`, confirm the UCI_Elo tests
+(D43) pass. (3) Also in that same `cargo test` run, confirm the D44
+rewrites pass AND specifically confirm
+`test_build_time_control_uses_elo_derived_skill_level_not_raw` passes —
+that one is the actual regression test for a bug that was live in code
+generated earlier this same session, never previously run for real.
+Separately, the stale root `index.html` / deploy-pipeline mismatch
+(discovered earlier this session) is worth its own dedicated look
+whenever there's room — not blocking, but real drift between source
+and deployed.
 
 ---
 

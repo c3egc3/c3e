@@ -916,6 +916,22 @@
             interpolated, is in D43. **Also not yet confirmed via a real
             `cargo test` CI run** — same standing verification gap as
             21.1-21.3 above, same next-session action item.
+- [x] 21.5 — Session 70 (still later the same day, D44): Gokul flagged
+            that 21.2-21.4's `cmd_go` wiring tests only checked
+            `EngineState` field non-mutation, not that the search thread
+            actually received the configured values. Fixed by widening
+            `wait_for_search()` to return the real joined `SearchInfo`
+            and extracting `effective_skill_level()`/
+            `build_time_control()` as pure, directly-testable functions.
+            The extraction surfaced a real bug: `UCI_LimitStrength` was
+            correctly overriding the depth cap but NOT the time-fraction
+            budget (wrong computation order — see D44), meaning a low
+            `UCI_Elo` request got a shallow depth cap paired with a full
+            time budget, the exact "shallow-then-idle" failure Session 65
+            built the depth+time pairing to prevent. Fixed. All 5
+            affected tests rewritten to assert on real values; 1 new
+            regression test added specifically for this bug. **Also not
+            yet confirmed via a real `cargo test` CI run.**
 
 **Housekeeping discovered this session, not yet actioned**: the repo's
 checked-in root `index.html` (what GitHub Pages actually serves) is
