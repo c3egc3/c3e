@@ -4,6 +4,60 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 47 — node-count "diversity dilution" hypothesis tested: mixed/inconclusive, closing out the D-81 arc
+**Status:** COMPLETE ✅ — investigation only, no files changed
+(`engine.py`, `training/generate_data.py` unmodified; production remains
+v3)
+
+### `Continue` — picked up Session 46's flagged low-priority follow-up
+D-81 found v3's tactical-FEN node count regressed vs v2 and guessed
+(without testing) that it was a capacity/diversity tension from mixing
+endgame data into training. D-82's match result made this non-urgent,
+but it was cheap enough to actually test rather than leave as an
+unverified guess.
+
+### Test: reduced endgame fraction, not a larger hidden layer
+Chose the cheap version of the experiment over the invasive one — rather
+than resizing engine.py's compiled `int32[128]` accumulator arrays to
+try a bigger hidden layer (real engineering risk for a low-priority
+question), retrained on the same v3 self-play data with only 800 of the
+3,200 endgame positions (~9% vs v3's ~28%). Called v3b, investigation
+only, never shipped.
+
+### Result: not a clean confirmation
+Tactical-FEN node count partially recovered toward v2 (v3: 55,905 → v3b:
+12,860 → v2: 5,109), consistent with the dilution story. But startpos
+node count got *worse* than both v2 and v3 (19,374 vs v2's 14,429 and
+v3's 10,584), and the tactical position's best move changed entirely
+(`c4b3` instead of `f3g5`, which both v2 and v3 agreed on). A real
+capacity/diversity trade-off would predict roughly monotonic movement
+back toward v2 on both positions — that's not what happened. More
+likely explanation: with ~9,100 positions and fresh random
+initialization, which local minimum training lands in is dominated by
+run-to-run variance, not smoothly determined by endgame fraction. K+P vs
+K fix still held at ~9% endgame density, for what it's worth. Full
+numbers and reasoning in D-83.
+
+### Decision: don't pursue further, v3 remains production
+The cheap test didn't find a clean effect to chase, so the invasive
+larger-hidden-layer version isn't worth doing for a question D-82
+already made non-urgent. This closes the ROADMAP line item from
+D-81/D-82 as investigated rather than left open.
+
+### Files changed
+None. `engine.py` was temporarily swapped to v3b for benchmarking in the
+sandbox and restored to v3 immediately after (diff-verified). Docs:
+`ROADMAP.md`, `DECISIONS.md` (D-83), `SESSION_LOG.md` (this entry).
+
+### Next session
+The v3 NNUE upgrade arc (D-79 through D-83) is fully closed out. No
+specific task is queued — next session should pick a direction (search
+improvements, turning `self_play_match.py` into a standing regression
+check, or something else entirely) rather than defaulting to more NNUE
+work by inertia.
+
+---
+
 ## Session 46 — v2-vs-v3 self-play match: v3 confirmed a genuine upgrade (10-0-6)
 **Status:** COMPLETE ✅ — new `fastpy-engine/training/self_play_match.py`;
 no `engine.py`/`generate_data.py` changes (validation-only session)

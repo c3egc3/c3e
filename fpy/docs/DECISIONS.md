@@ -1890,3 +1890,74 @@ restriction there.
   check` (it's a plain-Python harness that imports `run.py`/`engine.py`
   from two on-disk directories, comparable to `tests/` or
   `training/generate_data.py`).
+
+## D-83: node-count "diversity dilution" hypothesis tested directly —
+  result is mixed/inconclusive, most likely training-run noise rather
+  than a systematic capacity effect (Session 47, closes D-81's flagged
+  follow-up)
+
+  D-81 found v3's tactical-FEN node count regressed vs v2 (55,905 vs
+  5,109 nodes, depth 5) and hypothesized — but did not test — that
+  spreading the network's fixed 128-hidden-unit capacity across a more
+  diverse (endgame-inclusive) distribution was the cause. D-82's match
+  result made this low-priority (v3 wins in practice regardless), but
+  it was cheap to actually test rather than leave as a guess.
+
+  **Test:** rather than the more invasive route (resizing engine.py's
+  compiled accumulator arrays to try a larger hidden layer — touches
+  `int32[128]` array declarations throughout the FastPy-dialect
+  accumulator code, real engineering risk for a low-priority question),
+  tested the dilution hypothesis directly and cheaply: retrained on the
+  same v3 self-play data (8,305 positions) but with only 800 of the
+  3,200 endgame positions (random subsample) instead of all 3,200 —
+  9,105 total, ~9% endgame vs v3's ~28%. Same architecture
+  (`NNUE_HIDDEN=128`), same `train_nnue.py` hyperparameters. Called v3b,
+  not shipped — investigation only.
+
+  **Result — not a clean confirmation:**
+
+  | | startpos depth-5 nodes | tactical-FEN depth-5 nodes | tactical best move |
+  |---|---|---|---|
+  | v2 | 14,429 | 5,109 | f3g5 |
+  | v3 (~28% endgame) | 10,584 | 55,905 | f3g5 |
+  | v3b (~9% endgame) | 19,374 | 12,860 | **c4b3** |
+
+  The tactical-FEN node count did partially recover toward v2 (55,905 →
+  12,860), which is at least directionally consistent with the dilution
+  story. But startpos got *worse* than both v2 and v3 (19,374 — neither
+  the "more like v2" nor "more like v3" prediction), and the tactical
+  position's best move changed entirely (`c4b3`, a bishop retreat,
+  instead of `f3g5` for both v2 and v3). A clean capacity/diversity
+  trade-off would predict roughly monotonic movement back toward v2's
+  numbers on both positions as endgame fraction drops — that's not what
+  happened. The more likely explanation: with only ~9,100 positions and
+  a from-scratch random initialization each run, which local minimum
+  training lands in is dominated by run-to-run variance, not smoothly
+  determined by endgame fraction. Node count on a specific position at a
+  specific depth is a coarse, high-variance measurement for this kind of
+  question.
+
+  **K+P vs K fix still holds at ~9% endgame:** re-ran D-80's exact
+  benchmark on v3b — all 8 legal moves score positive (120s-230s range,
+  `e2d3`=218), no outlier. So the fix doesn't obviously need the full
+  ~28% density to work; that part of the earlier setup could likely be
+  turned down without losing the fix, if there were a reason to.
+
+  **Decision: don't pursue further.** Not shipping v3b (startpos
+  regression, unexplained best-move change, no match evidence it's
+  actually stronger — and no reason to think it would be, given the
+  mixed signal). Not pursuing the larger-hidden-layer experiment either
+  — the cheap version of this investigation didn't find a clean effect
+  to chase, and the invasive version (resizing compiled accumulator
+  arrays) isn't worth the engineering risk for a question D-82's match
+  result already made non-urgent. **v3 remains production.** This closes
+  out the ROADMAP item from D-81/D-82 as investigated rather than
+  leaving it as an open guess.
+
+  **No files changed this session** — `engine.py` and
+  `training/generate_data.py` are unmodified; `engine.py` was
+  temporarily swapped to v3b for benchmarking and restored to v3
+  immediately after (verified via diff before moving on). The v3b
+  weights/dataset/spliced engine copy exist only in the sandbox
+  workspace, not delivered — they're not a candidate artifact, just
+  scaffolding for this investigation.

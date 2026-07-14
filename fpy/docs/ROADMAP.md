@@ -343,16 +343,31 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         both score sanely (no negative-score outliers, promotion
         correctly valued far above all alternatives), so the D-81 fix
         isn't overfit to the one exact FEN D-80 tested.
-  - [ ] **NEXT UP:** the tactical-FEN node-count regression D-81 found
-        (v3: 55,905 nodes vs v2: 5,109 on the D-77/D-78/D-79/D-80
-        benchmark position, depth 5) is still unexplained, even though
-        Session 46's match result shows it isn't costing v3 games in
-        practice. Worth understanding whether it's an inherent capacity/
-        diversity tension in the 128-hidden-unit network (try: same v3
-        dataset, larger hidden layer, see if the node count recovers)
-        or something else — mostly out of intellectual completeness at
-        this point rather than urgency, since the match result already
-        answered the practical "is v3 actually better" question.
+  - [x] Node-count "diversity dilution" hypothesis tested directly
+        (Session 47, see D-83) — result mixed/inconclusive, most likely
+        training-run noise rather than a systematic capacity effect.
+        Retrained on v3's data with only ~9% endgame positions instead
+        of ~28% (v3b, not shipped): tactical-FEN node count partially
+        recovered toward v2 (55,905 → 12,860) but startpos got *worse*
+        than both v2 and v3 (19,374), and the tactical position's best
+        move changed entirely — not the clean monotonic signal a real
+        capacity/diversity trade-off would predict. K+P vs K fix still
+        holds at ~9% endgame density, for what it's worth. Decided not
+        to pursue the more invasive larger-hidden-layer experiment
+        (would require resizing engine.py's compiled accumulator arrays)
+        since the cheap test didn't find a clean effect worth chasing,
+        and D-82's match result already made this non-urgent. **v3
+        remains production; this line item is closed.**
+  - [ ] **NEXT UP:** v3's NNUE upgrade arc (D-79 through D-83) is now
+        closed out — trained, regression found and fixed, validated in
+        real games, and the one open question investigated to a
+        reasonable stopping point. No specific next task queued; pick up
+        from whatever's most valuable next (e.g. search improvements
+        like better move ordering/pruning, expanding
+        `self_play_match.py` into a standing regression check for future
+        NNUE iterations, or a fresh area of the engine/transpiler
+        entirely) — needs a decision at the start of next session rather
+        than defaulting to more NNUE work for its own sake.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through
