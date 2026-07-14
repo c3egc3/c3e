@@ -873,6 +873,60 @@
 
 ---
 
+## Phase 21 — UCI Completeness: Ponder, Contempt, Real Eval Bar ⏳ (verify wasm build next session)
+- [x] 21.1 — Session 69: added `option name Ponder type check default
+            true` to the UCI option list. Pure advertisement — no engine
+            state, since pondering is entirely driven by whether the GUI
+            sends `go ... ponder` (the underlying ponderhit/pending-
+            allocation logic already existed and worked; this was purely
+            a missing declaration some GUIs require before ever invoking it).
+- [x] 21.2 — Session 69: added `Contempt` (UCI spin, -100..100, default
+            0). `draw_score(ply, contempt)` in search/mod.rs derives the
+            root-relative sign purely from `ply % 2` — no new root-side
+            field needed anywhere. Applied at all 4 draw-detection sites
+            in alpha_beta.rs (repetition, 50-move, insufficient material,
+            stalemate). Full design reasoning in DECISIONS.md D42.
+- [x] 21.3 — Session 69: added `search_from_fen_with_eval()` as a new,
+            non-breaking WASM export (existing `search_from_fen` left
+            completely untouched) returning the real search score/mate
+            alongside the move. `web/index.html`'s eval bar now shows the
+            genuine engine evaluation once a search completes, instead of
+            only the material+mobility heuristic (heuristic kept as the
+            instant-feedback fallback for the gap before a search runs).
+            **NOT YET VERIFIED against a real wasm-pack build** — Claude's
+            sandbox toolchain (rustc 1.75) is too old to compile the
+            `wasm` feature at all (wasm-bindgen needs 1.77+); this was
+            manually field-checked against Position/SearchResult's real
+            definitions and the JS was syntax-checked (including the
+            Worker source as its own ES module) but never actually built
+            or run in a browser. **First thing next session: confirm the
+            Actions wasm-pack build succeeds and the eval bar actually
+            renders correctly.**
+- [x] 21.4 — Session 70 (later same day, D43): REVERSED from the
+            earlier-this-session decline. Gokul explicitly chose to
+            proceed with `UCI_LimitStrength`/`UCI_Elo` anyway, using
+            self-assumed Elo anchors (0=1200, 20=2600) rescaled onto this
+            project's own real measured tier gaps (Session 68's
+            200-games/pair validation). `search::skill::ELO_TABLE` +
+            `elo_to_skill_level()` built, `main.rs` wired
+            `UCI_LimitStrength`/`UCI_Elo` as an override of Skill Level
+            in cmd_go. D39 itself is untouched — only its rejection of
+            attaching an Elo number was overridden; full reasoning,
+            including exactly which of these 21 numbers are real vs.
+            interpolated, is in D43. **Also not yet confirmed via a real
+            `cargo test` CI run** — same standing verification gap as
+            21.1-21.3 above, same next-session action item.
+
+**Housekeeping discovered this session, not yet actioned**: the repo's
+checked-in root `index.html` (what GitHub Pages actually serves) is
+stale relative to `web/index.html` (the real, current source) — still
+has the pre-Skill-Level 2-arg `search_from_fen(fen, ms)` call. The
+deployed page has been out of sync with the engine's actual WASM API
+for at least one full phase. Needs a dedicated look at why the deploy
+pipeline isn't regenerating it from `web/index.html`.
+
+---
+
 ## Test Coverage Summary
 **Note: the per-module breakdown below is stale (predates several
 sessions' worth of additions — texel_diag.rs, uci_match_runner.rs,

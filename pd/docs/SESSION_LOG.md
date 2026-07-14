@@ -7,6 +7,117 @@ Most recent session at TOP.
 
 ---
 
+## Session 70 — 2026-07-14 (UCI completeness: Ponder, Contempt, real eval bar; UCI_Elo initially declined then reversed — D43)
+
+**Built:**
+
+1. **Warning cleanup follow-through** (carried over from earlier today,
+   docs not yet updated for it): 3 rounds of `cargo test` round-trips
+   fixed all compiler warnings across lib/bins/tests, plus one genuine
+   bug found along the way — `test_finds_mate_in_1` in
+   `src/search/alpha_beta.rs` was missing its `#[test]` attribute
+   entirely, silently never running (a same-named sibling test in
+   `iterative.rs` masked the gap). Final state: 0 warnings, 376/376 lib
+   tests passing, confirmed via real CI logs, not just local checks.
+   One real regression happened mid-cleanup (removed `Bitboard` from
+   `pawns.rs` assuming it was unused, missed that it's used inside
+   `#[cfg(test)] mod tests`) — caught and fixed same session via the
+   next CI round-trip.
+
+2. **Ponder UCI option** (`src/main.rs`) — declared
+   `option name Ponder type check default true`. No engine state; the
+   existing ponderhit/pending-allocation logic already worked, this was
+   purely a missing advertisement some GUIs require.
+
+3. **Contempt** (`src/search/mod.rs`, `src/search/alpha_beta.rs`,
+   `src/main.rs`) — new UCI spin option, -100..100, default 0.
+   `draw_score(ply, contempt)` derives the root-relative sign from
+   `ply % 2` alone — no new root-side field needed anywhere in
+   `SearchInfo`/`Position`. Applied at all 4 draw-detection sites in
+   `alpha_beta.rs` (repetition, 50-move, insufficient material,
+   stalemate — found the 4th site, stalemate, while implementing;
+   wasn't in the original 3-site description). New unit tests in
+   `search/mod.rs` (pure `draw_score()` math, all 4 sign cases) and an
+   integration test in `alpha_beta.rs` (proves `SearchInfo.contempt`
+   actually reaches a real `alpha_beta()` call via the unconditional
+   50-move-rule path, not just that the pure function is correct in
+   isolation) plus 5 new tests in `main.rs` covering the option/
+   setoption/cmd_go wiring.
+
+4. **Real eval bar for the browser** (`src/lib.rs`, `web/index.html`) —
+   new WASM export `search_from_fen_with_eval()`, deliberately added
+   alongside (not replacing) the existing `search_from_fen` to avoid any
+   blast radius on callers this session didn't audit. Returns
+   `"<uci_move> <eval>"`, eval always from White's perspective for bar
+   stability. `web/index.html`'s Worker, `petDragonSearch()`, and a new
+   `updateEvalBarFromSearch()` all updated to consume it; the old
+   material+mobility `updateEvalBar()` heuristic stays as the instant-
+   feedback fallback before a real search has run.
+
+**Discovered along the way:**
+- `web/index.html` (7199 lines) is the real, current frontend source —
+  the repo's checked-in root `index.html` (2003 lines, what GitHub
+  Pages actually serves) is stale, still on the pre-Skill-Level 2-arg
+  `search_from_fen` call. Deploy pipeline isn't regenerating it. Not
+  actioned this session — flagged in ROADMAP Phase 21's housekeeping note.
+
+**Decision:** D42 — full reasoning for all three builds, plus why
+`UCI_Elo` (the 4th originally-requested item) was declined rather than
+built: it directly conflicts with D39's core reasoning (no honest Elo
+promise this engine can back for a custom variant with no external
+rating pool). Gokul chose to skip it and keep D39 intact rather than
+override it.
+
+**Verification gap, stated plainly:** the Rust lib/bins (everything
+except the `wasm` feature) and the JS were both mechanically verified —
+`cargo check --bins` clean, `node --check` clean on all 3 script blocks
+including the Worker source checked separately as its own ES module.
+The `wasm` feature itself could NOT be compiled locally this session —
+`wasm-bindgen v0.2.126` (pinned in the committed Cargo.lock) needs
+rustc 1.77+, this sandbox has 1.75.0. `search_from_fen_with_eval` was
+manually field-checked against `Position`/`SearchResult`'s real
+definitions and mirrors the already-working `search_from_fen`'s
+structure, but was never actually built or run in a browser by Claude.
+
+**Later the same session — reversed the UCI_Elo decline (D43):** Gokul
+asked to implement `UCI_LimitStrength`/`UCI_Elo` after all, with
+`UCI_LimitStrength` mapped to Skill Level and `UCI_Elo` mapped to
+self-assumed Elo values — explicitly reversing the decline from earlier
+this same session. Flagged the reversal and D39's actual objection
+(honesty about calibration, not the mere existence of the option)
+before proceeding; Gokul chose to continue anyway. Asked for a
+comparative Elo table for all 21 levels before writing any code, per
+his own instruction. Built that table from the only two real inputs
+available: Session 68's actual measured tier-pair gaps (0v5 -619.4 Elo,
+5v10 -117.2, 10v15 -65.0, 15v20 -81.35), rescaled to fit Gokul's chosen
+absolute anchors (Skill 0 = 1200, Skill 20 = 2600), with the 16
+untested intermediate levels linearly interpolated within each rescaled
+band. Landed as `ELO_TABLE`/`elo_to_skill_level()` in `search/skill.rs`
+(nearest-match, clamped, ties resolve to the lower/weaker level on
+purpose) and `UCI_LimitStrength`/`UCI_Elo` UCI options in `main.rs`,
+overriding Skill Level in `cmd_go` when enabled. New tests: 8 in
+`skill.rs` (exact-anchor round-trips for all 21 levels, monotonicity,
+both clamp directions, tie-break direction, non-exact nearest-match)
+and 7 in `main.rs` (defaults, setoption parsing/clamping, cmd_go
+override wiring). Full reasoning — especially which numbers are real
+measurements vs. interpolation vs. Gokul's own chosen anchors, kept
+visibly separate throughout — is in D43. D39 itself was NOT rewritten;
+only its specific rejection of an Elo number was overridden.
+
+**Next session start point:** two pending verifications, in this order.
+(1) Trigger the Actions wasm-pack build, confirm it succeeds, load the
+actual game, confirm the eval bar renders real values instead of
+erroring — if it fails, the likely culprits are named directly in
+D42/ROADMAP 21.3. (2) Run `cargo test`, confirm the new skill.rs/main.rs
+tests from the UCI_Elo work (D43) pass — these were compile-checked
+locally but never run for real, same standing verification gap as
+everything else in this sandbox. Separately, the stale root `index.html`
+/ deploy-pipeline mismatch (discovered earlier this session) is worth
+its own dedicated look whenever there's room — not blocking, but real
+drift between source and deployed.
+
+---
+
 ## Session 69 — 2026-07-13 (hidden_size=128 NNUE test — negative, re-parked, D41)
 
 **Built/tested:**

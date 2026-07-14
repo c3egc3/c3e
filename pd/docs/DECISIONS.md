@@ -934,3 +934,178 @@ effort (not incremental) is undertaken separately — at that point retest
 hidden_size=32 AND hidden_size=128 on the new data to see whether more
 data alone breaks the ceiling before re-attempting bigger architectures.
 Until then, NNUE stays parked and out of scope for regular sessions.
+
+## D42 — UCI Completeness: Ponder, Contempt, Real Eval Bar; UCI_Elo Stays Rejected (2026-07-14)
+
+**Decision**: Implemented three of four items requested this session:
+Ponder option declaration, Contempt (draw-value tuning), and a real
+engine-score eval bar for the browser. The fourth — `UCI_Elo` — was
+explicitly declined by Gokul after being flagged as a direct conflict
+with D39 (no calibrated human-comparable Elo number this engine can
+honestly back). D39 stands unmodified; `Skill Level` (0-20, depth-cap
+tiers) remains the only difficulty lever.
+
+**Ponder**: added `option name Ponder type check default true` to the
+UCI option list. No engine-side state — `setoption name Ponder` is
+accepted (`"ponder" => {}` no-op arm) but genuinely does nothing, since
+whether pondering happens is entirely determined by whether the GUI
+sends `go ... ponder` at all (the underlying pending-allocation/
+ponderhit logic already existed and worked; it just wasn't advertised,
+so some GUIs would never invoke it).
+
+**Contempt**: `option name Contempt type spin default 0 min -100 max
+100`. Design choice worth recording: rather than adding a `root_side:
+Color` field threaded through `SearchInfo`/`alpha_beta`, contempt's
+sign is derived purely from `ply % 2` — `alpha_beta`'s `ply` parameter
+already increments by exactly 1 per node starting at 0 at the root, so
+`ply % 2 == 0` means the current node's side-to-move IS the root side,
+with no new state to add, reset, or ever get stale. `draw_score(ply,
+contempt)` (search/mod.rs) is a pure function: returns `DRAW_SCORE`
+unchanged when `contempt == 0` (byte-identical to every pre-Contempt
+test), `DRAW_SCORE - contempt` at root-side nodes, `DRAW_SCORE +
+contempt` at opponent nodes. Applied at all 4 draw-detection sites in
+`alpha_beta.rs` (repetition, 50-move, insufficient material, and
+stalemate — the 4th one wasn't in the original 3-site read of the code;
+included it too since a draw is a draw regardless of which mechanism
+produced it). Threaded into `SearchInfo.contempt` (persistent across
+moves, same pattern as `skill_level`) via `cmd_go`, applied to both
+`h_info` (helper threads) and `main_info`.
+
+**Real eval bar**: added `search_from_fen_with_eval(fen, movetime_ms,
+skill_level) -> String` as a NEW WASM export, deliberately NOT modifying
+the existing `search_from_fen`'s signature or return format. Returns
+`"<uci_move> <eval>"` where eval is a plain signed centipawn integer or
+`"mateN"`/`"mate-N"`, always from **White's perspective** (not the
+UCI/negamax side-to-move convention) — a GUI bar needs a stable
+reference frame that doesn't flip depending on whose turn it is.
+`web/index.html`'s Worker now calls this instead of the old bare
+`search_from_fen`; `window.petDragonSearch()` resolves `{bestmove,
+evalCp, isMate, mateIn}` instead of a bare move string; a new
+`updateEvalBarFromSearch()` renders the real score, called right after
+each engine move completes. The old `updateEvalBar()` heuristic
+(material + mobility) stays as-is and un-renamed — it's still the right
+tool for instant feedback in the gap before the engine's own search has
+run (e.g. immediately after a human move), `updateEvalBarFromSearch()`
+just overrides it once a real search completes.
+
+**Why the new-function-not-modified-signature approach**: `search_from_fen`
+might have callers beyond `web/index.html` that this session didn't
+audit (the repo's checked-in root `index.html` is stale — see
+Housekeeping below — and there could be others). Changing its return
+format would be a silent breaking change for anything still expecting a
+bare move string. A new function costs a few duplicated lines
+(`Position::from_fen`, `TimeControl` setup) but has zero blast radius
+on anything already working.
+
+**Verification gap, stated plainly**: the `wasm` feature could not be
+compiled locally this session — `wasm-bindgen v0.2.126` (the version
+pinned in the committed `Cargo.lock`) requires rustc 1.77+, and this
+sandbox's apt-installed rustc is 1.75.0 (same class of toolchain-age
+gap noted in prior sessions, just hitting a different dependency this
+time). `search_from_fen_with_eval` was manually verified field-by-field
+against `Position`/`SearchResult`'s actual definitions (`side_to_move:
+Color`, `Color: PartialEq`, `score`/`is_mate`/`mate_in` on
+`SearchResult`) and mirrors the already-working `search_from_fen`'s
+structure exactly apart from the new eval-formatting tail, but this is
+the one piece in this session that was not mechanically compiled by
+Claude before delivery. The Rust lib/bins (everything except the
+`wasm` feature) and the JS (`node --check` on all 3 script blocks,
+including the Worker source extracted and checked separately as its
+own ES module) were both verified. **Next session should confirm the
+actual `wasm-pack`/GitHub Actions build succeeds** before treating this
+as done.
+
+**Housekeeping note (not actioned this session)**: discovered
+`web/index.html` (7199 lines, current, has the 3-arg
+`search_from_fen(fen, ms, skill)` call) is the real source, while the
+repo's checked-in root `index.html` (2003 lines, what GitHub Pages
+actually serves) is stale — still has the old 2-arg call from before
+Skill Level (D39) existed, meaning the deployed page has been out of
+sync with the actual engine's WASM API for at least one full phase.
+Worth a dedicated session to figure out why the deploy workflow isn't
+regenerating root `index.html` from `web/index.html` and fix the
+pipeline, separate from today's feature work.
+
+**Rejected**: `UCI_Elo` (see above — D39 stands). Also rejected:
+touching the existing `search_from_fen`'s signature directly instead of
+adding a new function (blast-radius reasoning above).
+
+## D43 — UCI_LimitStrength/UCI_Elo Built, Overriding D39's Rejection (2026-07-14)
+
+**Decision**: D42 (same day) closed with `UCI_Elo` explicitly declined
+per D39. Gokul reversed that call later the same session and asked for
+it anyway, with `UCI_LimitStrength` mapped onto Skill Level and `UCI_Elo`
+mapped onto self-assumed Elo values. Flagged the reversal plainly before
+building (D39's actual objection was never "don't build the option," it
+was "don't attach a number this engine can't honestly back" — assigning
+Elo values without real calibration data runs into exactly that). Gokul
+chose to proceed anyway. D39 itself is NOT rewritten or deleted — its
+depth-cap-tiers reasoning for Skill Level stands untouched; this decision
+only overrides its specific rejection of attaching an Elo number.
+
+**The numbers, and exactly what they are**: two layers, kept visibly
+separate throughout implementation and its own doc comments.
+1. **Real**: Session 68's actual 200-games/pair `uci_match_runner`
+   validation — 0v5 -619.4 Elo, 5v10 -117.2, 10v15 -65.0, 15v20 -81.35
+   (avg of two consistent runs). These are the only measured relative
+   tier gaps that exist anywhere in this project.
+2. **Assumed**: Gokul chose Skill 0 = 1200 and Skill 20 = 2600 as
+   absolute anchors (no external rating pool exists to derive these
+   from — same limitation D39 already documented). The four real gaps
+   above were rescaled by one constant factor so they sum to exactly
+   1400 (2600-1200) instead of their original unscaled sum, then
+   chained from the two anchors to get 5 grounded points (levels 0, 5,
+   10, 15, 20). Levels 1-4, 6-9, 11-14, 16-19 were linearly interpolated
+   within each rescaled band — these 16 entries have ZERO game data
+   behind them, only the assumption that Elo varies smoothly between
+   the two nearest tested points.
+
+Landed in `search/skill.rs`: `ELO_TABLE: [i32; 21]` (the full computed
+table) and `elo_to_skill_level(target_elo: i32) -> u8` (nearest-match
+against the table, clamped to the table's own min/max first, ties
+resolve to the LOWER level — deliberately conservative, since
+`UCI_LimitStrength` exists to make the engine weaker on request, and a
+tie-break that rounds up would silently give a stronger engine than
+what was asked for). `main.rs` gained `UCI_LimitStrength` (check,
+default false) and `UCI_Elo` (spin, default = table max = 2600, range
+1200-2600) options, `EngineState.limit_strength`/`.elo` fields, and
+`cmd_go` now computes `skill_level` from `elo_to_skill_level(state.elo)`
+instead of `state.skill_level` directly whenever `limit_strength` is
+true — an override relationship, not an additional independent lever
+(mirrors how Stockfish's own `UCI_LimitStrength` relates to its `Skill
+Level`).
+
+**Why `UCI_Elo` defaults to the table's max (2600), not some lower
+"typical" value**: `UCI_LimitStrength` defaults to false, so `elo`'s
+default is inert until a GUI explicitly enables limiting — but if a GUI
+enabled `UCI_LimitStrength` without ever touching `UCI_Elo` (plausible:
+some GUIs set flags before values, or a user toggles a checkbox without
+realizing a paired spin box exists), defaulting `elo` low would silently
+weaken the engine with no explicit request to do so. Defaulting to max
+means that specific failure mode can only ever produce full strength,
+never an unrequested handicap.
+
+**Why linear interpolation for the untested 16 levels, not something
+fancier**: the real 4-gap data already shows a non-uniform, diminishing-
+returns shape (massive at 0-5, compressed at 15-20) — that shape is
+real and preserved by rescaling all four gaps by the same factor.
+Within each individual band, `skill_depth_cap()` itself increments by
+exactly 1 ply per level (confirmed in skill.rs — no unevenness to
+model), so there's no principled basis for anything more elaborate than
+linear interpolation between the two nearest tested anchors without
+inventing structure this project has no data to support.
+
+**Test risk flagged**: `elo_to_skill_level()`'s own tests (exact-anchor
+round-trips for all 21 levels, monotonicity, clamping both directions,
+tie-break direction, non-exact nearest-match) and the `main.rs`
+option/setoption/cmd_go wiring tests were all written and locally
+compile-checked (`cargo check --bins` clean, plus the `--cfg test`
+workaround for the test-cfg code — see prior sessions' notes on why that
+workaround is imperfect but the best available check in this sandbox).
+Not yet confirmed via a real `cargo test` CI run as of this decision.
+
+**Revisit**: if real match-tested data ever exists for the currently-
+interpolated levels (1-4, 6-9, 11-14, 16-19), replace those specific
+`ELO_TABLE` entries with measured values rather than re-deriving the
+whole table — the 5 anchor-derived entries (0, 5, 10, 15, 20) would stay
+as-is unless Gokul chooses different absolute anchors again.
