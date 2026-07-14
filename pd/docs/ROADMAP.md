@@ -873,7 +873,7 @@
 
 ---
 
-## Phase 21 — UCI Completeness: Ponder, Contempt, Real Eval Bar ⏳ (verify wasm build next session)
+## Phase 21 — UCI Completeness: Ponder, Contempt, Real Eval Bar ✅ (wasm build + cargo test both confirmed; live eval-bar visual check still pending)
 - [x] 21.1 — Session 69: added `option name Ponder type check default
             true` to the UCI option list. Pure advertisement — no engine
             state, since pondering is entirely driven by whether the GUI
@@ -893,15 +893,15 @@
             genuine engine evaluation once a search completes, instead of
             only the material+mobility heuristic (heuristic kept as the
             instant-feedback fallback for the gap before a search runs).
-            **NOT YET VERIFIED against a real wasm-pack build** — Claude's
-            sandbox toolchain (rustc 1.75) is too old to compile the
-            `wasm` feature at all (wasm-bindgen needs 1.77+); this was
-            manually field-checked against Position/SearchResult's real
-            definitions and the JS was syntax-checked (including the
-            Worker source as its own ES module) but never actually built
-            or run in a browser. **First thing next session: confirm the
-            Actions wasm-pack build succeeds and the eval bar actually
-            renders correctly.**
+            **CONFIRMED (still Session 70)**: `deploy.yml`'s wasm-pack build
+            succeeded on runs #443 and #444 — `search_from_fen_with_eval`
+            compiles cleanly to `wasm32-unknown-unknown` for real, not
+            just Claude's field-check against `Position`/`SearchResult`'s
+            definitions. Still worth a one-time visual check (load the
+            live game, play a move, confirm the eval bar actually renders
+            a real number) — a clean compile doesn't rule out a runtime
+            JS bug (e.g. a string-parsing off-by-one), just the class of
+            error a build failure would have caught.
 - [x] 21.4 — Session 70 (later same day, D43): REVERSED from the
             earlier-this-session decline. Gokul explicitly chose to
             proceed with `UCI_LimitStrength`/`UCI_Elo` anyway, using
@@ -913,9 +913,11 @@
             in cmd_go. D39 itself is untouched — only its rejection of
             attaching an Elo number was overridden; full reasoning,
             including exactly which of these 21 numbers are real vs.
-            interpolated, is in D43. **Also not yet confirmed via a real
-            `cargo test` CI run** — same standing verification gap as
-            21.1-21.3 above, same next-session action item.
+            interpolated, is in D43. **CONFIRMED (still Session 70)**:
+            `cargo test` log showed 388 passed, 0 failed for the lib,
+            including `elo_to_skill_level`'s 5 exactness/clamping/
+            tie-break tests and the `UCI_LimitStrength`/`UCI_Elo`
+            setoption tests, confirmed by name, not just aggregate count.
 - [x] 21.5 — Session 70 (still later the same day, D44): Gokul flagged
             that 21.2-21.4's `cmd_go` wiring tests only checked
             `EngineState` field non-mutation, not that the search thread
@@ -930,16 +932,27 @@
             time budget, the exact "shallow-then-idle" failure Session 65
             built the depth+time pairing to prevent. Fixed. All 5
             affected tests rewritten to assert on real values; 1 new
-            regression test added specifically for this bug. **Also not
-            yet confirmed via a real `cargo test` CI run.**
+            regression test added specifically for this bug. **CONFIRMED
+            (still Session 70)**: same `cargo test` log —
+            `test_build_time_control_uses_elo_derived_skill_level_not_raw`
+            (the actual regression test for this bug) and
+            `test_cmd_go_search_reflects_elo_override_not_raw_skill_level`
+            (the end-to-end integration test) both confirmed passing by
+            name, not just swept up in the aggregate 388-passed count.
 
-**Housekeeping discovered this session, not yet actioned**: the repo's
-checked-in root `index.html` (what GitHub Pages actually serves) is
-stale relative to `web/index.html` (the real, current source) — still
-has the pre-Skill-Level 2-arg `search_from_fen(fen, ms)` call. The
-deployed page has been out of sync with the engine's actual WASM API
-for at least one full phase. Needs a dedicated look at why the deploy
-pipeline isn't regenerating it from `web/index.html`.
+**Housekeeping discovered this session — CORRECTED (still Session 70)**:
+initially flagged the repo's checked-in root `index.html` as "what
+GitHub Pages actually serves" and stale relative to `web/index.html`.
+The staleness is real (root `index.html` still has the pre-Skill-Level
+2-arg `search_from_fen(fen, ms)` call), but the "what GitHub Pages
+serves" part was wrong — checked `deploy.yml` directly: it uploads only
+the `web/` folder as the Pages artifact (`actions/upload-pages-artifact
+@v3` with `path: web/`) and deploys via `actions/deploy-pages`, meaning
+Pages serves `web/index.html` exclusively. Confirmed live via runs #443
+and #444 both succeeding on this session's actual commits. Root
+`index.html` is simply orphaned dead weight — never live, not
+out-of-sync with anything that matters. Downgraded from "needs a
+dedicated look" to: delete it whenever convenient, zero urgency.
 
 ---
 

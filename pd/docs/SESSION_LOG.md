@@ -139,10 +139,43 @@ rewrites pass AND specifically confirm
 `test_build_time_control_uses_elo_derived_skill_level_not_raw` passes —
 that one is the actual regression test for a bug that was live in code
 generated earlier this same session, never previously run for real.
-Separately, the stale root `index.html` / deploy-pipeline mismatch
-(discovered earlier this session) is worth its own dedicated look
-whenever there's room — not blocking, but real drift between source
-and deployed.
+
+**All three pending verifications closed out, still the same session:**
+(1) `cargo test` log confirmed: 388 passed, 0 failed for the lib,
+specifically confirmed by name (not just aggregate count) —
+`elo_to_skill_level`'s tests, the `UCI_LimitStrength`/`UCI_Elo`
+setoption tests, and critically `test_build_time_control_uses_elo_
+derived_skill_level_not_raw` (the actual regression test for D44's bug)
+and `test_cmd_go_search_reflects_elo_override_not_raw_skill_level` (the
+end-to-end integration test). (2) `deploy.yml`'s wasm-pack build
+confirmed succeeding on runs #443 and #444 (both on this session's
+actual commits) — `search_from_fen_with_eval` compiles to
+`wasm32-unknown-unknown` for real. (3) Also scanned for other instances
+of the same two bug classes (shallow `cmd_go` tests; raw `state.
+skill_level` reads that should go through `effective_skill_level()`)
+— found and fixed one more minor instance (a test using the raw value
+where it should have used the wrapper, harmless today but a bad
+precedent), nothing else turned up.
+
+**Corrected a wrong claim from earlier this session**: had flagged root
+`index.html` as "what GitHub Pages actually serves" and stale. The
+staleness claim was right; the "what Pages serves" claim was wrong —
+`deploy.yml` uploads only `web/` as the Pages artifact, so `web/
+index.html` is what's actually live, confirmed by runs #443/#444
+succeeding. Root `index.html` is simply dead, unused weight in the
+repo, never live. Downgraded from "needs a dedicated look" to
+delete-whenever-convenient.
+
+**Remaining open item**: a one-time visual check — load the live game,
+play a move, confirm the eval bar actually renders a real number. A
+clean compile + passing tests doesn't rule out a runtime JS bug (e.g. a
+string-parsing off-by-one in the Worker's `"e2e4 34"` split), just the
+class of error a build/test failure would have caught.
+
+**Next session start point**: no code work pending. If the eval-bar
+visual check above surfaces a problem, that's the first thing to debug
+— otherwise Phase 21 is genuinely closed and the next session can start
+fresh on whatever's next.
 
 ---
 
