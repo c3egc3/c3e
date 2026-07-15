@@ -172,10 +172,67 @@ clean compile + passing tests doesn't rule out a runtime JS bug (e.g. a
 string-parsing off-by-one in the Worker's `"e2e4 34"` split), just the
 class of error a build/test failure would have caught.
 
-**Next session start point**: no code work pending. If the eval-bar
-visual check above surfaces a problem, that's the first thing to debug
-— otherwise Phase 21 is genuinely closed and the next session can start
-fresh on whatever's next.
+**Later still — re-fixed the eval bar in Gokul's own edited
+`web/index.html`:** Gokul had added a substantial "Console Dashboard"
+debugging panel plus, more importantly, a genuinely more advanced eval-
+bar system than what this session originally built on top of — a
+dynamic-`import()`-inside-a-classic-Worker pattern specifically to
+support Firefox (which doesn't support module workers), and a
+"thinking" wobble animation that fills the visual gap during a search
+and settles on the real value once one completes. Rather than pasting
+the earlier diff back in (which would have silently regressed the
+Firefox fix), re-implemented the `search_from_fen_with_eval` wiring
+adapted to this newer structure: new `_renderRealEvalResult()` reuses
+the existing `_renderEvalDiff()` helper for visual consistency with the
+heuristic and the wobble, with its own mate-specific branch since the
+heuristic can't detect real forced mates. Deliberately placed the real-
+eval render call AFTER `applyEngineMove()`, not before — traced through
+the render pipeline and confirmed `updateEvalBar()`'s heuristic fires
+automatically as part of applying any move, so rendering first would've
+just been immediately overwritten.
+
+**Later still — repetition detection redesigned to match Stockfish
+(D45, Phase 22):** asked to make Pet Dragon's threefold-avoidance logic
+"similar to Stockfish." Verified Stockfish's actual algorithm
+(`Position::set_state()`/`is_draw(ply)`) against the real source before
+touching any code, rather than working from memory. Replaced the old
+unbounded "scan everything for any 2nd occurrence" with Stockfish's
+real approach: `game_history` now caches a per-position "repetition"
+distance at push time (`Vec<u64>` → `Vec<(u64, i32)>`), computed via a
+bounded backward walk (bounded by `halfmove_clock`, starting at 4 plies
+— the shortest possible repetition cycle in legal chess), with the
+cached value's sign distinguishing a first repeat from a genuine
+repetition chain. The real behavioral change: a first repeat is only
+scored as a draw if the search itself chose the moves that led back to
+it (ply-relative), not when it's purely inherited from real game
+history predating the search root — a true repetition chain is still
+always a draw regardless. Checked Pet Dragon's null-move pruning
+directly and confirmed it never touches `game_history` at all, so
+(unlike Stockfish) no separate `pliesFromNull` bound was needed. Fixed
+every consumer the type change touched, rebuilt every test that
+depended on the old raw-push API with genuine legal move sequences, and
+added direct unit tests for the algorithm itself rather than relying
+only on the existing weak integration assertion. Found and fixed a real
+bug in my own test-writing along the way — forgot to push the starting
+position before making moves in several rebuilt tests, which silently
+made the bounded walk one entry short everywhere; traced the exact
+index arithmetic by hand to confirm the fix. Also caught that the
+integration test's original bare-K-vs-K position would have triggered
+insufficient-material short-circuiting before repetition detection got
+exercised at all — fixed with a position that has real material but
+still leaves the king-shuffle squares open. Full algorithm and
+reasoning in D45.
+
+**Next session start point:** two things, in this order. (1) The eval-
+bar visual check from before — still pending, still the first thing to
+debug if something looks off. (2) Run `cargo test` and specifically
+confirm `tests/make_unmake.rs`'s 5 rebuilt repetition tests pass **by
+name**, not just the aggregate count — this file could not be locally
+compiled at all this session (same edition2024 toolchain wall as every
+previous session's test work), so it's carrying more risk than usual;
+everything in it was verified by hand-tracing the index arithmetic, not
+by a compiler. If either check surfaces a problem, that's where to
+start; otherwise Phases 21 and 22 are both genuinely closed.
 
 ---
 

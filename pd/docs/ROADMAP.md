@@ -956,6 +956,54 @@ dedicated look" to: delete it whenever convenient, zero urgency.
 
 ---
 
+## Phase 22 — Repetition Detection Redesigned to Match Stockfish ⏳ (verify via real cargo test next session — tests/make_unmake.rs unconfirmed)
+- [x] 22.1 — Session 70 (still later the same day, D45): replaced the old
+            unbounded "scan all of game_history for any 2nd occurrence"
+            with the actual Stockfish algorithm (`Position::set_state()`/
+            `is_draw(ply)`), verified against the real Stockfish source
+            before implementing rather than worked from memory.
+            `game_history` changed from `Vec<u64>` to `Vec<(u64, i32)>` —
+            each entry now caches a "repetition" distance at push time
+            (Stockfish's `StateInfo::repetition` equivalent), making
+            `is_repetition(ply)` an O(1) lookup instead of an unbounded
+            scan on every draw check. The core behavioral change: a
+            first repeat is only scored as a draw if it happened via
+            moves the search itself chose (ply-relative), not when it's
+            purely inherited from real game history predating the search
+            root — a genuine repetition chain (3-fold-equivalent) is
+            still always a draw regardless. Full algorithm, sign
+            convention, and the `i=4` minimum-cycle-length reasoning are
+            in D45.
+- [x] 22.2 — Same session: fixed every consumer the type change touched —
+            `alpha_beta.rs`'s draw-check call site, `iterative.rs`'s raw
+            root-position push/pop (now uses the proper wrapper),
+            `is_threefold_repetition()` (deliberately kept as a plain
+            count — used for real game-end adjudication, not the search-
+            tree-relative heuristic), and the now-dead-but-still-
+            type-correct `set_game_history()` (zero callers anywhere,
+            confirmed via grep, but rewritten correctly rather than left
+            broken). Rebuilt every test that depended on the old raw-push
+            API with genuine legal move sequences (a real 4-ply king-
+            shuffle or knight-shuffle repetition cycle) instead of
+            fabricated hash pushes, which no longer type-check against
+            the new cached representation anyway. Added direct, precise
+            unit tests for the algorithm itself in `position/mod.rs`
+            (positive vs negative caching, the ply-relative distinction,
+            the halfmove_clock bound) rather than relying only on the
+            existing weak `alpha_beta.rs` integration assertion.
+            **NOT YET VERIFIED**: `tests/make_unmake.rs` (a separate
+            integration test crate with 5 rebuilt tests) could not be
+            locally compiled this session — same toolchain wall as every
+            previous session (dev-dependency needs edition2024, sandbox
+            rustc is 1.75). Every index computation was traced by hand
+            rather than compiled. **First thing next session: run
+            `cargo test` and specifically confirm `tests/make_unmake.rs`'s
+            tests pass by name, not just the aggregate count** — this is
+            a higher-risk file than usual given zero local compilation
+            was possible.
+
+---
+
 ## Test Coverage Summary
 **Note: the per-module breakdown below is stale (predates several
 sessions' worth of additions — texel_diag.rs, uci_match_runner.rs,

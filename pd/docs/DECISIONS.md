@@ -1199,3 +1199,112 @@ Extracting the two pure functions fixes both the testability gap AND
 the real bug simultaneously, and leaves `cmd_go` itself easier to read
 as a bonus — the effective-skill-level resolution is now a single,
 named, one-line step instead of duplicated inline logic in two places.
+
+## D45 — Repetition Detection Redesigned to Match Stockfish's Algorithm (2026-07-14)
+
+**Decision**: Replaced `is_repetition()`'s unbounded "scan all of
+game_history for any 2nd occurrence" with the actual algorithm
+Stockfish uses (`Position::set_state()`/`is_draw(ply)` in
+`position.cpp`), verified against the real source rather than worked
+from memory. `game_history` changed from `Vec<u64>` to `Vec<(u64,
+i32)>` — each entry now caches a "repetition" distance at push time,
+mirroring Stockfish's `StateInfo::repetition` field exactly.
+
+**The algorithm**: `push_game_history()` walks backward through history
+in steps of 2 plies (repetition requires the same side to move),
+starting at `i=4` and bounded by `halfmove_clock` (no point checking
+further back than the last pawn move/capture — that position is
+provably not a repeat). On the first match found:
+- caches `+i` if the matched position's OWN cached value was `0` (a
+  first repeat), or
+- caches `-i` if the matched position's own cached value was already
+  nonzero (this is now the second link in a genuine repetition chain —
+  functionally a 3-fold, encoded via sign rather than a separate flag).
+
+`is_repetition(ply)` is then an O(1) lookup: `repetition != 0 &&
+(repetition as i64) < (ply as i64)`. A negative (chain) value is always
+`< ply` for any non-root ply, so it's always a draw regardless of where
+in the search tree it's noticed — a real 3-fold on the board is a real
+draw no matter what. A positive (first-repeat) value is only a draw if
+`ply` exceeds it — meaning the repeated position was reached via moves
+the search itself chose along the current branch, not purely inherited
+from real game history that predates the search root. This is the part
+the old implementation didn't have at all: it treated every repeat as
+an immediate draw regardless of whether the search could do anything
+about it, which could bias the search against a position it has no way
+to actually avoid.
+
+**Why `i=4`, not `2`**: a position cannot repeat after only 2 plies (one
+move by each side) in legal chess — every individual move is a real
+board change, so the shortest possible repetition cycle is 4 plies
+(e.g. each side shuffles a piece out and back). Matches Stockfish's own
+loop bounds exactly, confirmed against the real source before
+implementing.
+
+**Why no `pliesFromNull` bound (unlike Stockfish)**: checked Pet
+Dragon's null-move pruning (`alpha_beta.rs`) directly — it mutates
+`pos.hash`/`side_to_move` inline and never calls `push_game_history()`
+at all, so a null-move-derived position can never end up in
+`game_history` in the first place. Stockfish needs the extra bound
+because its null-move handling does touch the same StateInfo chain;
+Pet Dragon's design sidesteps the concern structurally rather than
+needing an equivalent guard.
+
+**Performance side-effect, not the primary motivation but real**: the
+old scan was unbounded O(game-length) on every single draw check
+(every node, every ply). The new one is O(halfmove_clock/2) amortized
+at push time and O(1) at every subsequent lookup — the same asymptotic
+improvement Stockfish gets from caching, for the same reason.
+
+**`is_threefold_repetition()` deliberately left alone**: still a plain
+count-of-3-or-more scan, ignoring the cached ply-relative value
+entirely. This is intentional — it's used for actual game-end
+adjudication (`match_runner`/`uci_match_runner`/`selfplay`/
+`texel_gen`'s stopping condition), where the literal rule matters, not
+what the search tree can currently see.
+
+**`set_game_history()` — dead code, fixed anyway**: has zero callers
+anywhere in the codebase (confirmed via grep before touching it), but
+its signature had to change regardless since the field type changed.
+Rewrote it to replay each hash through the same bounded-walk-and-cache
+logic `push_game_history()` uses, rather than leaving it broken or
+naively zeroing every cached value — correct behavior for whenever it
+might be used, even though nothing calls it today.
+
+**Real bug caught while writing the tests, not while writing the
+algorithm itself**: every rebuilt test initially forgot to push the
+*starting* position into `game_history` before making moves — matching
+how `iterative_deepening()` actually pushes the search root first in
+real usage, but easy to miss in an isolated test. Traced through the
+exact index arithmetic by hand for each affected test (`position/
+mod.rs`'s new direct unit tests, `alpha_beta.rs`'s integration test,
+and `tests/make_unmake.rs`'s five rebuilt tests) and confirmed the fix
+correctly reaches the intended backward distance in every case before
+trusting the expected values.
+
+**Also caught while rebuilding `alpha_beta.rs`'s integration test**:
+its original bare-K-vs-K test position would have triggered
+`is_insufficient_material()` before repetition detection ever got
+meaningfully exercised, since that test runs a real `alpha_beta`
+search (unlike `position/mod.rs`'s direct algorithm unit tests, which
+aren't affected by this). Fixed by giving each side a pawn positioned
+so it doesn't block the king-shuffle squares, so the test actually
+exercises what it claims to.
+
+**Verification gap, stated plainly**: `tests/make_unmake.rs` is a
+separate integration test crate that could NOT be locally compiled
+this session — same toolchain wall as every previous session's test
+work (a dev-dependency needs `edition2024`, this sandbox's rustc is
+1.75). Unlike the lib and the `pet_dragon` binary (both verified via
+the `--cfg test` workaround), this file has zero local verification
+beyond careful manual review — every index computation in its 5
+rebuilt tests was traced by hand rather than compiled. `cargo test`
+should specifically confirm this file's tests pass, not just the
+aggregate count, before treating this as done.
+
+**Rejected**: implementing Stockfish's additional "cuckoo table" O(1)
+upcoming-repetition detection (used for search extensions near likely-
+draw lines). That's a genuinely separate, more advanced feature — fast
+detection of a repetition reachable via a single further reversible
+move, used to bias search depth/extensions — not part of what was
+asked ("the 3-fold avoidance rule/logic"), and not implemented here.
