@@ -107,12 +107,16 @@ Bit N is set if the piece occupies square N.
 
 **Decision (D-01 from DP-01):** Moves are packed into a single `uint64`.
 
+Session 51 (D-87) widened the promotion field from 2 to 3 bits to make
+room for `PROMO_ROOK`, and shifted the flags field up by one bit as a
+result — see D-87 in DECISIONS.md for the rationale.
+
 ```
 Bits  0-5:   from_square  (0-63)
 Bits  6-11:  to_square    (0-63)
-Bits 12-13:  promotion    (0=none, 1=knight, 2=bishop, 3=queen)
-Bits 14-15:  flags        (0=normal, 1=castling, 2=en_passant, 3=reserved)
-Bits 16-63:  unused (Phase 1) — reserved for score in move ordering
+Bits 12-14:  promotion    (0=none, 1=knight, 2=bishop, 3=rook, 4=queen)
+Bits 15-16:  flags        (0=normal, 1=castling, 2=en_passant, 3=reserved)
+Bits 17-63:  unused — reserved for score in move ordering
 ```
 
 ```python
@@ -444,13 +448,12 @@ mode's low-thousands nps — roughly **50-150x**, depending on position and
 depth, not a single fixed multiplier.
 
 **Known limitations, honestly listed rather than hidden:**
-- **No rook underpromotion.** `engine.py` itself has no `PROMO_ROOK`
-  constant — the compiled move generator only ever produces Q/B/N
-  promotions. This is a pre-existing gap in `engine.py`, not something
-  introduced by the UCI wrapper; a GUI requesting `...=R` will find no
-  matching legal move and the position command silently stops applying
-  moves at that point. Vanishingly rare in practice (rook
-  underpromotion is almost never the correct choice), but real.
+- ~~**No rook underpromotion.**~~ Fixed Session 51 (D-87) — `engine.py`
+  now has a `PROMO_ROOK` constant, the compiled move generator produces
+  all four promotion choices, and both `run.py` (Python mode) and
+  `native/uci_main.cpp` (compiled UCI wrapper) round-trip `...=R` moves
+  correctly in both directions (parsing a GUI-supplied `e7e8r` and
+  formatting one in `bestmove`/`info pv` output).
 - **Mid-search time management uses a node-count budget, not a true
   wall-clock check (Session 49, D-85).** The iterative-deepening loop
   used to only check elapsed time *between* depths — if depth N's own

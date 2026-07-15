@@ -459,15 +459,37 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         257/257, reconfirmed forwards and reversed file order.
         `fastpy` 367/367 and `fastpy check engine.py` (zero errors)
         also reconfirmed as part of the same baseline pass.
-  - [ ] **NEXT UP:** no specific task queued. Options carried over from
-        Session 48 that are still open: reconcile the two search
-        drivers' windowing so they don't pick different moves on
-        near-equal positions, add `PROMO_ROOK` support to the move
-        generator (low value, real gap), or async UCI `stop` support
-        (needs the search moved to a background thread — a bigger
-        architecture change than this session's fix). Or move on to
-        something unrelated to search/UCI entirely. Needs a decision at
-        the start of next session.
+  - [x] **`PROMO_ROOK` support added (Session 51, see D-87)** — closes
+        the gap Session 48 found and documented. Widened the move
+        word's promotion field from 2 to 3 bits (bits 12-14, was
+        12-13) to fit a 5th value; shifted the flags field up to bits
+        15-16 accordingly. Added `PROMO_ROOK` generation to all 6
+        promotion move-gen call sites in `engine.py` (single/double
+        push and both capture directions, both colors), an explicit
+        `elif promo == PROMO_ROOK` branch in `make_move()` for both
+        colors (previously any non-NONE/QUEEN/KNIGHT promo silently
+        fell through to a bishop — now that gap is closed rather than
+        just left unreachable), and matching `'r'`-suffix support in
+        both `run.py`'s `_move_to_uci`/`_parse_uci_move` and the
+        hand-written `native/uci_main.cpp`'s `move_to_uci`/
+        `find_legal_move` (previously a documented dead branch that
+        deliberately never matched). Verified end-to-end against the
+        actual compiled native binary, not just the test suite: built
+        via `training/build_uci_engine.py`, fed
+        `position fen ... moves b7b8r` over real UCI stdin/stdout, and
+        confirmed the move was matched and applied (board correctly
+        flipped to black-to-move afterward) — the exact failure this
+        session closes. 8 new tests added to `test_move_gen.py`
+        covering move-gen choice count, the widened bit-encoding
+        round-trip, and the UCI string round-trip. Full suite 265/265
+        (257 + 8 new), `fastpy check engine.py` zero errors.
+  - [ ] **NEXT UP:** no specific task queued. Options still open:
+        reconcile the two search drivers' windowing so they don't pick
+        different moves on near-equal positions, or async UCI `stop`
+        support (needs the search moved to a background thread — a
+        bigger architecture change). Or move on to something unrelated
+        to search/UCI entirely. Needs a decision at the start of next
+        session.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

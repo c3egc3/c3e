@@ -2261,3 +2261,73 @@ restriction there.
   like an uncommitted/unpushed change than a fabricated claim, though
   the actual cause wasn't independently determined and isn't asserted
   as fact.
+
+## D-87: `PROMO_ROOK` added — widened the move word's promotion field
+  from 2 to 3 bits (Session 51)
+
+  Closed a real, previously-documented gap: Session 48 (D-84) found and
+  wrote up that `engine.py` had no `PROMO_ROOK` constant, so the
+  compiled move generator only ever produced queen/bishop/knight
+  promotions, and `native/uci_main.cpp`'s `find_legal_move()` had a
+  dead branch (`want_promo = -1`) that could never match a GUI-supplied
+  `...=r` move. Picked this up as this session's task, chosen over the
+  other two carried-over options (search-driver windowing reconciliation,
+  async UCI `stop`) as the smallest, most self-contained real gap with
+  no architecture change required.
+
+  **Why 2 bits didn't have room:** the original layout used values
+  0-3 (`PROMO_NONE`/`PROMO_KNIGHT`/`PROMO_BISHOP`/`PROMO_QUEEN`) — all
+  four values a 2-bit field can hold were already spoken for. Adding a
+  5th value meant widening the field to 3 bits (values 0-7), which in
+  turn meant shifting the adjacent flags field up by one bit (bits
+  14-15 → 15-16) to avoid the two fields overlapping. `move_from`/
+  `move_to` (bits 0-11) are untouched. Total move-word width stayed
+  well inside `uint64` (17 bits used out of 64, same as before — the
+  comment reserving bits 16-63/17-63 for a future move-ordering score
+  was already generous).
+
+  **Every call site touched, checked by grep before assuming
+  complete:** the promotion move-gen call sites (6 total — single push,
+  double... actually single/double-push-adjacent capture-west,
+  capture-east, ×2 colors — each previously generating 3 moves per
+  promoting pawn move, now 4); `make_move()`'s promo-piece-placement
+  branches for both colors (previously `else: ... white_bishops ...`
+  silently absorbed any non-NONE/QUEEN/KNIGHT code — now
+  `PROMO_ROOK` gets its own explicit branch, closing the actual bug
+  class D-61/D-65/D-86 keep finding: a catch-all `else` that looks like
+  a deliberate default but is really an unhandled case); `run.py`'s
+  `_move_to_uci`/`_parse_uci_move` (Python-mode UCI I/O); and
+  `native/uci_main.cpp`'s `move_to_uci`/`find_legal_move` (the compiled
+  UCI wrapper — this is where the gap was originally *found*, in
+  Session 48, but not fixed then since `engine.py` itself lacked the
+  constant it would have needed to reference).
+  `mvv_lva()`/`is_quiet_move()`/`make_move_with_accumulator()`
+  (NNUE incremental accumulator) were checked and confirmed to need no
+  change — the first two don't branch on promo piece type at all, and
+  the accumulator update is a generic bitboard diff that picks up the
+  new `white_rooks`/`black_rooks` change automatically once
+  `make_move()` itself is correct.
+
+  **Verification, not just "tests pass":** beyond the 265/265 suite
+  (257 existing + 8 new, covering move-gen choice count, the widened
+  bit-encoding round-trip in isolation, and the UCI string round-trip),
+  this session built the actual native binary via
+  `training/build_uci_engine.py` and drove it over real UCI stdin/stdout
+  with `position fen ... moves b7b8r` — confirming `find_legal_move()`
+  now matches and applies the move (board correctly flips to
+  black-to-move afterward) instead of silently discarding it, which is
+  the exact end-user-visible failure this session set out to close.
+  Existing perft baselines (startpos depths 1-4, Kiwipete depths 1-3)
+  were confirmed unaffected before making any change — none of those
+  reference positions has a pawn within a few plies of rank 7/8 → 1/8,
+  so the missing 4th promotion choice was never actually exercised by
+  the existing perft regression suite, which is itself worth noting: a
+  real correctness gap this size can sit in a perft-tested move
+  generator indefinitely if perft's reference positions don't happen to
+  reach the affected code path.
+
+  **Documentation:** `ENGINE_ARCHITECTURE.md`'s move-encoding bit-layout
+  diagram updated for the new field widths, and its "Known limitations"
+  entry for this gap struck through with a note pointing to this
+  decision, rather than deleted outright — keeping the historical record
+  that the limitation existed and was found before it was fixed.

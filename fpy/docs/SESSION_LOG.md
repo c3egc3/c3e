@@ -4,6 +4,78 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 51 — `PROMO_ROOK` added, closing the gap Session 48 found and documented
+**Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
+`fastpy-engine/native/uci_main.cpp`, `fastpy-engine/tests/test_move_gen.py`
+changed; `docs/DECISIONS.md` (D-87), `docs/ROADMAP.md`,
+`docs/ENGINE_ARCHITECTURE.md`, this file updated.
+
+### Task chosen
+Session 50 (baseline-recovery only, no feature work) left three
+carried-over options open. Picked `PROMO_ROOK`: smallest, most
+self-contained real gap, no architecture change required, already
+documented in detail by Session 48 (D-84) when it was first found.
+
+### What changed
+- **Bit layout:** promotion field widened 2→3 bits (bits 12-14, was
+  12-13) to fit a 5th value (`PROMO_NONE=0, KNIGHT=1, BISHOP=2, ROOK=3,
+  QUEEN=4`); flags field shifted up to bits 15-16 accordingly.
+  `move_from`/`move_to` untouched.
+- **`engine.py`:** all 6 promotion move-gen call sites now emit a
+  `PROMO_ROOK` choice alongside Q/N/B; `make_move()` gained an explicit
+  `elif promo == PROMO_ROOK` branch for both colors (closing the
+  catch-all-`else`-silently-defaults-to-bishop gap, the same bug shape
+  D-61/D-65/D-86 keep finding).
+- **`run.py`:** `_move_to_uci`/`_parse_uci_move` gained `'r'`
+  suffix support.
+- **`native/uci_main.cpp`:** `move_to_uci`/`find_legal_move` — the
+  dead `want_promo = -1` branch Session 48 documented is now a real
+  `PROMO_ROOK` match.
+- Checked and confirmed no change needed: `mvv_lva()`, `is_quiet_move()`
+  (neither branches on promo piece type), `make_move_with_accumulator()`
+  (generic bitboard diff, picks up the new rook placement automatically).
+
+### Verification
+- `fastpy check engine.py` — zero errors.
+- Full `fastpy-engine` suite — **265/265** (257 existing + 8 new tests
+  in `test_move_gen.py`: move-gen choice count for white/black, the
+  widened bit-encoding round-trip in isolation, flag-field isolation
+  after the shift, UCI string round-trip, and a `generate_legal_moves`-
+  level position check).
+- Existing perft baselines (startpos 1-4, Kiwipete 1-3) confirmed
+  unaffected — none of those reference positions reach a pawn-near-
+  promotion state, so this gap was never exercised by the perft suite
+  at all; worth remembering next time perft "passing" is read as "move
+  generation is correct" — it only covers positions perft's reference
+  values actually reach.
+- **End-to-end, not just unit tests:** built the real native binary via
+  `training/build_uci_engine.py` and drove it over actual UCI stdin/
+  stdout with `position fen 8/1P6/8/8/8/2k5/8/2K5 w - - 0 1 moves b7b8r`
+  — confirmed `find_legal_move()` matched and applied the move (board
+  correctly flipped to black-to-move on the next `go`), the exact
+  failure mode this session closes. Build artifacts (binary, combined
+  `.cpp`) not committed — local verification only.
+
+### Not done this session
+Search-driver windowing reconciliation and async UCI `stop` remain the
+two open carried-over options; still need a decision at the start of
+the next session.
+
+**Files changed:**
+- `fastpy-engine/engine.py` — `PROMO_ROOK` constant, widened bit
+  layout, move-gen + `make_move()` updates
+- `fastpy-engine/run.py` — UCI string round-trip for `'r'` suffix
+- `fastpy-engine/native/uci_main.cpp` — `move_to_uci`/`find_legal_move`
+  fixed to actually handle rook promotion
+- `fastpy-engine/tests/test_move_gen.py` — 8 new tests
+- `docs/DECISIONS.md` — D-87
+- `docs/ROADMAP.md` — `PROMO_ROOK` item marked done; NEXT UP updated
+- `docs/ENGINE_ARCHITECTURE.md` — move-encoding bit diagram updated;
+  "no rook underpromotion" limitation struck through with a pointer to
+  D-87
+
+---
+
 ## Session 50 — baseline verification caught Session 49's `run.py` mirror, which was logged as shipped but never committed
 **Status:** COMPLETE ✅ — `fastpy-engine/run.py` changed; `docs/DECISIONS.md`
 (D-86), `docs/ROADMAP.md`, this file updated. `engine.py` untouched
