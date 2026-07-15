@@ -4,6 +4,138 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 49 — native UCI mid-search time management, and a rejected first design
+**Status:** COMPLETE ✅ — `engine.py`, `run.py`, `native/uci_main.cpp`,
+`training/build_uci_engine.py`, `tests/test_node_budget.py` (NEW) changed;
+`docs/DECISIONS.md` (D-85), `docs/ROADMAP.md`, this file updated
+
+### Picked up Session 48's open item
+Gokul delegated the choice among Session 48's four listed options; picked
+"tighten the native UCI driver's time management" — the one with real
+practical risk (an engine that can blow its clock budget by multiple
+seconds isn't safe for actual timed games) and the most self-contained
+scope (touches `native/uci_main.cpp` + a small `engine.py` addition, not
+`engine.py`'s dialect surface in any deep way).
+
+### First design built, tested, and rejected — a genuine data race
+Initial approach: a background watchdog thread in `uci_main.cpp` sleeps
+until the deadline, then sets a shared `SEARCH_STOP` flag; compiled
+`alpha_beta()`/`quiescence()` poll it periodically and unwind. Built this
+completely (including a condition-variable-based early-wake mechanism)
+and tested it directly against the exact overshoot scenario from Session
+48 — **it didn't work**. A depth ran to full completion (850K+ nodes)
+regardless of the flag. Root-caused with a minimal 15-line standalone
+repro (a tight `while (FLAG[0] == 0)` loop with a second thread setting
+`FLAG[0]=1` after 200ms) — it hung forever at `-O3`. This is correct
+compiler behavior, not a bug in GCC: a plain (non-atomic) global written
+by one thread and read by another without synchronization is a data race
+under the C++ memory model, and the standard permits the optimizer to
+assume it never changes. Fixing this properly would need the read side
+(FastPy-emitted `engine.cpp`) declared `volatile`/atomic, which isn't
+something the emitter can special-case for one array without a real
+transpiler feature (Core Rule 5 keeps it from special-casing individual
+globals) — out of scope for this session. Documented as a rejected
+design rather than silently discarded, since the next person to touch
+this shouldn't have to rediscover why a "thread sets a flag" approach
+looks reasonable but doesn't actually work here.
+
+### What shipped instead: a node-count budget, no threading at all
+`engine.py` gained `NODE_BUDGET: uint64[1]` +
+`node_budget_clear()`/`node_budget_set()`/`node_budget_exceeded()`,
+mirroring the existing `NODE_COUNT`/`nodes_reset()`/`nodes_get()`
+convention. The budget is written exactly **once** per depth, by the
+single thread already driving the search (`uci_main.cpp`'s `go()`,
+before calling `find_best_move()` for that depth) — never touched by any
+other thread while that depth's search is in flight. No concurrent
+write, so no data race to reason about; ordinary non-atomic reads inside
+`alpha_beta()`/`quiescence()` are fully well-defined. `find_best_move()`'s
+root loop always trusts move 0's result (guarantees a real legal move is
+returned even under a near-zero budget) and discards any later move
+whose own search was interrupted, rather than letting a partial/
+unreliable score overwrite an earlier fully-searched move — mirrored
+identically in `run.py`'s `_alpha_beta_py`/`_quiescence_py`/
+`_find_best_move_py` per the project's "Python mirrors must stay
+behaviourally identical" convention, though Python-mode never actually
+calls `node_budget_set()` so this is a no-op there by design.
+
+### A real bug caught mid-session: the safety margin was backwards
+First cut of `uci_main.cpp`'s per-depth budget computation multiplied
+the projected node budget by a 2x "safety multiplier," reasoning it
+would avoid stopping too early. Measured result: a 500ms budget ran to
+730ms — **worse than doing nothing would have implied**, and exactly
+the overshoot this feature exists to prevent. The fix was catching the
+backwards logic: `node_budget_exceeded()` is checked on essentially
+every node (fine-grained), so there's no coverage reason to pad the
+budget upward — doing so just directly inflates the deadline. Replaced
+with a `kBudgetFraction = 0.9` (shrinks the projection, leaving headroom
+below the deadline) instead of a multiplier that grows it. Re-measured
+after the fix: 500ms→484ms, 1000ms→1005ms, 2000ms→1919ms, and a 50ms
+stress case→55ms. All close to budget; none overshoot by anywhere near
+a full depth like the pre-session baseline did (a 500ms budget was
+previously observed producing an 892ms run in this session's own
+before/after comparison, before the fix collapsed that to 451-484ms
+range across repeated runs).
+
+### Verification
+- `go depth N` (no time limit) reconfirmed byte-identical output to
+  pre-session (`b1c3` at depth 1, same nodes/score at every depth up to
+  8) — the budget mechanism is inert when `movetime_ms <= 0`.
+- Near-zero budget (`movetime 50`) still always returns a real legal
+  move, never `bestmove 0000`.
+- `fastpy check engine.py` — zero errors. `fastpy emit` +
+  direct `g++ -O3` compile — clean (~110-150s, matches the established
+  GCC-pathology-on-this-file estimate from D-75/D-79/D-80/D-81).
+- 14 new tests in `tests/test_node_budget.py` covering the budget
+  primitives, search unwind behavior, root-loop guarding, and TT-
+  pollution avoidance for an aborted depth.
+- Full suite: **257/257** (243 baseline + 14 new), all passing.
+- Along the way, the new test file exposed (didn't introduce) a
+  pre-existing test-isolation gap: `test_phase4.py`'s
+  `test_depth0_returns_qsearch` implicitly depended on the TT being
+  empty via pytest's alphabetical file execution order, not its own
+  `setup_method` — broke once `test_node_budget.py` (sorts before
+  `test_phase4.py`) left a same-hash TT entry behind from an earlier
+  real-search test. Root-caused correctly (bisected by running file
+  pairs in isolation) before fixing — fixed by giving the new file's
+  search-running test classes their own `teardown_method`s rather than
+  touching `test_phase4.py`, and reconfirmed order-independence by
+  running the suite forwards, reversed, and interleaved with
+  `test_uci.py`.
+
+### Still open, noted honestly rather than silently
+Async UCI `stop` (a GUI sending `stop` while a search is actually in
+flight) remains unimplemented — this session's fix only bounds a *time
+budget* expiring during search; the main loop still can't notice an
+explicit `stop` command arriving mid-search, since it's blocked
+synchronously inside `go()` and not polling stdin. Documented directly
+in `uci_main.cpp`'s comment: real async stop needs the search itself
+moved to a background thread with the main loop continuing to read
+stdin — a bigger architecture change, not attempted here.
+
+**Files changed:**
+- `fastpy-engine/engine.py` — `NODE_BUDGET` global +
+  `node_budget_clear()`/`node_budget_set()`/`node_budget_exceeded()`;
+  `quiescence()`/`alpha_beta()` poll `node_budget_exceeded()` after the
+  node-count increment; `find_best_move()`'s root loop guards against an
+  aborted depth corrupting the chosen move, and skips the TT store when
+  aborted
+- `fastpy-engine/run.py` — mirrors the above in `_alpha_beta_py`/
+  `_quiescence_py`/`_find_best_move_py`; `NODE_BUDGET` sized for
+  Python mode alongside `NODE_COUNT`
+- `fastpy-engine/native/uci_main.cpp` — `go()` computes a per-depth node
+  budget from running nodes/sec × remaining time (× 0.9 headroom
+  fraction), calls `node_budget_set()` before each depth when a deadline
+  exists; no threading (the watchdog-thread design was built, tested,
+  and reverted within this session — see above)
+- `fastpy-engine/training/build_uci_engine.py` — `-pthread` added then
+  removed (only needed for the reverted threaded design)
+- `fastpy-engine/tests/test_node_budget.py` — NEW, 14 tests
+- `docs/DECISIONS.md` — D-85
+- `docs/ROADMAP.md` — Session 48's NEXT UP item checked off, this
+  session's work added, new NEXT UP written
+
+---
+
 ## Session 48 — native UCI play: real gameplay at compiled speed, not just Python mode
 **Status:** COMPLETE ✅ — new `fastpy-engine/native/uci_main.cpp`,
 `fastpy-engine/training/build_uci_engine.py`; `docs/ENGINE_ARCHITECTURE.md`

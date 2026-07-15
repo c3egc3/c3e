@@ -396,14 +396,61 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         something this session introduced. `engine.py` and
         `training/generate_data.py` unchanged; full 243/243 suite
         re-verified unchanged afterward.
-  - [ ] **NEXT UP:** no specific task queued. Options worth considering:
-        tighten the native UCI driver's time management (mid-search time
-        checks, not just between-depth), reconcile the two search
+  - [x] Native UCI mid-search time management (Session 49, see D-85) —
+        picked up Session 48's "tighten the native UCI driver's time
+        management" option. First design (a watchdog thread setting a
+        shared flag for the compiled search to poll) was built, tested,
+        and **rejected** — direct testing proved it doesn't reliably
+        work: a plain (non-atomic) global written by one thread and read
+        inside a hot recursive loop by another is a data race, and GCC's
+        `-O3` optimizer is legally free to cache that read and never
+        observe the write (confirmed with a minimal standalone repro
+        that hung forever, and the real build showing a depth run to
+        full completion, ignoring the flag). Shipped instead: a
+        node-count budget (`NODE_BUDGET`/`node_budget_set()`/
+        `node_budget_exceeded()` in `engine.py`) set exactly once per
+        depth by the single thread driving the search, before
+        `find_best_move()` starts — no concurrent write during search,
+        so no data race by construction. `native/uci_main.cpp`'s `go()`
+        computes each depth's budget from the running average nodes/sec
+        so far × remaining time (a genuine bug caught and fixed during
+        this session: the first cut multiplied the projection by a 2x
+        "safety" factor meant to avoid stopping early, which instead
+        directly reproduced the overshoot — 500ms measured at 730ms —
+        fixed by using a 0.9 fraction to leave headroom instead).
+        Measured after the fix: 500ms→484ms, 1000ms→1005ms,
+        2000ms→1919ms, and a 50ms stress case→55ms — all close to
+        budget, none overshooting by anywhere near a full depth, and a
+        near-zero budget still always returns a real legal move (never
+        `bestmove 0000`). `go depth N` (no time limit) reconfirmed
+        byte-identical to pre-session output. `run.py`'s Python-mode
+        mirrors (`_alpha_beta_py`/`_quiescence_py`/`_find_best_move_py`)
+        updated identically per the "must stay behaviourally identical"
+        convention, though nothing in Python-mode ever calls
+        `node_budget_set()` so this is a no-op there by design. 14 new
+        tests in `tests/test_node_budget.py`; also fixed a test-isolation
+        bug the new file exposed (not introduced) — `test_phase4.py`'s
+        `test_depth0_returns_qsearch` implicitly relied on the TT being
+        empty via test *file execution order* rather than its own
+        `setup_method`, which broke once a same-hash TT entry from an
+        earlier-sorted file was left behind; fixed by giving the new
+        file's search-running test classes proper `teardown_method`s
+        instead of touching `test_phase4.py`. Full suite: 257/257
+        (243 baseline + 14 new), reconfirmed order-independent (ran
+        forwards, reversed, and interleaved with other files). Async UCI
+        `stop` (mid-search, from the GUI) remains unimplemented — noted
+        honestly in `uci_main.cpp`'s comment as a real limitation needing
+        a bigger architecture change (search on a background thread with
+        the main loop still polling stdin), not attempted this session.
+  - [ ] **NEXT UP:** no specific task queued. Options carried over from
+        Session 48 that are still open: reconcile the two search
         drivers' windowing so they don't pick different moves on
         near-equal positions, add `PROMO_ROOK` support to the move
-        generator (low value, real gap), or move on to something
-        unrelated to search/UCI entirely. Needs a decision at the start
-        of next session.
+        generator (low value, real gap), or async UCI `stop` support
+        (needs the search moved to a background thread — a bigger
+        architecture change than this session's fix). Or move on to
+        something unrelated to search/UCI entirely. Needs a decision at
+        the start of next session.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

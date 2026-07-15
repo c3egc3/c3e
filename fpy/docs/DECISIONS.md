@@ -2058,3 +2058,138 @@ restriction there.
 
   **`engine.py` and `training/generate_data.py` unchanged this session**
   — this was a build-tooling/wrapper addition only.
+
+## D-85: mid-search time management via a node-count budget, after a
+  watchdog-thread design was built, tested, and rejected for being a
+  genuine data race (Session 49)
+
+  Picked up Session 48's "tighten the native UCI driver's time
+  management" as the highest-value open item — the one with real
+  practical risk (blowing the clock budget by seconds isn't safe for
+  actual timed games) among the four options that session left queued.
+
+  **First design, and why it was rejected:** a background watchdog
+  thread in `native/uci_main.cpp` sleeps until the deadline, then sets a
+  shared `SEARCH_STOP` flag; the compiled `alpha_beta()`/`quiescence()`
+  poll it periodically (piggybacking on the existing `NODE_COUNT`
+  increment) and unwind early. This was built completely, including a
+  `condition_variable`-based early-wake mechanism so a fast depth-1 mate
+  wouldn't leave `go()` blocked for the full budget. Direct testing
+  against the exact overshoot scenario this was meant to fix showed it
+  simply doesn't work: a depth ran to full completion (850K+ nodes)
+  regardless of the flag having been set partway through. Root-caused
+  with a minimal 15-line standalone repro — a tight
+  `while (FLAG[0] == 0) { i++; }` loop, with a second thread setting
+  `FLAG[0] = 1` after 200ms — which hung forever when compiled at `-O3`.
+  This is correct, standard-conforming compiler behavior, not a GCC bug:
+  a plain (non-atomic) global written by one thread and read by another
+  without synchronization is a data race under the C++ memory model, and
+  the "as-if" rule permits the optimizer to treat it as invariant across
+  the loop, caching the read in a register and never reloading it. The
+  same reasoning applies inside `alpha_beta()`'s recursion once GCC's
+  whole-translation-unit view (engine.cpp and uci_main.cpp are
+  concatenated into one file, see D-84) can prove nothing in the visible
+  call graph from `find_best_move()` writes `SEARCH_STOP`.
+
+  Fixing this properly would mean declaring the read side
+  `volatile`/`std::atomic` — but that read is FastPy-emitted code
+  (`SEARCH_STOP: uint64[1] = []` in `engine.py`, emitted as a plain
+  `uint64_t[1]`), and the emitter has no mechanism to mark one specific
+  global specially without a real transpiler feature (a new type
+  qualifier concept touching `core/parser.py`/`core/type_system.py`/
+  `core/emitter.py` in the `fastpy` repo). Core Rule 5 ("the emitter
+  does zero analysis") also argues against special-casing one array's
+  emission. That's a legitimate feature, but a multi-session one — not
+  something to squeeze into "tighten time management." Documented as a
+  rejected design rather than silently discarded: the next person
+  reaching for "spawn a thread that sets a flag" as the obvious fix for
+  this problem should find this entry first.
+
+  **What shipped instead:** `NODE_BUDGET: uint64[1]` in `engine.py`,
+  with `node_budget_clear()`/`node_budget_set()`/`node_budget_exceeded()`
+  mirroring the existing `NODE_COUNT`/`nodes_reset()`/`nodes_get()`
+  convention. The critical difference from `SEARCH_STOP`: the budget is
+  written exactly **once** per depth, by the single thread already
+  driving the search, before `find_best_move()` is called for that
+  depth — never touched by any other thread while that depth's search
+  is in flight. There is no concurrent write to race against, so this
+  is genuinely single-threaded as far as the C++ memory model is
+  concerned, not merely "usually fine in practice" the way the flag
+  design looked before testing exposed it. `find_best_move()`'s root
+  loop always trusts move 0 (guarantees a real legal move is returned
+  even under a near-zero budget, never an illegal `bestmove 0000` for a
+  position that has legal moves) and discards any later move whose own
+  search was interrupted mid-flight rather than letting an unreliable
+  partial score overwrite an earlier fully-searched move's result; the
+  TT store is skipped entirely for an aborted depth (its result is real
+  but not the EXACT full-width search a stored entry implies).
+  `run.py`'s Python mirrors updated identically, though nothing in
+  Python-mode ever calls `node_budget_set()` — this is a no-op there by
+  design, keeping `_iterative_deepening_py`'s existing between-depths-
+  only behavior unchanged.
+
+  **A real bug caught and fixed within this same session:**
+  `uci_main.cpp`'s `go()` computes each depth's node budget from the
+  running average nodes/sec so far × remaining time. The first cut
+  multiplied that projection by a 2x "safety margin," reasoning it would
+  avoid stopping too early. Measured result: a 500ms budget ran to
+  730ms — worse than doing nothing, and precisely the overshoot this
+  feature exists to prevent. The reasoning was backwards:
+  `node_budget_exceeded()` is checked on essentially every node (very
+  fine-grained), so there's no coverage gap to pad for by inflating the
+  budget — doing so just directly extends the deadline. Replaced the
+  multiplier with a `kBudgetFraction = 0.9` that shrinks the projection
+  instead, leaving headroom below the deadline for the next depth's
+  per-node cost to run a little hotter than the running average without
+  blowing the budget. Re-measured after the fix: 500ms→484ms,
+  1000ms→1005ms, 2000ms→1919ms, 50ms (stress case)→55ms — none
+  overshooting by anywhere near a full depth the way the pre-session
+  between-depths-only check could (Session 48 observed an 8,601ms run
+  on a 2,400ms budget; this session's own pre-fix build measured
+  730-916ms on a 500ms budget before the fix brought it to 451-484ms).
+
+  **Honest limitation carried forward, not fixed here:** this is a
+  node-count *estimate* of remaining time, not a true wall-clock check —
+  FastPy has no clock access (Core Rule 6), so it can't be one without
+  the same transpiler feature the rejected watchdog design would have
+  needed. A depth whose per-node cost differs sharply from the running
+  average (a sudden tactical blowup, say) can still miss the estimate
+  by more than the 0.9 headroom accounts for. What this reliably fixes
+  is the previous *unbounded* case — a depth could run to completion no
+  matter how long that took; now it always polls a ceiling that's
+  already below the naive "just let it finish" behavior.
+
+  **Also still open:** async UCI `stop` (a GUI sending `stop` while a
+  search is actually in flight) remains unimplemented. This session's
+  fix only bounds a *time budget* expiring during search; the main loop
+  is still blocked synchronously inside `go()` and not polling stdin, so
+  it can't notice an explicit `stop` arriving mid-search. Noted directly
+  in `uci_main.cpp`'s comment: real async stop needs the search itself
+  moved to a background thread with the main loop continuing to read
+  stdin — a bigger architecture change, a natural candidate for a future
+  session, not attempted here.
+
+  **Verification:** `fastpy check engine.py` zero errors; `fastpy emit`
+  + direct `g++ -O3` compile clean (~110-150s, matching the established
+  GCC-pathology estimate from D-75/D-79/D-80/D-81); `go depth N` (no
+  time limit) reconfirmed byte-identical to pre-session output at every
+  depth; 14 new tests in `tests/test_node_budget.py`; full suite
+  257/257 (243 baseline + 14 new), reconfirmed order-independent after
+  the new file exposed (see below) a pre-existing test-isolation gap.
+
+  **A pre-existing bug the new tests exposed, not introduced:**
+  `test_phase4.py`'s `test_depth0_returns_qsearch` implicitly depended
+  on the TT being empty via pytest's alphabetical file-execution order
+  rather than its own `setup_method` calling `reset_tt()` — this had
+  always been fragile, it just happened to never break before, because
+  no earlier-sorted test file left a TT entry at the exact starting-
+  position hash. `test_node_budget.py` (sorts before `test_phase4.py`)
+  does run real searches from the starting position, and initially
+  broke this assumption. Root-caused correctly before fixing — bisected
+  by running specific test-file pairs and specific test classes in
+  isolation until the exact culprit was found, rather than guessing —
+  and fixed by giving the new file's search-running test classes their
+  own `teardown_method`s (leaving no residue for whatever runs next)
+  instead of touching `test_phase4.py`, which was out of scope for this
+  session. Reconfirmed order-independence afterward: full suite passes
+  forwards, reversed, and interleaved with `test_uci.py`.

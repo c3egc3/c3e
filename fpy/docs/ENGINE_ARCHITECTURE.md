@@ -451,15 +451,35 @@ depth, not a single fixed multiplier.
   matching legal move and the position command silently stops applying
   moves at that point. Vanishingly rare in practice (rook
   underpromotion is almost never the correct choice), but real.
-- **Time management can overshoot by up to one full depth.** The
-  iterative-deepening loop only checks elapsed time *between* depths,
-  not during a depth's search — so if depth N's search itself takes
-  longer than the remaining budget, it still runs to completion before
-  the loop notices and stops. Seen directly in testing: a 2,400ms
-  budget (from `wtime 60000`) produced an 8,601ms depth-11 iteration.
-  Fine for casual/engine-vs-engine play with generous time controls;
-  would need a proper mid-search time check (or a node-count budget) for
-  tournament-strength time management.
+- **Mid-search time management uses a node-count budget, not a true
+  wall-clock check (Session 49, D-85).** The iterative-deepening loop
+  used to only check elapsed time *between* depths — if depth N's own
+  search took longer than the remaining budget, it ran to completion
+  regardless (seen directly: a 2,400ms budget produced an 8,601ms
+  depth-11 iteration). Fixed via a `NODE_BUDGET` computed once per depth
+  from the running average nodes/sec so far × remaining time (with a
+  0.9 headroom fraction), checked inside `alpha_beta()`/`quiescence()`
+  on essentially every node. Measured after the fix: 500ms→484ms,
+  1000ms→1005ms, 2000ms→1919ms — no more full-depth overshoots. Still
+  an *estimate*, not a hard guarantee: FastPy has no clock access (Core
+  Rule 6), so this is a proxy via node count, and a depth whose per-node
+  cost jumps sharply above the running average (a sudden tactical
+  blowup) can still miss the estimate by more than the headroom
+  accounts for. A wall-clock-flag design (a watchdog thread) was tried
+  first and rejected — it's a genuine C++ data race (a plain global
+  written by one thread and read in a hot loop by another can be cached
+  by the optimizer and never observed to change; confirmed with a
+  minimal repro that hung forever at `-O3`) — see D-85 for the full
+  writeup of why that approach doesn't work here.
+- **No async `stop` support.** A GUI sending `stop` while a search is
+  actually in flight has no effect until the current `go()` call
+  returns on its own — the main loop is blocked synchronously inside
+  `go()` and isn't polling stdin, so it can't notice the command
+  arriving. This is separate from the node-budget fix above (which
+  bounds a *time budget* expiring during search, not an explicit `stop`
+  command). Fixing it needs the search itself moved to a background
+  thread with the main loop continuing to read stdin — a bigger
+  architecture change, not attempted yet.
 - **Best move can differ from Python mode's choice in near-equal
   positions.** E.g. the standing tactical-FEN benchmark: Python mode
   picks `f3g5`, the native binary picks `b1c3`, at depth 5, with scores
