@@ -4,6 +4,80 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 50 — baseline verification caught Session 49's `run.py` mirror, which was logged as shipped but never committed
+**Status:** COMPLETE ✅ — `fastpy-engine/run.py` changed; `docs/DECISIONS.md`
+(D-86), `docs/ROADMAP.md`, this file updated. `engine.py` untouched
+(already correct).
+
+### `Go`-trigger baseline check found a real gap immediately
+Per the ROADMAP.md PROCESS item (added after D-61/D-65), this session
+opened by pulling both repos fresh via `codeload.github.com` and running
+the full test suite against `main` before trusting anything in
+SESSION_LOG.md's Session 49 entry. `fastpy` passed clean (367/367,
+`fastpy check engine.py` zero errors). `fastpy-engine` did not:
+`tests/test_node_budget.py` failed all 14 tests with
+`AttributeError: module 'run' has no attribute 'node_budget_clear'`.
+
+### Root cause
+Session 49's SESSION_LOG entry lists `fastpy-engine/run.py` under "Files
+changed," describes the mirrored `node_budget_clear`/`set`/`exceeded`
+logic in detail, and claims "full suite 257/257." `grep -n "node_budget"
+run.py` against the actual committed file returned zero matches —
+`engine.py` had the complete, correct Session 49 implementation;
+`run.py`'s mirror simply wasn't there. Same failure shape as D-61
+(Sessions 24-26) and D-65 (Session 30): a change described as complete
+in the log was never actually landed on `main`. Cause not independently
+determined beyond "the committed file doesn't match the log" — not
+asserting the tests didn't really pass at some point in Session 49,
+just that whatever passed then isn't what's on `main` now.
+
+### Fix
+Added the missing mirror to `run.py`, matching `engine.py` exactly:
+- Imported `node_budget_clear`, `node_budget_set`, `node_budget_exceeded`
+  from `engine` in the top-level import block.
+- `_engine_module.NODE_BUDGET = [0]` added alongside the existing
+  `NODE_COUNT` Python-mode array-sizing fix-up (both start as `[]` under
+  FastPy's zero-init convention and need real sizing to be indexable
+  from plain Python).
+- `_quiescence_py` and `_alpha_beta_py` both gained a
+  `node_budget_exceeded()` check immediately after the node-count
+  increment, returning `alpha` unchanged — line-for-line the same shape
+  as `engine.py`'s `quiescence()`/`alpha_beta()`.
+- `_find_best_move_py`'s root loop was rewritten from a plain
+  `for m in ordered` into an `enumerate`-based loop matching
+  `engine.py`'s move-0-trust guard: don't start a new root move once a
+  prior move already blew the budget, always trust move 0 regardless
+  (guarantees a real legal move is returned even under a near-zero
+  budget), and skip the TT store entirely when the depth was aborted
+  (an incomplete root scan isn't a true full-width `TT_EXACT` result).
+
+### Verification
+- `fastpy check engine.py` — zero errors (engine.py untouched).
+- `python -m pytest tests/` in `fastpy-engine` — **257/257**, matching
+  the count Session 49 originally claimed.
+- Re-ran the full suite in an explicit reversed file order
+  (`test_uci.py` → ... → `test_move_gen.py`) — still 257/257, no
+  order-dependency residue, the same class of check D-85 itself added
+  after finding a real order-dependency bug.
+- `fastpy` suite re-confirmed 367/367 against the same fresh pull.
+
+### Not done this session
+No new feature work — Session 48's carried-over options (search-driver
+windowing reconciliation, `PROMO_ROOK`, async UCI `stop`) are still open
+and still need a decision at the start of the next session. This session
+was entirely baseline-recovery, the same category as D-65's Session 30.
+
+**Files changed:**
+- `fastpy-engine/run.py` — node-budget mirror added (imports, `NODE_BUDGET`
+  sizing, `_quiescence_py`/`_alpha_beta_py` budget checks,
+  `_find_best_move_py` root-loop rewrite)
+- `docs/DECISIONS.md` — D-86
+- `docs/ROADMAP.md` — Session 49's `run.py`-mirror line item corrected
+  from claimed-done to actually-done-now; NEXT UP unchanged (still
+  needs a decision next session)
+
+---
+
 ## Session 49 — native UCI mid-search time management, and a rejected first design
 **Status:** COMPLETE ✅ — `engine.py`, `run.py`, `native/uci_main.cpp`,
 `training/build_uci_engine.py`, `tests/test_node_budget.py` (NEW) changed;

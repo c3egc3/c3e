@@ -442,6 +442,23 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         honestly in `uci_main.cpp`'s comment as a real limitation needing
         a bigger architecture change (search on a background thread with
         the main loop still polling stdin), not attempted this session.
+  - [x] **Baseline regression found and fixed (Session 50, see D-86)** —
+        `Go`-trigger baseline check (per the PROCESS item below) found
+        Session 49's claimed `run.py` node-budget mirror was never
+        actually committed: `tests/test_node_budget.py` failed 14/14
+        with `AttributeError: module 'run' has no attribute
+        'node_budget_clear'` against fresh `main`, despite
+        SESSION_LOG.md listing `run.py` as changed and claiming
+        257/257 passing. Fixed by adding the missing mirror to
+        `run.py`: `node_budget_clear`/`set`/`exceeded` imported from
+        `engine`, `NODE_BUDGET` sized for Python mode, budget checks
+        added to `_quiescence_py`/`_alpha_beta_py`, and
+        `_find_best_move_py`'s root loop rewritten to match
+        `engine.py`'s move-0-trust guard and conditional TT store.
+        `engine.py` itself was untouched (already correct). Full suite
+        257/257, reconfirmed forwards and reversed file order.
+        `fastpy` 367/367 and `fastpy check engine.py` (zero errors)
+        also reconfirmed as part of the same baseline pass.
   - [ ] **NEXT UP:** no specific task queued. Options carried over from
         Session 48 that are still open: reconcile the two search
         drivers' windowing so they don't pick different moves on

@@ -2193,3 +2193,71 @@ restriction there.
   instead of touching `test_phase4.py`, which was out of scope for this
   session. Reconfirmed order-independence afterward: full suite passes
   forwards, reversed, and interleaved with `test_uci.py`.
+
+## D-86: recurring PROCESS gap struck again — Session 49's `run.py`
+  node-budget mirror was logged as shipped but never actually landed on
+  `main` (Session 50)
+
+  Following the ROADMAP.md PROCESS rule added after D-61/D-65 ("every
+  session must re-run `ast.parse()`/`fastpy check` and the full test
+  suite against the freshly-pulled repo before trusting any prior
+  session's claim"), Session 50 opened with a `Go`-trigger baseline
+  check: `python -m pytest tests/` in both repos against a fresh
+  `codeload.github.com` pull of `main`, not a re-read of the log.
+
+  **What baseline verification found:** `fastpy` (367/367) and
+  `fastpy check engine.py` (zero errors) were fine. `fastpy-engine`
+  failed with 14 errors — every test in `tests/test_node_budget.py`
+  hit `AttributeError: module 'run' has no attribute
+  'node_budget_clear'`. Session 49's SESSION_LOG entry explicitly lists
+  `fastpy-engine/run.py` under "Files changed" with a description of
+  the mirrored budget logic, and claims "257/257 passing" — but
+  `grep -n "node_budget" run.py` on the actual committed file returned
+  zero matches. The mirror was written up as done and never committed,
+  the same failure shape as D-61 (Session 24-26) and D-65 (Session 30):
+  a real fix existed only in the log, not in the file pulled from `main`.
+
+  **Fix, not a redesign:** `run.py` needed three additions to match
+  `engine.py`'s already-correct (and never-broken) Session 49 work:
+  (1) import `node_budget_clear`/`node_budget_set`/`node_budget_exceeded`
+  from `engine` and size `_engine_module.NODE_BUDGET = [0]` alongside the
+  existing `NODE_COUNT` Python-mode sizing fix-up; (2) a
+  `node_budget_exceeded()` check immediately after the node-count
+  increment in both `_quiescence_py` and `_alpha_beta_py`, returning
+  `alpha` unchanged, mirroring `engine.py` line-for-line; (3) rewriting
+  `_find_best_move_py`'s root loop from a plain `for m in ordered` into
+  the same `enumerate`-based move-0-trust guard `engine.py` uses — skip
+  starting a new root move once a prior move's search has already blown
+  the budget, always trust move 0's result regardless, and skip the TT
+  store entirely when the depth was aborted (an incomplete root scan
+  must not be mistaken for a full-width `TT_EXACT` result by a later
+  probe).
+
+  **Verification, this time actually re-run before writing anything
+  up:** full `fastpy-engine` suite 257/257, re-run both forwards and in
+  an explicit reversed file order (`test_uci` → ... → `test_move_gen`)
+  to catch the same order-dependency class of bug D-85 itself found and
+  fixed — no residue, no flakiness either direction.
+  `fastpy check engine.py` re-confirmed zero errors (engine.py itself
+  was never touched this session — only `run.py`).
+
+  **Process note, not a new rule — reapplying the existing one:** D-65
+  already extended the "verify against fresh `main`" rule from
+  `fastpy-engine` to `fastpy` itself. This session is a third
+  confirmation that the rule is necessary and sufficient *when actually
+  followed* — the bug was caught in minutes at session start specifically
+  because baseline verification ran before any of Session 49's claims
+  were treated as ground truth, not because of any new tooling. No
+  process change is proposed here; the existing PROCESS item already
+  covers this class of gap correctly. What would help going forward:
+  when a session's own "Files changed" list names a file, that file's
+  actual diff (not just its test suite passing) is worth a direct
+  `grep`/spot-check for the described change before the session log is
+  written, since a green test suite at the time of writing can itself
+  be stale if the tests hadn't been added yet in the same session's
+  timeline — not applicable to what happened here (Session 49's tests
+  did exist and did pass, against a `run.py` that must have had the
+  changes in the working tree at the time), which makes this look more
+  like an uncommitted/unpushed change than a fabricated claim, though
+  the actual cause wasn't independently determined and isn't asserted
+  as fact.
