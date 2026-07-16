@@ -99,7 +99,9 @@
 - [x] 8.8 — src/eval/mod.rs FINAL — Full evaluate() combining all terms
 - [x] 8.9 — Wire evaluate() into src/search/alpha_beta.rs
 - [x] 8.10 — src/material.rs duplicate — orphan file, not declared in lib.rs,
-             compiler ignores it. Leave in place (can't delete via web UI).
+             compiler ignores it. **DELETED (Session 72)** — Gokul confirmed
+             removal via GitHub mobile UI; the "can't delete via web UI"
+             blocker noted at the time this was discovered no longer applies.
 - [x] 8.11 — Bug fix: PST White indexing reversed in tables.rs
              (7-rank)*8+file for White; sq.index() for Black.
              296 tests passing. Phase 8 complete. ✅
@@ -365,6 +367,25 @@
       the warning becomes blocking rather than cosmetic).
       Swatinem/rust-cache@v2 needed no change — it's a floating major tag
       that already picked up Node24 support upstream (v2.9.0).
+- [x] `README.md` — stale and factually wrong (Session 72). Fixed: "Play
+      against Stockfish directly in your browser" corrected to Pet
+      Dragon's own engine (was never Stockfish — copy-paste leftover from
+      early scaffolding, never caught before). Project Status table
+      replaced — it still showed every phase as 🔄/⏳ pending despite
+      Phases 0-22 being complete. Softened the flat "3000+ Elo" claim to
+      match DECISIONS.md's own framing (relative internal comparison, no
+      external rating pool exists for a custom variant); cited the real
+      ~39 Elo Texel-tuning gain from Session 61's 520-game pinned-ref
+      result instead of an unqualified target number. Added an honest
+      NNUE line (implemented, disabled by default, doesn't yet beat HCE).
+- [x] Release pipeline — `build.yml` only ever published one rolling
+      release under the literal tag `latest`; there was no way to cut a
+      real versioned release at all. Fixed (D46, Session 72): tag pushes
+      matching `v*.*.*` now trigger their own frozen, "Latest"-badged
+      release; ordinary `main` pushes keep updating the separate rolling
+      `latest` release without stealing the badge back. First real tag:
+      `v3.0.0`, pending Gokul publishing it via the Releases UI — confirm
+      next session whether it built successfully with all 4 binaries.
 
 ---
 

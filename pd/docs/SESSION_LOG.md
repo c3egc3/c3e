@@ -7,6 +7,65 @@ Most recent session at TOP.
 
 ---
 
+## Session 72 — 2026-07-16 (World-release prep: README factual fixes, dead file cleanup, versioned release pipeline — D46)
+
+**Built:**
+
+1. **README.md audit and fix**, prompted by Gokul asking what's left
+   before a "world release." Found and fixed a real factual error —
+   "Play against Stockfish directly in your browser" (it's Pet Dragon's
+   own engine; leftover from early scaffolding, never caught). Replaced
+   the Project Status table, which still showed every phase as
+   pending/in-progress despite Phases 0-22 being complete — the single
+   highest-visibility document in the repo was actively undermining a
+   finished, tested engine. Softened the flat "3000+ Elo" claim to match
+   DECISIONS.md's own careful framing (relative comparison only, no
+   external rating pool for a custom variant), citing the real ~39 Elo
+   Texel-tuning gain from Session 61's 520-game pinned-ref result.
+   Caught and fixed my own mistake mid-session — first pass introduced a
+   duplicate "Handcrafted evaluation" bullet; also fixed a pre-existing
+   missing-space typo nearby.
+
+2. **`src/material.rs` deleted.** Orphaned pre-Phase-8 duplicate of
+   `src/eval/material.rs`, never compiled (not declared in `lib.rs`).
+   Previously left in place because it "can't be deleted via web UI" —
+   that blocker no longer applies; Gokul deleted it directly.
+
+3. **Release pipeline redesigned (D46).** `build.yml` previously only
+   ever published one rolling release under the literal tag `latest` on
+   every `main` push — no mechanism existed to cut a real semantic
+   version. Added a `tags: ['v*.*.*']` trigger; the `release` job now
+   branches on `startsWith(github.ref, 'refs/tags/v')` to publish a
+   frozen, "Latest"-badged release under the actual tag name (e.g.
+   `v3.0.0`) instead, while the rolling `latest` release keeps working
+   for `main` commits but stops stealing the "Latest" badge back once a
+   real tag exists. Logic is tag-name-generic — works unchanged for any
+   future `vX.Y.Z`. Gokul asked to cut `v3.0.0` as the first tagged
+   release; instructed to commit `build.yml` to `main` *before* creating
+   the tag (workflow version at tag-push time is whatever's on `main`
+   then, not a later snapshot) — tag creation itself confirmed still
+   pending as of end of session.
+
+**Bugs fixed:** README's Stockfish/engine-identity error (factual,
+public-facing); stale Project Status table (accuracy, public-facing);
+duplicate README bullet introduced and caught in the same session.
+
+**Decisions made:** D46 — versioned tag releases separate from the
+rolling `latest` release; see DECISIONS.md for full rationale and the
+rejected alternatives (manual local builds, dropping the rolling
+release entirely).
+
+**Next session start point:** Confirm whether Gokul published the
+`v3.0.0` tag and whether the Actions run succeeded — check the Releases
+page for 4 attached binaries (`pet-dragon-windows-x64.exe`,
+`pet-dragon-macos-arm64`, `pet-dragon-macos-x64`, `pet-dragon-linux-x64`)
+and the "Latest" badge on `v3.0.0` specifically, not on `latest`. If the
+tag was created *before* the `build.yml` commit landed, the run will
+have used the old workflow and silently done nothing — in that case walk
+through deleting and recreating the tag now that the fix is live.
+
+---
+
 ## Session 71 — 2026-07-16 (Verification-only session: Phase 21 eval bar + Phase 22 make_unmake.rs both confirmed; root index.html deleted)
 
 **Built:** No new code this session — pure verification of two items

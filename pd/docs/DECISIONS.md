@@ -1308,3 +1308,50 @@ draw lines). That's a genuinely separate, more advanced feature — fast
 detection of a repetition reachable via a single further reversible
 move, used to bias search depth/extensions — not part of what was
 asked ("the 3-fold avoidance rule/logic"), and not implemented here.
+
+## D46 — build.yml Split: Versioned Tag Releases Separate from Rolling `latest` (2026-07-16)
+
+**Decision**: `build.yml` now triggers on `v*.*.*` tag pushes in addition
+to `main` branch pushes. The `release` job publishes to `tag_name:
+github.ref_name` (e.g. `v3.0.0`) with `make_latest: true` when triggered
+by a real version tag, and continues publishing to the existing rolling
+`tag_name: latest` with `make_latest: false` for ordinary `main` commits.
+First real tag: `v3.0.0`, cutting Gokul's requested world-release version.
+
+**Why**: The pipeline previously only ever published one release, always
+under the literal tag name `latest`, on every push to `main` — there was
+no mechanism to produce a real semantic-versioned release at all. Pushing
+a `v3.0.0` tag through GitHub's Release UI would have created an empty
+tag with no attached binaries, since the old `on:` block didn't listen
+for tag refs. Now: a tagged release captures a specific, citable, frozen
+version (what "world release" actually needs); the rolling `latest`
+release keeps working exactly as before for anyone tracking `main`
+directly, and — because it publishes with `make_latest: false` once a
+real tag exists — no longer steals GitHub's "Latest release" badge back
+from the most recent intentional version tag on the next ordinary commit.
+
+**Design notes**:
+- `make_latest` is driven by `startsWith(github.ref, 'refs/tags/v')`, so
+  this logic is generic and will work unchanged for `v3.0.1`, `v4.0.0`,
+  etc. — nothing v3.0.0-specific is hardcoded into the workflow itself.
+- Gokul creates the tag via GitHub's mobile Releases UI ("Draft a new
+  release" → tag field `v3.0.0` → target `main` → Publish) rather than
+  any git CLI command — consistent with the mobile-only constraint.
+  Title/body typed at that step are irrelevant; `softprops/action-gh-
+  release` overwrites both fields once the workflow's `release` job runs
+  against that same tag name, so the workflow's generated body (rules
+  summary, download table, GPL attribution) is always the source of
+  truth for the actual published text.
+- **Sequencing requirement**: this `build.yml` must be committed to
+  `main` *before* the `v3.0.0` tag is created — the workflow version
+  active on the tag-push event is whatever's on `main` at the moment the
+  tag is pushed, not a snapshot from later. If the tag is created first
+  by mistake, deleting and recreating it after committing this file
+  fixes it (tags are cheap to redo pre-release).
+
+**Rejected**: A separate one-off manual release process (build locally,
+upload by hand) — not viable, Gokul has no desktop/terminal. Also
+rejected: making the rolling `latest` release disappear once a version
+tag exists — kept it running unconditionally since it's useful for
+anyone wanting to track `main` between tagged versions, and costs
+nothing to keep alongside proper tags.
