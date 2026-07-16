@@ -483,13 +483,45 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         covering move-gen choice count, the widened bit-encoding
         round-trip, and the UCI string round-trip. Full suite 265/265
         (257 + 8 new), `fastpy check engine.py` zero errors.
-  - [ ] **NEXT UP:** no specific task queued. Options still open:
-        reconcile the two search drivers' windowing so they don't pick
-        different moves on near-equal positions, or async UCI `stop`
-        support (needs the search moved to a background thread — a
-        bigger architecture change). Or move on to something unrelated
-        to search/UCI entirely. Needs a decision at the start of next
-        session.
+  - [x] **Search-driver windowing "reconciled" — real root cause found
+        was a `fastpy` transpiler bug, not (only) windowing (Session
+        52, see D-88)** — added the missing aspiration-window shape to
+        `native/uci_main.cpp`'s `go()` loop matching `run.py`'s
+        `ASPIRATION_WINDOW`/`ASPIRATION_START_DEPTH` exactly (D-43/D-44),
+        as the previously-documented hypothesis suggested. Tested it
+        directly rather than assuming it worked: the divergence
+        persisted, and was present even at depth 1 (full window, before
+        aspiration engages), disproving the windowing-only hypothesis.
+        Root cause: `core/emitter.py` mapped Python's `//` (floors) to
+        C++'s `/` (truncates) — these disagree for negative operands,
+        and NNUE evaluation's `output // NNUE_SCALE` hits this on
+        roughly half of all evaluations. Fixed the transpiler
+        (`fastpy_floordiv`/`fastpy_mod` helper templates, unconditional
+        per Core Rule 5's zero-analysis principle), not `engine.py` —
+        the bug lived entirely in the emitter. Depths 1-4 now match
+        Python mode **exactly** on the standing tactical FEN (previously
+        diverged from depth 1); `perft(1/2/3)` confirmed
+        move-generation-identical between drivers throughout. A small
+        depth-5 residual remains, not fully explained — most likely
+        ordinary alpha-beta path-order variance between compiled and
+        interpreted execution of the same algorithm, flagged honestly
+        as unresolved rather than assumed away. `fastpy` suite 367→372
+        (5 new tests, two of which actually compile-and-run the emitted
+        C++ against a table of cases and check against real Python
+        semantics — string-shape checks alone can't catch a
+        syntactically-present-but-numerically-wrong helper).
+        `fastpy check engine.py` zero errors, `fastpy-engine` suite
+        265/265 unaffected (Python mode never went through the buggy
+        emitted C++).
+  - [ ] **NEXT UP:** no specific task queued. Options open: chase the
+        depth-5 residual divergence further (would need per-node
+        tracing to actually confirm the path-order-variance hypothesis
+        rather than just asserting it), async UCI `stop` support (needs
+        the search moved to a background thread — a bigger architecture
+        change, and D-85 already tried and rejected one background-
+        thread design for a data race, so this needs real care), or
+        something unrelated to search/UCI entirely. Needs a decision at
+        the start of next session.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

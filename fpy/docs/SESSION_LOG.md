@@ -4,6 +4,100 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 52 — chased search-driver windowing to its real root cause: a `fastpy` transpiler bug, not (only) windowing
+**Status:** COMPLETE ✅ — `fastpy/core/emitter.py`, `fastpy/tests/test_emitter.py`,
+`fastpy-engine/native/uci_main.cpp` changed; `docs/DECISIONS.md` (D-88),
+`docs/ROADMAP.md`, `docs/ENGINE_ARCHITECTURE.md`, this file updated.
+`engine.py`/`run.py` untouched — the real bug lived in the transpiler.
+
+### Task chosen
+Last open carried-over option from Sessions 50/51: search-driver
+windowing reconciliation, over async UCI `stop` (D-85 already tried and
+rejected one background-thread design for a data race — `stop` needs
+the same architecture change and real care next time, not this
+session).
+
+### First fix — matched the documented hypothesis, then tested it
+`ENGINE_ARCHITECTURE.md` (from D-84) attributed the native/Python
+best-move divergence to windowing: native always searched full-width,
+never replicating `run.py`'s aspiration-window narrowing. Added the
+identical window shape to `native/uci_main.cpp`'s `go()` — same
+`ASPIRATION_WINDOW=50`, ×4 widen-on-fail, `ASPIRATION_START_DEPTH=4`
+(D-43/D-44) — plus a native-only budget-aware exit from the retry loop.
+
+**Tested it directly instead of assuming it worked.** Ran the standing
+tactical FEN through both drivers: best move still diverged, and
+depth-1 scores already differed (`-21` vs `-22`) *before* aspiration
+windows even engage. Windowing could not be the (sole) explanation.
+
+### Real root cause
+Compared `engine.py`'s compiled search functions against `run.py`'s
+hand-maintained Python mirrors (which exist because several `engine.py`
+functions use local arrays that don't execute in plain Python) function
+by function — all structurally faithful. The actual divergence:
+`nnue_output_from_hidden()`'s `score: int32 = output // NNUE_SCALE`.
+Computed the tactical FEN's root `output` directly: `-6389`. Python's
+`-6389 // 64 == -100` (floors); C++'s `-6389 / 64 == -99` (truncates,
+since `//` was emitted as plain C++ `/`). Python's `//` floors toward
+negative infinity; C++'s native `/` for signed integers truncates
+toward zero — these disagree whenever the result is negative with a
+nonzero remainder, which NNUE evaluation hits on roughly half of all
+calls (`output` is negative about as often as not).
+
+**This is a `fastpy` transpiler bug** — `core/emitter.py`'s
+`_CPP_BIN_OP` mapped `"//": "/"` unconditionally. Same latent bug shape
+exists for `%` (unused in `engine.py` today, fixed anyway rather than
+left for the next file that uses it).
+
+### Fix
+`core/emitter.py` now emits `fastpy_floordiv`/`fastpy_mod` — small
+`static inline` templates, unconditional per Core Rule 5's
+zero-analysis principle — into every generated file's preamble.
+`_emit_binop` routes `"//"`/`"%"` through them instead of naive C++
+`/`/`%`.
+
+### Verification
+- `fastpy` suite: 367→372. 5 new tests in `test_emitter.py`: emission
+  shape checks, plus two that actually **compile and run** the emitted
+  C++ against a table of positive/negative/exact-division cases and
+  check the result against real Python `//`/`%` on the identical
+  operands (following `test_toolchain.py`'s existing compile-and-run
+  pattern) — a string-shape check alone can't catch a helper that's
+  syntactically present but numerically wrong.
+- `fastpy check engine.py` — zero errors.
+- `fastpy-engine` suite — 265/265 unaffected (Python mode never went
+  through the buggy emitted C++).
+- Rebuilt the native binary with the fixed transpiler: tactical-FEN
+  depths 1-4 now match Python mode **exactly** (previously diverged
+  from depth 1). `perft(1/2/3)` at this position confirmed identical
+  between drivers (33/930/30542 both) — move generation was never the
+  issue, ruled out definitively via a custom probe binary rather than
+  left assumed.
+- Depth 5 still shows a small residual (`b1c3` vs `f3g5`, ~2cp) — not
+  chased further. Most likely ordinary alpha-beta path-order variance
+  between compiled and interpreted execution of the identical
+  algorithm; not confirmed, flagged honestly as unresolved.
+
+### Not done this session
+The depth-5 residual isn't explained with certainty, and async UCI
+`stop` is still open. Both need a decision at the start of the next
+session.
+
+**Files changed:**
+- `fastpy/core/emitter.py` — the actual fix (`fastpy_floordiv`/
+  `fastpy_mod` helpers, `_emit_binop` routing)
+- `fastpy/tests/test_emitter.py` — 5 new tests, 2 compile-and-run
+- `fastpy-engine/native/uci_main.cpp` — aspiration windows added
+  (necessary, though not sufficient on its own — this write-up is
+  honest about that)
+- `docs/DECISIONS.md` — D-88
+- `docs/ROADMAP.md` — windowing item marked done with the corrected
+  root cause; NEXT UP updated
+- `docs/ENGINE_ARCHITECTURE.md` — "Known limitations" entry corrected
+  (previous windowing-only hypothesis was incomplete)
+
+---
+
 ## Session 51 — `PROMO_ROOK` added, closing the gap Session 48 found and documented
 **Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
 `fastpy-engine/native/uci_main.cpp`, `fastpy-engine/tests/test_move_gen.py`

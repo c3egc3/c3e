@@ -484,12 +484,26 @@ depth, not a single fixed multiplier.
   thread with the main loop continuing to read stdin — a bigger
   architecture change, not attempted yet.
 - **Best move can differ from Python mode's choice in near-equal
-  positions.** E.g. the standing tactical-FEN benchmark: Python mode
-  picks `f3g5`, the native binary picks `b1c3`, at depth 5, with scores
-  2-3cp apart (well within noise for a roughly-equal position). Not a
-  bug — the two iterative-deepening drivers use different windowing
-  (the native wrapper always searches full-width `NEG_INF`/`INF`; it
-  doesn't replicate whatever aspiration-window narrowing, if any,
-  `run.py`'s Python-mode driver uses), so tie-breaking between
-  near-equal moves isn't guaranteed to match.
+  positions.** Narrowed substantially in Session 52 (D-88), and its
+  real cause corrected: the previous entry here attributed this to
+  windowing alone ("if any" aspiration narrowing) — that hypothesis was
+  tested directly and found incomplete. The native driver now uses the
+  same aspiration-window shape as `run.py` (D-88), and a genuine
+  transpiler bug was found and fixed in `fastpy` itself: `//` was
+  emitted as C++'s truncating `/` instead of Python's floor `//`,
+  which silently disagree for negative operands — NNUE evaluation's
+  `output // NNUE_SCALE` is exactly such a case, since `output` is
+  negative about half the time. Fixing this made the two drivers'
+  scores match *exactly* through depth 4 on the standing tactical-FEN
+  benchmark (previously they diverged from depth 1). A small residual
+  difference can still appear at deeper depths on genuinely near-equal
+  positions — perft-verified as move-generation-identical (not a
+  correctness bug), most likely ordinary alpha-beta path-order
+  variance between two independently-executed searches (compiled C++
+  vs. CPython interpretation of the same algorithm can still visit
+  nodes in a different sequence when cutoff timing depends on
+  accumulated floating-point-free but still order-sensitive alpha
+  updates) rather than a remaining defect. Not chased further this
+  session — see D-88 for the full investigation and what was and
+  wasn't confirmed.
 | 6 | ⏳ | 1B NPS | Lazy SMP multi-core, BMI2 magic bitboards |

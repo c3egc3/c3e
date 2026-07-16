@@ -2331,3 +2331,123 @@ restriction there.
   entry for this gap struck through with a note pointing to this
   decision, rather than deleted outright — keeping the historical record
   that the limitation existed and was found before it was fixed.
+
+## D-88: chased "reconcile search-driver windowing" to its real root
+  cause — a genuine `fastpy` transpiler bug (`//` truncating instead of
+  flooring), not (only) a windowing mismatch (Session 52)
+
+  Picked up the last open carried-over option from Session 50/51
+  (search-driver windowing reconciliation vs. async UCI `stop`) —
+  chosen over `stop` support since D-85 already tried and rejected a
+  background-thread design for a different reason (data race) and
+  `stop` needs the same architecture change.
+
+  **First fix, matching the documented hypothesis exactly:**
+  `ENGINE_ARCHITECTURE.md`'s "Known limitations" entry (from D-84,
+  Session 48) attributed the native/Python best-move divergence to
+  windowing: the native driver always searched full-width
+  `NEG_INF`/`INF`, never replicating `run.py`'s aspiration-window
+  narrowing (D-43/D-44). Added the identical aspiration-window shape
+  to `native/uci_main.cpp`'s `go()` loop — same `ASPIRATION_WINDOW=50`,
+  same ×4 widen-on-fail retry, same `ASPIRATION_START_DEPTH=4` — with
+  one native-only addition: the retry loop also stops on
+  `node_budget_exceeded()` (D-85's per-depth node budget didn't exist
+  yet when D-43/D-44 designed the Python-mode retry loop, and without
+  this a budget-exhausted re-search would spin through widening windows
+  that can no longer search anything).
+
+  **Tested the fix directly instead of assuming it worked — and it
+  didn't, not fully:** ran the standing tactical FEN
+  (`r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4`,
+  from D-77/D-78/D-79/D-80) through both drivers at depth 5. Best move
+  still diverged (`b1c3` native vs `f3g5` Python) — and critically, the
+  depth-1 score already differed (`-21` vs `-22`) *before* aspiration
+  windows even engage (depth 1 < `ASPIRATION_START_DEPTH`, full window
+  in both drivers). Windowing could not be the (sole) explanation for a
+  divergence present at full width.
+
+  **Root cause, found by direct comparison, not more hypothesizing:**
+  `run.py` and `native/uci_main.cpp` don't share one implementation of
+  the search — `native` runs `engine.py` compiled to C++; Python mode
+  runs `run.py`'s hand-maintained mirrors (`_alpha_beta_py`,
+  `_quiescence_py`, etc.), which exist only because several `engine.py`
+  functions use bare-type-annotation local arrays (`moves: uint64[218]`)
+  that are valid FastPy (compiles to a C++ stack array) but don't
+  execute in plain Python (no value bound, `UnboundLocalError` on use).
+  Compared the two implementations function-by-function
+  (`alpha_beta`/`_alpha_beta_py`, `quiescence`/`_quiescence_py`,
+  `sort_moves` vs. the Python-mode inline `move_list.sort()`,
+  `generate_captures`/`_generate_captures_py`) — all structurally
+  faithful mirrors. The actual divergence: `evaluate_nnue_incremental()`
+  → `nnue_output_from_hidden()`'s `score: int32 = output // NNUE_SCALE`.
+  Confirmed directly — computed the pre-division dot product `output`
+  for the tactical FEN's root position (`-6389`) and divided it both
+  ways: Python's `-6389 // 64 == -100` (floors toward negative
+  infinity), C++'s `-6389 / 64 == -99` (truncates toward zero, since
+  `//` was emitted as plain C++ `/`). A 1-centipawn-per-negative-output
+  discrepancy at literally every NNUE evaluation in the entire search
+  tree — small enough at any single node to look like ordinary search
+  noise, but compounding through move ordering and alpha-beta cutoff
+  decisions into the move-choice-level divergence this session set out
+  to explain.
+
+  **This is a `fastpy` transpiler bug, not an `engine.py` bug** —
+  `core/emitter.py`'s `_CPP_BIN_OP` mapped `"//": "/"` unconditionally.
+  Correct for non-negative operands and exact divisions only; Python's
+  `//` floors (rounds toward negative infinity), C++'s native `/` for
+  signed integers truncates (rounds toward zero) — these disagree
+  whenever the mathematical result is negative with a nonzero
+  remainder. The same class of bug exists for `%` (`"%": "%"` — sign
+  convention differs the same way), though `engine.py` doesn't
+  currently use `%` at all, so it had no observable effect yet; fixed
+  both while in the emitter rather than leaving a known-latent bug for
+  the next FastPy file that happens to use it.
+
+  **Fix:** `core/emitter.py` now emits two small `static inline`
+  templates, `fastpy_floordiv`/`fastpy_mod`, unconditionally into every
+  generated file's preamble (same zero-analysis principle as the rest
+  of the emitter — Core Rule 5 — so this doesn't try to detect whether
+  `//`/`%` are actually used before deciding to emit them; an unused
+  template costs nothing at `-O3`). `_emit_binop` special-cases `"//"`
+  and `"%"` to call these instead of the naive C++ operators. Each
+  helper computes one native `/`/`%` (a single CPU instruction
+  typically computes both together) plus a branch to correct the
+  sign-disagreement case — negligible cost given what it wraps, and not
+  a place to accept a silent off-by-one against FastPy's Speed Contract
+  ("exact integer chess-engine math", not approximate).
+
+  **Verification:**
+  - `fastpy` suite: 367→372 (5 new tests in `test_emitter.py`,
+    including two that actually compile-and-run the emitted C++ against
+    a table of positive/negative/exact-division cases and check the
+    result against Python's own `//`/`%` on the identical operands —
+    following the existing `TestCompileCppRealBuild` pattern in
+    `test_toolchain.py`; a string-shape check alone can't catch a
+    helper that's syntactically present but numerically wrong).
+  - `fastpy check engine.py` — zero errors.
+  - `fastpy-engine` suite — 265/265 unaffected (Python mode never went
+    through the buggy emitted C++ in the first place; this bug only
+    ever affected the compiled/native path).
+  - Rebuilt the native UCI binary with the fixed transpiler and
+    re-ran the tactical FEN: depths 1-4 scores now match Python mode
+    **exactly** (previously diverged from depth 1). `perft(1/2/3)` at
+    this position also confirmed identical between drivers (33/930/
+    30542 both) — move generation was never the issue, ruling that out
+    definitively rather than leaving it assumed.
+  - Depth 5 still shows a small residual difference (best move `b1c3`
+    vs `f3g5`, ~2cp apart) — not chased further this session. With
+    static evaluation now proven identical and move generation
+    perft-confirmed identical, the most likely remaining explanation is
+    ordinary alpha-beta path-order variance between a compiled-C++ and
+    an interpreted-Python execution of the same algorithm (cutoff
+    timing is order-sensitive; two runs that agree on every score can
+    still visit nodes in a different sequence and land on a different
+    tie-break). Not confirmed as the full explanation — flagged
+    honestly as unresolved rather than assumed away.
+
+  **Files changed:** `fastpy/core/emitter.py` (the actual fix),
+  `fastpy/tests/test_emitter.py` (regression coverage),
+  `fastpy-engine/native/uci_main.cpp` (aspiration windows — real and
+  necessary, though not sufficient on its own, as this write-up is
+  honest about). `engine.py` and `run.py` both untouched this session —
+  the bug lived entirely in the transpiler, not in either mirror.
