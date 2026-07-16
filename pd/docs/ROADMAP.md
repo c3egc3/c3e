@@ -383,9 +383,23 @@
       real versioned release at all. Fixed (D46, Session 72): tag pushes
       matching `v*.*.*` now trigger their own frozen, "Latest"-badged
       release; ordinary `main` pushes keep updating the separate rolling
-      `latest` release without stealing the badge back. First real tag:
-      `v3.0.0`, pending Gokul publishing it via the Releases UI — confirm
-      next session whether it built successfully with all 4 binaries.
+      `latest` release without stealing the badge back. Also added a
+      `build-wasm` job producing `pet_dragon_bg.wasm`, `pet_dragon.js`,
+      and a base64-embedded `pet_dragon_standalone.js` (needs
+      `pet_dragon.js` alongside it — genuinely single-file bundling was
+      considered and explicitly rejected, see D46 addendum below) as
+      release assets alongside the 4 native binaries.
+      **CONFIRMED (Session 73)**: first tagged release attempt `v3.0.0`
+      failed silently — tag was created before the `build.yml` fix
+      landed on `main`, so the old workflow (no tag trigger at all) never
+      ran; Gokul had manually attached 2 files by hand, no automation
+      involved. Diagnosed via GitHub API/Actions history cross-check,
+      deleted, retagged as `v3.3.3` with the fixed workflow already
+      confirmed live on `main` — this time the pipeline ran correctly
+      end-to-end: all 7 assets (4 native + `pet_dragon_bg.wasm` +
+      `pet_dragon.js` + `pet_dragon_standalone.js`) attached, "Latest"
+      badge applied, generated body correct. World-release housekeeping
+      fully closed.
 
 ---
 

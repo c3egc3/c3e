@@ -7,6 +7,62 @@ Most recent session at TOP.
 
 ---
 
+## Session 73 — 2026-07-17 (WASM release assets added; v3.0.0 tag silently failed and was diagnosed; v3.3.3 confirmed fully working — D46 updated)
+
+**Built:**
+
+1. **`build-wasm` job added to `build.yml`.** Previously only native
+   binaries shipped; wasm-pack output never reached a release at all.
+   New job mirrors `deploy.yml`'s `wasm-pack build` command, then
+   generates a third asset: `pet_dragon_standalone.js`, which base64-
+   embeds the compiled wasm binary and calls `pet_dragon.js`'s `init()`
+   with those bytes directly instead of letting it fetch a separate
+   `.wasm` file. Considered and rejected true single-file bundling
+   (concatenating the wasm-bindgen glue itself, Stockfish-`SINGLE_FILE`-
+   style) — technically doable (proved out the exact transform: strip
+   `export default` off the generated `init` function, re-add it at the
+   end) but rejected as unnecessary fragility against wasm-bindgen
+   version changes for one fewer file. Two-file version (standalone +
+   `pet_dragon.js` together) is what shipped.
+
+2. **Caught my own bug before it shipped**: first implementation used a
+   bash heredoc (`cat > file << 'EOF' ...`) nested inside an indented
+   YAML block scalar — a direct conflict, since heredoc terminators
+   without `<<-` must sit at column 0 but YAML block scalars require
+   every line indented. Caught on inspection, reverted to the working
+   `node -e "..."` inline version before it was ever committed.
+
+3. **`v3.0.0` tag published, discovered dead, diagnosed, fixed.** Gokul
+   published `v3.0.0` before `build.yml`'s fix had actually landed on
+   `main` — exactly the sequencing risk flagged when the tag/rolling
+   split was first built. Confirmed via GitHub API (`releases/tags/...`)
+   and Actions run history (zero runs against any tag ref, ever) that
+   the old workflow — no `tags:` trigger at all at that moment — never
+   engaged; the release's 2 assets were manually attached by Gokul, not
+   automation. Deleted `v3.0.0`, confirmed the fix was live on `main` (the
+   rolling `latest` release already showed all 7 assets from an
+   intervening ordinary push, proving the workflow itself worked),
+   retagged as **`v3.3.3`** at Gokul's request. Confirmed via screenshot:
+   full 7-asset download table, correct generated body, "Latest" badge —
+   pipeline worked correctly end-to-end this time.
+
+**Bugs fixed:** The would-be heredoc/YAML conflict (caught pre-commit,
+never shipped). The `v3.0.0` dead-tag situation (caught post-hoc via
+API/Actions cross-check, not assumed from surface appearance).
+
+**Decisions made:** D46 updated in place — corrected the worked example
+from `v3.0.0` to the actual `v3.3.3`, and added a "confirmed the hard
+way" postmortem of the sequencing failure so the specific diagnostic
+method (cross-check release timestamps against Actions run history,
+don't trust asset count alone) is on record for next time.
+
+**Next session start point:** Nothing outstanding — this closes the
+world-release housekeeping thread (README, dead code, release pipeline,
+wasm assets, versioned tagging all confirmed). Check ROADMAP.md's
+housekeeping/phase list fresh for whatever's next; nothing is mid-flight.
+
+---
+
 ## Session 72 — 2026-07-16 (World-release prep: README factual fixes, dead file cleanup, versioned release pipeline — D46)
 
 **Built:**
