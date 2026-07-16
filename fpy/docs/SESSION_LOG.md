@@ -4,6 +4,92 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 55 — `Atomic[T]` global type added to FastPy's dialect (D-91)
+**Status:** COMPLETE ✅ — `fastpy` repo changed (`core/parser.py`,
+`core/emitter.py`, `tests/test_parser.py`, `tests/test_type_system.py`,
+`tests/test_emitter.py`); `docs/DECISIONS.md` (D-91), `docs/ROADMAP.md`,
+this file updated. `fastpy-engine` repo (`engine.py`, `run.py`, native/)
+untouched this session.
+
+### `Go` trigger
+Fresh conversation. Read ROADMAP/SESSION_LOG (Tier 1) and full Tier 2
+(PROJECT_CONTEXT, ARCHITECTURE, DECISIONS, ENGINE_ARCHITECTURE,
+engine.py, run.py). Re-verified baseline before touching anything:
+`fastpy` 372/372, `fastpy-engine` 265/265, `run.py` parses clean as
+plain Python, `fastpy check engine.py` zero errors — all matched
+Session 54's recorded state exactly.
+
+ROADMAP's NEXT UP was an open three-way decision, not a queued task:
+(1) the volatile/atomic FastPy global type flagged by both D-85 and
+D-90 as the real prerequisite for true mid-node `stop` interruption and
+a genuine wall-clock time check, (2) Lazy SMP (deferred since D-74),
+(3) something outside search/UCI entirely. Asked Gokul; he deferred the
+choice back. Picked (1): it's the one item two prior sessions already
+named by name as the actual blocker behind two already-shipped-but-
+limited features (D-85's node-count estimate, D-90's depth-boundary-
+only stop), and unlike Lazy SMP's `std::thread`-in-the-dialect
+requirement, the type-only slice is genuinely completable in one
+session rather than being its own open-ended multi-session commitment.
+
+### What shipped
+`Atomic[T]` as a new global-declaration annotation in FastPy's dialect,
+e.g. `STOP_FLAG: Atomic[bool] = False`. Transpiler-feature-only this
+session — deliberately did NOT touch `fastpy-engine` yet (see D-91 for
+the full rationale and what's explicitly left open).
+
+- `core/parser.py`: `IRGlobal` gained `is_atomic: bool = False`.
+  `_try_global` detects `Atomic[...]`, unwraps to the plain inner type
+  before storing (`type_name` holds `"bool"`, not `"Atomic[bool]"`), so
+  `type_system` and everything downstream treats it like an ordinary
+  scalar global except for the one flag. `Atomic[T[N]]` (array) is
+  deliberately left un-unwrapped — no element-wise-atomic array concept
+  exists in `std::atomic`, so it falls through to a normal "unknown
+  type" rejection in type_system rather than the parser inventing an
+  unrequested semantic for it.
+- `core/emitter.py`: `_emit_globals` emits `std::atomic<T> NAME{val};`
+  (brace-init — `std::atomic`'s copy constructor is deleted) instead of
+  `T NAME = val;` when `is_atomic`. Unconditional `#include <atomic>`
+  added (same zero-cost-when-unused philosophy as the file's other
+  unconditional includes). No new IR node, no new statement codegen —
+  `std::atomic<T>` defines `operator=(T)`/`operator T()`, so every
+  existing read/write site (`if (NAME)`, `NAME = true;`) compiles
+  unchanged against the new declaration.
+
+### Verification
+Static-shape tests (parser: 4 new — atomic bool/uint64 parsed, non-
+atomic globals unaffected, atomic-array left unresolved; type_system:
+4 new — atomic bool/uint64 pass, unknown-inner-type and atomic-array
+both rejected; emitter: 6 new — exact `std::atomic<bool>
+STOP_FLAG{false};` text, `#include <atomic>` present, non-atomic
+globals' plain declarations unaffected, read/write codegen unchanged).
+
+Also — per the D-88 lesson that string-shape checks alone can't catch a
+behaviorally-wrong feature — a real **compile-and-run concurrency
+test**: builds a harness with a genuine `std::thread` writer that
+sleeps 50ms then calls the compiled `request_stop()`, racing a main-
+thread busy-spin on the compiled `should_stop()`. This is the exact
+scenario D-85's plain-bool repro hung forever on; confirmed it
+terminates and reports a nonzero spin count (proves the reader actually
+raced the writer, not scheduling luck).
+
+Full `fastpy` suite: 386/386 (372 baseline + 14 new). `fastpy check
+engine.py` reconfirmed zero errors against the updated transpiler
+(engine.py itself unchanged). End-to-end CLI sanity check (`fastpy
+check`/`fastpy emit` on a small standalone `Atomic[bool]` example, not
+just through pytest) also run directly.
+
+### What's NOT done (next session's scope, per updated ROADMAP)
+`fastpy-engine` doesn't use `Atomic[T]` yet. No `STOP_FLAG` in
+`engine.py`/`run.py`, no watcher thread in `native/uci_main.cpp`, no
+poll points wired into `alpha_beta()`/`quiescence()`. That's the real
+remaining work this session deliberately scoped out rather than
+rushing into the same message: replacing D-90's depth-boundary-only
+`stop` with true mid-node interruption, and/or replacing D-85's node-
+count estimate with a genuine wall-clock deadline check — both now
+unblocked by this session's type, neither built yet.
+
+---
+
 ## Session 54 — async UCI `stop` shipped, without the background thread D-85 already rejected
 **Status:** COMPLETE ✅ — `fastpy-engine/native/uci_main.cpp` changed;
 `docs/DECISIONS.md` (D-90), `docs/ROADMAP.md`, `docs/ENGINE_ARCHITECTURE.md`,

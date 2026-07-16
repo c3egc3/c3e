@@ -553,19 +553,42 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         verification of `go depth N`, `movetime`, pre-emptive `stop`,
         and `quit`-during-search, all against the real compiled binary.
         `engine.py`/`run.py` both untouched — `native/uci_main.cpp` only.
-  - [ ] **NEXT UP:** no specific task queued. The two items that have
-        driven Sessions 48-53 (search-driver reconciliation, async
-        stop) are both closed now. Real remaining options: (1) the
-        volatile/atomic FastPy global type that both D-85 and D-90
-        flagged as the actual prerequisite for true mid-node search
-        interruption — a genuine transpiler feature, multi-session
-        scope, would also unblock a real wall-clock time check instead
-        of the node-count estimate; (2) Lazy SMP, deferred since D-74;
-        (3) something outside search/UCI entirely (opening book, engine
-        strength testing against a reference opponent, etc). Needs an
-        actual decision at the start of next session — don't default
-        into more search/UCI polish by inertia now that the flagged
-        backlog is clear.
+  - [x] `fastpy` transpiler: `Atomic[T]` global type added to the dialect
+        (D-91) — resolves the "actual decision" flagged below. Chosen
+        over Lazy SMP (bigger, its own multi-session `std::thread`-in-
+        dialect commitment) and over a fresh non-search area, because
+        it's the one two sessions (D-85, D-90) already named by name as
+        the real blocker. Scoped as transpiler-feature-only this
+        session: `core/parser.py` (`IRGlobal.is_atomic`, unwraps
+        `Atomic[T]` to plain `T` before storage) + `core/emitter.py`
+        (emits `std::atomic<T> NAME{val};`, unconditional
+        `#include <atomic>`). Zero special-casing needed for reads/
+        writes elsewhere — `std::atomic`'s `operator=`/`operator T()`
+        make `if (NAME)` / `NAME = true;` compile unchanged.
+        `Atomic[array]` deliberately left unresolved → rejected by
+        type_system's normal unknown-type error, not silently accepted.
+        Full suite 386/386 (372 baseline + 14 new), including a real
+        compile-and-run `std::thread` concurrency test reproducing
+        D-85's exact hang scenario and confirming `std::atomic` actually
+        fixes it (not just a string-shape check). `fastpy check
+        engine.py` reconfirmed zero errors. `fastpy-engine` repo
+        untouched this session.
+  - [ ] **NEXT UP:** wire `Atomic[T]` into `fastpy-engine` itself — the
+        follow-up D-91 explicitly left open. Two concrete pieces, either
+        or both: (1) replace D-90's depth-boundary stdin-polling `stop`
+        with a real background watcher thread setting an
+        `Atomic[bool]` flag, polled from inside `alpha_beta()`/
+        `quiescence()`'s hot loop for true mid-node interruption; (2)
+        replace D-85's node-count *budget estimate* with a genuine
+        wall-clock deadline — an `Atomic[uint64]` elapsed-ms counter (or
+        deadline) updated by a lightweight timer thread, checked via a
+        lock-free atomic load in the hot loop instead of a syscall per
+        node. Either changes `engine.py` (FastPy dialect global +
+        search-loop poll points) and `native/uci_main.cpp` (spawns the
+        watcher thread). Needs its own manual interactive-harness
+        verification against the real compiled binary, same as D-90 —
+        this is exactly the kind of concurrency-timing behavior that
+        doesn't show up in a unit test.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

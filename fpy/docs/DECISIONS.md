@@ -2672,3 +2672,91 @@ restriction there.
   global type in FastPy's dialect) — a real, well-scoped, multi-session
   feature candidate whenever that's prioritized, not something either
   this session or D-85 attempted to squeeze in early.
+
+## D-91: `Atomic[T]` global type added to FastPy's dialect — the D-85/D-90 prerequisite, scoped as transpiler-feature-only this session
+
+**Context:** D-85 (Session 49) and D-90 (Session 53) both independently
+hit and rejected the same design — a plain `bool`/global flag written by
+one thread and read inside `engine.py`'s compiled hot loop by another is
+a genuine C++ data race under `-O3`: the optimizer is legally free to
+cache the read and never observe the other thread's write (confirmed
+directly both times with a minimal repro that hung forever). Both
+sessions shipped single-threaded workarounds instead (a node-count
+budget computed once per depth; depth-boundary stdin polling) and both
+flagged the same real fix: a volatile/atomic-qualified global type in
+FastPy's dialect, explicitly scoped as "a real transpiler feature,
+multi-session" — not something to add to fix one UCI command.
+
+**This session's task, chosen from ROADMAP's three-way NEXT UP decision**
+(the other two: Lazy SMP, deferred since D-74 for being a bigger
+multi-session commitment of its own; or a fresh area outside search/UCI
+entirely). Picked this one because it's the one flagged twice by name as
+the actual blocker behind two already-shipped-but-limited features, and
+because — unlike Lazy SMP's `std::thread`-in-the-dialect requirement —
+the type-only slice is genuinely completable in one session, leaving the
+harder "wire it into engine.py's search + a real watcher thread" work as
+its own well-defined follow-up rather than one giant multi-session blob.
+
+**Decision:** Added `Atomic[T]` as a new global-declaration annotation,
+e.g. `STOP_FLAG: Atomic[bool] = False`. Implemented as a **transpiler
+type feature only** — `core/parser.py` (`IRGlobal.is_atomic`, detected in
+`_try_global` by unwrapping the `Atomic[...]` wrapper to its plain inner
+type before storage, so every other consumer — `type_system`'s registry
+lookup, array-vs-scalar branching — treats it exactly like an ordinary
+scalar global except for the one flag) and `core/emitter.py`
+(`_emit_globals` emits `std::atomic<T> NAME{val};` instead of
+`T NAME = val;`, brace-init because `std::atomic`'s copy constructor is
+deleted; unconditional `#include <atomic>`, same zero-analysis
+philosophy as the file's other unconditional includes/helpers).
+
+**Why zero special-casing was needed beyond the declaration:**
+`std::atomic<T>` defines both `operator=(T)` and `operator T()` (implicit
+conversion), so every existing read/write codegen path — `if (NAME)`,
+`NAME = true;` — compiles unchanged against the new declaration. This
+kept the change small and low-risk: no new IR node, no new statement
+codegen, just a different type string at one declaration site plus one
+new bool flag threaded through.
+
+**Atomic arrays deliberately NOT supported:** `Atomic[uint64[8]]` is left
+unwrapped by the parser (falls through with the literal string
+`"Atomic[uint64[8]]"` as `type_name`, `is_atomic=False`), which
+`type_system` then rejects with an ordinary "unknown type" error.
+`std::atomic` has no element-wise-atomic array form — inventing a
+per-element-atomic-array semantic wasn't asked for and isn't what any
+current use case (a single stop/pause flag, or a node counter) needs.
+
+**Verification:** Static-shape tests (parser: `is_atomic`/`type_name`
+unwrapping correct for `bool`/`uint64`, non-atomic globals unaffected,
+`Atomic[array]` correctly left unresolved; type_system: `Atomic[bool]`/
+`Atomic[uint64]` pass, `Atomic[<unknown lowercase type>]` and
+`Atomic[array]` both correctly rejected; emitter: exact
+`std::atomic<bool> STOP_FLAG{false};` text, `#include <atomic>` present,
+non-atomic globals emit their original plain-declaration text unchanged)
+plus — following the D-88 lesson that string-shape checks alone can't
+catch a numerically/behaviorally wrong feature — a real **compile-and-run
+concurrency test**: a genuine `std::thread` writer that sleeps 50ms then
+calls the compiled `request_stop()`, racing against the main thread
+busy-spinning on the compiled `should_stop()`. This is the exact scenario
+D-85's plain-bool repro hung forever on; with `std::atomic`, it
+terminates and reports a nonzero spin count (confirming the reader
+genuinely raced the writer rather than winning by scheduling luck). Full
+`fastpy` suite: 386/386 (372 baseline + 14 new: 4 parser, 4 type_system,
+6 emitter including the concurrency test). `fastpy check engine.py`
+(unchanged) reconfirmed zero errors against the updated transpiler. End-
+to-end CLI sanity check (`fastpy check`/`fastpy emit` on a small
+standalone `Atomic[bool]` example) also run directly, not just through
+pytest.
+
+**What's explicitly NOT done this session** (the real remaining scope,
+now unblocked rather than closed out): `engine.py`'s UCI search doesn't
+use `Atomic[T]` yet — no `STOP_FLAG` in `run.py`/`engine.py`, no watcher
+thread in `native/uci_main.cpp`, no wiring into `alpha_beta()`/
+`quiescence()`'s poll points. That's the natural next session: replace
+D-90's depth-boundary stdin-polling design with a real background thread
+that sets an `Atomic[bool]` flag, checked from inside the search's hot
+loop for true mid-node interruption — and, per the ROADMAP note this
+closes out, the same mechanism (an `Atomic[uint64]` deadline or elapsed-
+ms counter updated by a lightweight timer thread) can replace D-85's
+node-count *estimate* with a genuine wall-clock check, without needing a
+syscall in the hot path — the search only ever reads a lock-free atomic
+load.
