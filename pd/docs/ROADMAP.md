@@ -873,7 +873,7 @@
 
 ---
 
-## Phase 21 — UCI Completeness: Ponder, Contempt, Real Eval Bar ✅ (wasm build + cargo test both confirmed; live eval-bar visual check still pending)
+## Phase 21 — UCI Completeness: Ponder, Contempt, Real Eval Bar ✅ (wasm build, cargo test, AND live eval-bar visual check all confirmed — fully closed)
 - [x] 21.1 — Session 69: added `option name Ponder type check default
             true` to the UCI option list. Pure advertisement — no engine
             state, since pondering is entirely driven by whether the GUI
@@ -897,11 +897,11 @@
             succeeded on runs #443 and #444 — `search_from_fen_with_eval`
             compiles cleanly to `wasm32-unknown-unknown` for real, not
             just Claude's field-check against `Position`/`SearchResult`'s
-            definitions. Still worth a one-time visual check (load the
-            live game, play a move, confirm the eval bar actually renders
-            a real number) — a clean compile doesn't rule out a runtime
-            JS bug (e.g. a string-parsing off-by-one), just the class of
-            error a build failure would have caught.
+            definitions. **CONFIRMED (Session 71)**: Gokul supplied a
+            screen recording of the live deployed page — the eval bar
+            renders a real, changing numeric value (e.g. `+0.3`) across
+            multiple engine moves, not a NaN, a stuck placeholder, or the
+            heuristic fallback. Phase 21 fully closed.
 - [x] 21.4 — Session 70 (later same day, D43): REVERSED from the
             earlier-this-session decline. Gokul explicitly chose to
             proceed with `UCI_LimitStrength`/`UCI_Elo` anyway, using
@@ -951,12 +951,12 @@ the `web/` folder as the Pages artifact (`actions/upload-pages-artifact
 Pages serves `web/index.html` exclusively. Confirmed live via runs #443
 and #444 both succeeding on this session's actual commits. Root
 `index.html` is simply orphaned dead weight — never live, not
-out-of-sync with anything that matters. Downgraded from "needs a
-dedicated look" to: delete it whenever convenient, zero urgency.
+out-of-sync with anything that matters. **DONE (Session 71)**: Gokul
+deleted the root `index.html`.
 
 ---
 
-## Phase 22 — Repetition Detection Redesigned to Match Stockfish ⏳ (verify via real cargo test next session — tests/make_unmake.rs unconfirmed)
+## Phase 22 — Repetition Detection Redesigned to Match Stockfish ✅ (tests/make_unmake.rs confirmed via real CI log — fully closed)
 - [x] 22.1 — Session 70 (still later the same day, D45): replaced the old
             unbounded "scan all of game_history for any 2nd occurrence"
             with the actual Stockfish algorithm (`Position::set_state()`/
@@ -991,40 +991,46 @@ dedicated look" to: delete it whenever convenient, zero urgency.
             (positive vs negative caching, the ply-relative distinction,
             the halfmove_clock bound) rather than relying only on the
             existing weak `alpha_beta.rs` integration assertion.
-            **NOT YET VERIFIED**: `tests/make_unmake.rs` (a separate
-            integration test crate with 5 rebuilt tests) could not be
-            locally compiled this session — same toolchain wall as every
-            previous session (dev-dependency needs edition2024, sandbox
-            rustc is 1.75). Every index computation was traced by hand
-            rather than compiled. **First thing next session: run
-            `cargo test` and specifically confirm `tests/make_unmake.rs`'s
-            tests pass by name, not just the aggregate count** — this is
-            a higher-risk file than usual given zero local compilation
-            was possible.
+            **CONFIRMED (Session 71)**: Gokul ran a real CI `cargo test`
+            (Actions log, rustc 1.97.0) and supplied the full output.
+            `tests/make_unmake.rs` — 19 tests total, all passing,
+            including the 5 rebuilt repetition tests by exact name:
+            `test_no_repetition_at_start`,
+            `test_pet_dragon_repetition_uses_pawn_start_hash`,
+            `test_repetition_detected_after_moves`,
+            `test_repetition_not_triggered_by_different_positions`,
+            `test_threefold_repetition`. The `position/mod.rs` unit tests
+            for the algorithm itself also confirmed passing:
+            `test_is_repetition_chain_always_true_regardless_of_ply`,
+            `test_is_repetition_false_when_repeat_predates_search_root`,
+            `test_is_repetition_true_when_repeat_is_within_search_tree`,
+            `test_is_threefold_repetition_still_uses_plain_count_not_ply`.
+            Full suite: 396 lib tests + 125 bin/integration tests (across
+            eval_diag, match_runner, pet_dragon, selfplay, texel_diag,
+            texel_gen, texel_tune, train_nnue, uci_match_runner,
+            make_unmake, node_count [5 ignored — perft depth ≥8, expected],
+            perft, setup) = 521 total, 0 failed. Phase 22 fully closed.
 
 ---
 
 ## Test Coverage Summary
-**Note: the per-module breakdown below is stale (predates several
-sessions' worth of additions — texel_diag.rs, uci_match_runner.rs,
-Phase 18's pondering tests, Phase 19's MultiPV/Move Overhead tests, etc.)
-and hasn't been recomputed file-by-file. The actual current total,
-confirmed by Session 63's full-suite run, is 345 lib tests + 30 bin tests
-= 375, all green.** Recomputing the exact per-module split below is a
-small, low-priority task for whenever it's convenient — not blocking
-anything.
-| Test File          | Count | Status |
-|--------------------|-------|--------|
-| src/types.rs       | 14    | ✅     |
-| src/bitboard/      | 42    | ✅     |
-| src/position/      | 60+   | ✅     |
-| src/movegen/       | 40+   | ✅     |
-| src/tt/            | 14    | ✅     |
-| src/search/        | 40+   | ✅     |
-| tests/perft.rs     | 18    | ✅     |
-| tests/setup.rs     | 18    | ✅     |
-| tests/make_unmake.rs | 19  | ✅     |
-| **TOTAL (stale)**  | **239** | see note above |
+**Confirmed via Session 71's real CI `cargo test` log (rustc 1.97.0,
+Actions run) — this is a full, current, authoritative count, not an
+estimate.** Per-module breakdown below is still not recomputed (lib's
+396 is one crate-level number, not split by src/ submodule) — low
+priority, not blocking anything.
+| Test Crate/Binary        | Count | Status |
+|---------------------------|-------|--------|
+| lib (all of src/, unit tests) | 396 | ✅ |
+| tests/make_unmake.rs      | 19    | ✅     |
+| tests/perft.rs            | 18    | ✅     |
+| tests/setup.rs            | 21    | ✅     |
+| tests/node_count.rs       | 5 (all ignored — perft depth ≥8, run manually) | — |
+| src/main.rs (pet_dragon bin) | 49 | ✅     |
+| src/bin/uci_match_runner.rs | 12  | ✅     |
+| src/bin/match_runner.rs   | 6     | ✅     |
+| src/bin/eval_diag.rs, texel_diag.rs, texel_gen.rs, texel_tune.rs, train_nnue.rs, selfplay.rs | 0 each (no #[test] fns yet) | — |
+| **TOTAL** | **521 run, 521 passed, 0 failed, 5 ignored** | ✅ |
 
 ---
 

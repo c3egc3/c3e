@@ -7,6 +7,59 @@ Most recent session at TOP.
 
 ---
 
+## Session 71 — 2026-07-16 (Verification-only session: Phase 21 eval bar + Phase 22 make_unmake.rs both confirmed; root index.html deleted)
+
+**Built:** No new code this session — pure verification of two items
+left open at the end of Session 70.
+
+1. **Phase 21.3 eval bar — CONFIRMED.** Gokul supplied a screen
+   recording of the live deployed page (`g-c-3.github.io/pet-dragon`).
+   Extracted frames and zoomed into the eval bar region: it renders a
+   real, changing numeric value (`+0.3` and others across different
+   board states, e.g. `+0.9`, `+0.5` while browsing the Think Time
+   control panel) — not a NaN, not a stuck placeholder, not silently
+   falling back to the material+mobility heuristic. Phase 21 fully closed.
+
+2. **Root `index.html` — deleted.** Gokul removed the orphaned root
+   file per last session's housekeeping note. No further action needed.
+
+3. **Phase 22.2 `tests/make_unmake.rs` — CONFIRMED.** Gokul triggered a
+   real CI run and supplied the full `cargo test --verbose` Actions log
+   (rustc 1.97.0, commit `4c2ab40`). Verified by name, not aggregate
+   count, that all 5 rebuilt repetition tests pass:
+   `test_no_repetition_at_start`,
+   `test_pet_dragon_repetition_uses_pawn_start_hash`,
+   `test_repetition_detected_after_moves`,
+   `test_repetition_not_triggered_by_different_positions`,
+   `test_threefold_repetition` — plus all 14 other tests in that file
+   (perft-via-make/unmake depths 3-5, kiwipete, castling, promotion, en
+   passant, hash consistency, 1000-position fuzz). Also cross-checked
+   the `position/mod.rs` unit tests for the underlying algorithm
+   (`test_is_repetition_chain_always_true_regardless_of_ply` and 3
+   siblings) — all passing. Full suite total from this log: 396 lib +
+   125 bin/integration = 521 tests run, 521 passed, 0 failed, 5 ignored
+   (node_count.rs's depth≥8 perft, expected — those are manual-run only).
+   Phase 22 fully closed.
+
+4. **Test Coverage Summary in ROADMAP.md corrected.** The table had
+   been stale since Session 63 (estimated 239/375 depending on which
+   note you read). Replaced with the real per-crate counts read directly
+   off this session's CI log — 521 total, authoritative until the next
+   structural test change.
+
+**Bugs fixed:** None — no code touched this session.
+
+**Decisions made:** None — no new architectural decisions, verification only.
+
+**Next session start point:** Both phases now fully closed with no
+outstanding verification debt. Check ROADMAP.md for the next
+un-started phase/task — nothing is mid-flight. If nothing else is
+flagged, a good candidate is finally recomputing the per-module test
+breakdown properly (low priority, mentioned as stale for several
+sessions), or picking up the next roadmap item after Phase 22.
+
+---
+
 ## Session 70 — 2026-07-14 (UCI completeness: Ponder, Contempt, real eval bar; UCI_Elo declined then reversed; shallow-test fix surfaces real time-fraction bug — D42/D43/D44)
 
 **Built:**
