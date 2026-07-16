@@ -573,22 +573,43 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         fixes it (not just a string-shape check). `fastpy check
         engine.py` reconfirmed zero errors. `fastpy-engine` repo
         untouched this session.
-  - [ ] **NEXT UP:** wire `Atomic[T]` into `fastpy-engine` itself — the
-        follow-up D-91 explicitly left open. Two concrete pieces, either
-        or both: (1) replace D-90's depth-boundary stdin-polling `stop`
-        with a real background watcher thread setting an
-        `Atomic[bool]` flag, polled from inside `alpha_beta()`/
-        `quiescence()`'s hot loop for true mid-node interruption; (2)
-        replace D-85's node-count *budget estimate* with a genuine
-        wall-clock deadline — an `Atomic[uint64]` elapsed-ms counter (or
-        deadline) updated by a lightweight timer thread, checked via a
-        lock-free atomic load in the hot loop instead of a syscall per
-        node. Either changes `engine.py` (FastPy dialect global +
-        search-loop poll points) and `native/uci_main.cpp` (spawns the
-        watcher thread). Needs its own manual interactive-harness
-        verification against the real compiled binary, same as D-90 —
-        this is exactly the kind of concurrency-timing behavior that
-        doesn't show up in a unit test.
+  - [x] `fastpy-engine`: `Atomic[bool]` wired in for genuine mid-node
+        `stop` (D-92), superseding D-90's depth-boundary-only stdin
+        polling. `engine.py` gained `STOP_FLAG`/`stop_clear()`/
+        `stop_request()`/`stop_requested()`/`search_aborted()`; every
+        `node_budget_exceeded()` check in `alpha_beta()`/`quiescence()`/
+        `find_best_move()`'s root loop now calls `search_aborted()`
+        instead (node budget OR external stop). `run.py` mirrors the
+        same substitution for parity (no-op there today — no watcher
+        thread in Python mode). `native/uci_main.cpp`'s `go()` now spawns
+        a real `std::thread` (`stop_watcher()`) owning stdin for the
+        search's duration, polling every 10ms, calling `stop_request()`
+        the instant `stop`/`quit` arrives — safe now specifically
+        because `STOP_FLAG` is `Atomic[bool]`. `training/
+        build_uci_engine.py` gained `-pthread` (required for
+        `std::thread`, caught by actually building the binary).
+        Verified via 5 manual interactive UCI sessions against the real
+        compiled binary (see D-92): most importantly, D-90's exact
+        measured failure case — `stop` withheld until genuinely stuck
+        >2s inside one slow depth-11 iteration — now returns `bestmove`
+        in ~10ms instead of the 37.7s D-90 recorded. `quit` mid-search
+        and two ordinary uninterrupted searches also verified clean.
+        `fastpy-engine` pytest suite unaffected: 265/265 (no existing
+        test touches `native/uci_main.cpp`, before or after).
+  - [ ] **NEXT UP:** replace `NODE_BUDGET`'s node-count *estimate*
+        (D-85) with a genuine wall-clock deadline — the one piece D-91's
+        original two-part follow-up left open once D-92 shipped the
+        `stop` half. The same `stop_watcher()` thread (D-92) already
+        exists and already owns a poll loop during every search; it
+        could set `STOP_FLAG` (or a second Atomic global) once a
+        computed deadline elapses, instead of `go()` computing an
+        NPS-based node ceiling once per depth. Would remove D-85's
+        documented remaining gap (a depth whose per-node cost jumps
+        sharply above the running average can still miss the estimate).
+        Needs its own manual interactive-harness verification against
+        the real compiled binary, same as D-90/D-92 — this is exactly
+        the kind of concurrency-timing behavior that doesn't show up in
+        a unit test.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

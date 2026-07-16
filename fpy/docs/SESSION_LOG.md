@@ -4,12 +4,14 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
-## Session 55 — `Atomic[T]` global type added to FastPy's dialect (D-91)
-**Status:** COMPLETE ✅ — `fastpy` repo changed (`core/parser.py`,
-`core/emitter.py`, `tests/test_parser.py`, `tests/test_type_system.py`,
-`tests/test_emitter.py`); `docs/DECISIONS.md` (D-91), `docs/ROADMAP.md`,
-this file updated. `fastpy-engine` repo (`engine.py`, `run.py`, native/)
-untouched this session.
+## Session 55 — `Atomic[T]` added to FastPy's dialect (D-91), then wired into fastpy-engine for genuine mid-node `stop` (D-92)
+**Status:** COMPLETE ✅ — Part 1 (D-91): `fastpy` repo changed
+(`core/parser.py`, `core/emitter.py`, `tests/test_parser.py`,
+`tests/test_type_system.py`, `tests/test_emitter.py`). Part 2 (D-92):
+`fastpy-engine` repo changed (`engine.py`, `run.py`,
+`native/uci_main.cpp`, `training/build_uci_engine.py`). Docs updated:
+`docs/DECISIONS.md` (D-91, D-92), `docs/ROADMAP.md`,
+`docs/ENGINE_ARCHITECTURE.md`, this file.
 
 ### `Go` trigger
 Fresh conversation. Read ROADMAP/SESSION_LOG (Tier 1) and full Tier 2
@@ -78,7 +80,7 @@ engine.py` reconfirmed zero errors against the updated transpiler
 check`/`fastpy emit` on a small standalone `Atomic[bool]` example, not
 just through pytest) also run directly.
 
-### What's NOT done (next session's scope, per updated ROADMAP)
+### What's NOT done (as of D-91, superseded below by Part 2 / D-92)
 `fastpy-engine` doesn't use `Atomic[T]` yet. No `STOP_FLAG` in
 `engine.py`/`run.py`, no watcher thread in `native/uci_main.cpp`, no
 poll points wired into `alpha_beta()`/`quiescence()`. That's the real
@@ -87,6 +89,64 @@ rushing into the same message: replacing D-90's depth-boundary-only
 `stop` with true mid-node interruption, and/or replacing D-85's node-
 count estimate with a genuine wall-clock deadline check — both now
 unblocked by this session's type, neither built yet.
+
+### Part 2 (same session, continued): `Atomic[bool]` wired in (D-92)
+Picked up immediately after presenting D-91's files, per Gokul's "Next".
+Chose the `stop` wiring over the wall-clock-deadline alternative D-91
+also left open — D-90 recorded a specific measured failure (37.7s stop
+latency on a slow depth), giving this a concrete before/after to verify
+against rather than a theoretical improvement.
+
+`engine.py`: added `STOP_FLAG: Atomic[bool]`, `stop_clear()`/
+`stop_request()`/`stop_requested()`/`search_aborted()` (combines node
+budget OR external stop). Every `node_budget_exceeded()` check in
+`alpha_beta()`/`quiescence()`/`find_best_move()`'s root loop now calls
+`search_aborted()` instead — the existing D-85 root-loop protections
+(move 0 always trusted, aborted depths not stored to TT as EXACT) apply
+identically regardless of which condition triggered the abort.
+
+`run.py`: mirrored the same substitution into `_alpha_beta_py()`/
+`_quiescence_py()`/`_find_best_move_py()` for behavioural parity with
+`engine.py` (this repo's established convention) — a documented no-op
+today, since Python-mode's UCI loop is single-threaded and never calls
+`stop_request()`.
+
+`native/uci_main.cpp`: `go()` now spawns a real `std::thread`
+(`stop_watcher()`) that exclusively owns stdin for the search's
+duration (main()'s own loop resumes ownership after `go()` returns),
+polling every 10ms and calling `stop_request()` the instant `stop`/
+`quit` arrives. D-90's `stdin_has_pending_line()` depth-boundary poll
+is left in the file as documented dead code rather than deleted, so the
+design history stays visible. `training/build_uci_engine.py` gained
+`-pthread` — the build failed to link without it, caught by actually
+building the binary rather than assuming.
+
+**Verification:** `fastpy-engine` pytest suite 265/265 (unaffected —
+`native/uci_main.cpp` has no pytest coverage before or after this
+session; that file's behavior can only be verified against a real
+compiled binary). `fastpy check engine.py` zero errors, `run.py` parses
+clean. Built the actual UCI binary via `training/build_uci_engine.py`
+and ran 5 manual interactive UCI sessions against it — most importantly,
+reproduced D-90's exact failure shape (withheld `stop` until genuinely
+stuck >2s inside one slow depth-11 iteration whose cost was clearly
+still growing) and confirmed `bestmove` now returns in ~10ms instead of
+the 37.7s D-90 measured. Also verified: `quit` mid-search exits cleanly
+(~16.5ms), and two ordinary uninterrupted searches back-to-back (a
+fixed-depth search to natural completion, then a movetime-budgeted
+search on a fresh position) behave exactly as before — confirming the
+watcher-thread lifecycle doesn't leak or corrupt state across repeated
+`go()` calls.
+
+Docs updated: `DECISIONS.md` (D-92), `ROADMAP.md` (closed out this
+item, NEXT UP is now the wall-clock-deadline replacement),
+`ENGINE_ARCHITECTURE.md` (D-90's known-limitation entry marked fixed,
+with the measured before/after), this file.
+
+**Files changed this part:** `fastpy-engine/engine.py`,
+`fastpy-engine/run.py`, `fastpy-engine/native/uci_main.cpp`,
+`fastpy-engine/training/build_uci_engine.py`. `fastpy` repo untouched
+in this part (D-91's changes from earlier in this same session stand
+as already presented).
 
 ---
 

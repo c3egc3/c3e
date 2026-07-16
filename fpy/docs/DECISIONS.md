@@ -2760,3 +2760,110 @@ ms counter updated by a lightweight timer thread) can replace D-85's
 node-count *estimate* with a genuine wall-clock check, without needing a
 syscall in the hot path — the search only ever reads a lock-free atomic
 load.
+
+## D-92: `Atomic[bool]` wired into fastpy-engine — genuine mid-node `stop`, superseding D-90's depth-boundary polling
+
+**Context:** D-91 (this same session, immediately prior) added
+`Atomic[T]` to FastPy's dialect but deliberately left it unwired —
+`fastpy-engine` still used D-90's depth-boundary-only stdin polling.
+This decision is that follow-up, picked over the other item D-91 left
+open (replacing D-85's node-count budget with a genuine wall-clock
+deadline) because it's the one with an existing, specific, measured
+failure case on record (D-90's 37.7s stop latency) rather than a
+theoretical improvement.
+
+**Decision:**
+- `engine.py`: added `STOP_FLAG: Atomic[bool] = False` (right after
+  `NODE_BUDGET`), plus `stop_clear()` / `stop_request()` /
+  `stop_requested()` / `search_aborted()` (the last combines node-budget
+  OR external-stop into the single check now used everywhere an abort
+  needs checking). Every prior `node_budget_exceeded()` call site in
+  `alpha_beta()`, `quiescence()`, and `find_best_move()`'s root-move
+  loop now calls `search_aborted()` instead — a `stop` unwinds through
+  exactly the same early-return paths a node-budget expiry always has,
+  including the root loop's existing move-0-always-trusted /
+  don't-store-a-partial-depth-as-EXACT-to-the-TT protections (D-85),
+  which apply identically regardless of which of the two conditions
+  triggered the abort.
+- `run.py`: mirrored the same `search_aborted()` substitution into
+  `_alpha_beta_py()` / `_quiescence_py()` / `_find_best_move_py()`, per
+  this repo's established convention that these stay behaviourally
+  identical to `engine.py`'s compiled versions. Nothing in Python-mode's
+  UCI loop calls `stop_request()` today (it's single-threaded and has no
+  background stdin-watcher) — this is a no-op in practice, kept purely
+  for parity, explicitly documented as such in both files.
+- `native/uci_main.cpp`: `go()` now spawns a real `std::thread`
+  (`stop_watcher()`) that exclusively owns stdin for the duration of the
+  search — `main()`'s own `std::getline` loop resumes ownership only
+  after `go()` returns. The watcher polls with a 10ms timeout (frequent
+  enough to feel instant, cheap enough to cost nothing against a search
+  doing ~1.5M nodes/sec), and calls `stop_request()` the instant
+  `stop`/`quit` arrives. `stop_clear()` runs once at the top of `go()`;
+  `g_watcher_should_exit`/`g_watcher_saw_quit` are native-only
+  `std::atomic<bool>` (not FastPy globals — these coordinate the watcher
+  thread and `go()`'s own thread only, nothing to do with the compiled
+  search). D-90's `stdin_has_pending_line()` depth-boundary poll is left
+  in the file as dead code (documented as superseded) rather than
+  deleted, so the design history stays visible in the file itself, not
+  just in this log.
+- `training/build_uci_engine.py`: added `-pthread` to the g++ invocation
+  — required for `std::thread` on Linux/GCC; the build failed to link
+  without it during this session's verification, caught immediately by
+  actually building the binary rather than assuming the flag change was
+  unnecessary.
+
+**Why this actually fixes D-90's specific limitation, not just in
+theory:** D-90's docstring measured a concrete failure — `stop` sent
+1.5s into a `go infinite` search wasn't honored until a slow depth-11
+iteration finished 37.7s later. That failure mode is structural to
+depth-boundary-only polling regardless of how fast the poll itself is:
+if the check only happens between depths, a single slow depth is
+unavoidably uninterruptible. Moving the check inside `alpha_beta()`/
+`quiescence()` (checked on every call, i.e. genuinely per-node) removes
+that structural limit entirely — it was never really about *how* the
+flag got set, it was about *where* it got checked.
+
+**Verification:** `fastpy` suite unaffected (this session's `fastpy`
+work was D-91, already verified separately). `fastpy-engine`: full
+pytest suite 265/265 (unaffected — no existing test touches
+`native/uci_main.cpp`, which has no pytest coverage in this repo either
+before or after this session; see below for why). `fastpy check
+engine.py` zero errors. `run.py` parses clean as plain Python.
+
+The real verification for this specific feature is a compiled-binary
+integration test, not a unit test — same conclusion D-90 reached for
+the identical reason ("this is exactly the kind of concurrency-timing
+behavior that doesn't show up in a unit test"). Built the actual UCI
+binary via `training/build_uci_engine.py` and ran five manual
+interactive sessions against it (subprocess UCI, exactly how a real GUI
+talks to it):
+1. `go infinite`, `stop` sent 0.3s in → `bestmove` in 10.4ms.
+2. `go depth 20` on a busy middlegame FEN, `stop` sent 1s in → `bestmove`
+   in 10.3ms (10 depths had completed in that first second on this
+   position, so this run didn't reproduce a genuinely slow single
+   depth — see #3 for that).
+3. `go depth 30` on the same FEN, `stop` withheld until the engine had
+   been visibly stuck inside one single iteration (depth 11) for over
+   2 seconds with no new `info depth` line — reproducing D-90's exact
+   failure shape, where depth 10 alone had already taken >1.5s and depth
+   11's cost was clearly growing past that. `bestmove` returned in
+   10.3ms — the specific scenario D-90 measured at 37.7s.
+4. `quit` sent mid-`go infinite` → process exited cleanly in 16.5ms,
+   `bestmove` was still printed first (UCI-compliant shutdown).
+5. Two back-to-back ordinary searches with no `stop` at all (`go depth
+   6` to natural completion, then `go movetime 500` on a fresh
+   position) — confirms the watcher-thread lifecycle (spawned fresh and
+   joined cleanly every single `go()` call) doesn't leak or corrupt
+   state across repeated searches, and ordinary uninterrupted play is
+   unaffected: 6 `info` lines for the fixed-depth search, 486ms elapsed
+   for the 500ms budget (consistent with D-85's existing 0.9 headroom
+   fraction, unchanged by this session).
+
+**What's still explicitly open:** D-85's node-count budget is untouched
+by this session — `movetime`-based time management still works via the
+NPS-estimate mechanism, not a true wall-clock check. The same
+watcher-thread infrastructure this session built could plausibly also
+set `STOP_FLAG` (or a second `Atomic` global) when a wall-clock deadline
+elapses, replacing that estimate — flagged as the one remaining item
+from D-91's original two-part follow-up, left for a future session
+rather than folded into this one.
