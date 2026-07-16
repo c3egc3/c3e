@@ -4,6 +4,199 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
+## Session 54 — async UCI `stop` shipped, without the background thread D-85 already rejected
+**Status:** COMPLETE ✅ — `fastpy-engine/native/uci_main.cpp` changed;
+`docs/DECISIONS.md` (D-90), `docs/ROADMAP.md`, `docs/ENGINE_ARCHITECTURE.md`,
+this file updated. `engine.py`/`run.py` both untouched (confirmed
+byte-identical/unmodified); `fastpy` repo untouched.
+
+### `Continue` trigger
+Resumed directly from Session 53, which had finished its own work
+(D-89, the depth-5 residual fix) but not yet called `present_files` on
+the deliverables — did that first. A second `Continue` then picked up
+ROADMAP's freshly-updated NEXT UP: async UCI `stop`, the one
+substantial item left open across Sessions 48-52-53.
+
+### Design
+D-85 already tried a background-watchdog-thread design for a related
+problem (wall-clock time budgets) and rejected it directly: a plain
+shared flag written by one thread and read inside the compiled search's
+hot loop by another is a genuine C++ data race under `-O3` (a minimal
+repro hung forever), and fixing the read side properly needs a
+volatile/atomic type in FastPy's dialect — a real transpiler feature,
+explicitly flagged as multi-session, not something to add to fix one
+UCI command. Reused the exact same conclusion for `stop` (the read side
+would live in engine.py's compiled code either way) rather than
+re-testing an approach D-85 already found broken.
+
+Shipped instead: no threading at all. `go()`'s iterative-deepening loop
+already returns to the single calling thread between every completed
+depth (the same point `NODE_BUDGET` is checked). Added
+`stdin_has_pending_line()` — `poll()` with a 0ms timeout — to check,
+non-blockingly, whether a line is already sitting in stdin's buffer at
+that point; if so, read and dispatch it (`stop` or `quit`) immediately
+instead of waiting for `go()` to finish every requested depth. Zero
+shared mutable state, so this is race-free by construction, not merely
+race-free in the cases tested.
+
+Also added `go infinite` parsing (previously silently fell through to
+the 1000ms default — infinite mode had no way to ever stop on its own
+even in principle), and threaded a `quit_requested` output flag from
+`go()` back to `main()` so a `quit` consumed mid-search during polling
+doesn't get read a second time at the top level (which would hang).
+
+### A test-harness pitfall caught before trusting any result
+First verification attempt piped all commands at once
+(`printf '...go depth 5\nquit\n' | binary`) and saw `go depth 5` stop
+after depth 1 — looked like a regression. Root cause: with every line
+already in the pipe buffer up front, `poll()` correctly reports `quit`
+as pending the instant depth 1 finishes — indistinguishable from a real
+GUI that waited for `bestmove` first, since the buffer looks identical
+either way. Not an engine bug; a test-harness artifact from not
+matching how real UCI GUIs actually communicate (one line, wait for the
+response, then the next line). Fixed by writing a proper interactive
+`subprocess`-based harness (send → block-read-until-expected-prefix →
+send next) and re-verified against that instead.
+
+### Verification
+- `go depth 5` (interactive harness): all 5 depths ran, output
+  identical to D-89's just-fixed exact-match baseline (`c4b3`/-22,
+  `f3g5`/-16, `b1c3`/11, `b1c3`/2, `b1c3`/-3).
+- `go movetime 500`: unaffected.
+- Pre-emptive `stop` (sent before any `go`): harmless no-op; a
+  subsequent `go depth 3` runs normally afterward.
+- `go infinite` + `stop` sent 1.5s in: honored, but not until depth 11
+  completed — **37.7s stop→bestmove latency**, because depth 11 alone
+  took that long (1.27M→39.05M nodes, ~30x jump from depth 10) at this
+  branching factor and ~1M nodes/sec native speed. Documented plainly
+  as depth-boundary granularity, not mid-node — a real, sometimes-severe
+  limitation, not hidden behind "it technically works."
+- `quit` during an active search: process exits cleanly (return code 0),
+  no hang.
+- Rebuild via `training/build_uci_engine.py`: clean `-O3` compile.
+- Full `fastpy-engine` suite: 265/265 — unaffected by construction, not
+  just in practice: `tests/test_uci.py` spawns `run.py` (Python-mode
+  UCI), never the compiled native binary, and no pytest coverage of
+  `native/uci_main.cpp` exists (build cost ~110-150s per depth per the
+  established GCC-pathology estimate, too expensive for a per-test
+  fixture — consistent with how D-84/D-85 also verified native-only
+  changes manually).
+- `engine.py` reconfirmed byte-identical to pre-session `main`; `run.py`
+  unmodified from D-89's session-start state.
+
+### Not done this session
+True mid-node `stop` interruption remains blocked on the same
+prerequisite D-85 already identified: a volatile/atomic type in
+FastPy's dialect. Real, well-scoped, multi-session feature candidate —
+not attempted here, and not something to squeeze into either this
+session or a future one without treating it as its own item.
+
+**Files changed:**
+- `fastpy-engine/native/uci_main.cpp` — `stdin_has_pending_line()`
+  added; `go()` polls it at each depth boundary for `stop`/`quit`;
+  `go infinite` parsing added; `main()`'s `go` handler threads through
+  a `quit_requested` flag
+- `docs/DECISIONS.md` — D-90
+- `docs/ENGINE_ARCHITECTURE.md` — "No async stop support" limitation
+  replaced with the real Session 53 status and measured latency
+- `docs/ROADMAP.md` — async stop item marked done; NEXT UP reset to an
+  actual open decision (volatile/atomic transpiler feature, Lazy SMP,
+  or something outside search/UCI)
+- `docs/SESSION_LOG.md` — this entry
+
+---
+
+## Session 53 — depth-5 residual (D-88) closed: Python-mode's move-tie-break wasn't a real mirror of the compiled sort
+**Status:** COMPLETE ✅ — `fastpy-engine/run.py` changed; `docs/DECISIONS.md`
+(D-89), `docs/ROADMAP.md`, this file updated. `engine.py` untouched
+(confirmed byte-identical to pre-session `main`); `fastpy` repo untouched.
+
+### `Go` trigger — baseline re-verified first
+Freshly pulled both repos via `codeload.github.com` tarballs. `fastpy`
+suite: **372/372**. `fastpy-engine` suite: **265/265**. `run.py`/`engine.py`
+both `ast.parse()` clean. `fastpy check engine.py` — zero errors. All
+matched Session 52's account exactly.
+
+### Task chosen
+ROADMAP's NEXT UP left two open options from Session 52: chase the
+depth-5 residual divergence further (needs per-node tracing to actually
+confirm the "path-order variance" guess), or async UCI `stop` support
+(needs a background-thread architecture change, and D-85 already found
+and rejected one such design for a data race). Picked the residual —
+fully self-contained, no concurrency risk, and three sessions running
+(48/50/52) have flagged it as an open question without ever actually
+tracing it.
+
+### Method
+Built the real native UCI binary via `training/build_uci_engine.py` and
+ran it depth-by-depth (1-5) on the standing tactical FEN
+(`r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4`)
+alongside `run.py`'s `_find_best_move_py()` on the identical position.
+Reproduced D-88's exact finding first: depths 1-4 matched, depth 5
+diverged (native `b1c3`/-3, Python `f3g5`/-5).
+
+### First hypothesis ruled out
+Replicated `engine.py`'s exact selection-sort tie-break for the *root*
+move list only, leaving recursive calls untouched — depth 5 still picked
+`f3g5`. Root-level ordering alone wasn't the (sole) cause.
+
+### Real cause
+`engine.py`'s compiled `sort_moves()` is an in-place O(n²) selection
+sort — not stable. `run.py`'s Python-mode mirror ordered moves via
+`move_list.sort(key=lambda x: -x[1])` (Timsort, stable) at *both* the
+root and every interior node — D-88 never checked interior-node
+ordering, only the root's. For equal-scored moves, a stable sort
+preserves original (move-generation) order; the selection sort promotes
+the first remaining max-scoring element via a swap that can reorder
+same-scored moves once even one swap has happened. Present at every
+node of the tree, not just the root.
+
+### Fix
+`run.py` gained `_sort_moves_py()` — a direct port of `engine.py`'s
+selection-sort tie-break logic, operating on `(move, score)` tuples —
+used at both existing `move_list.sort(...)` call sites (`_alpha_beta_py`'s
+interior ordering, `_find_best_move_py`'s root ordering). No change to
+move generation, evaluation, pruning, or TT logic — purely a tie-break
+fix. `engine.py` untouched.
+
+### Verification
+- Rebuilt best-move/score comparison at every depth 1-5 on the tactical
+  FEN: now matches native **exactly** at every depth, including depth 5
+  (`b1c3`/-3, identical to native — the exact case that was open).
+- Cross-checked on startpos too (the other standing benchmark): depths
+  1-5 also match exactly (`b1c3`/`b1c3`/`g1f3`/`g1f3`/`g1f3`, scores
+  `48`/`16`/`39`/`12`/`29` — identical to native at every depth).
+- Node *counts* still differ between drivers even after the fix (e.g.
+  startpos depth 5: native 17,352 vs. Python-mode 10,716) — expected,
+  not concerning: hash-move promotion via `list.remove()`/`list.insert()`
+  and iterative-deepening TT-warm sequencing aren't byte-identical
+  processes between the two drivers even with matching tie-breaks. What
+  matters — the actual search decision at each depth — now agrees
+  exactly.
+- `engine.py` reconfirmed byte-identical to pre-session `main` via
+  direct `diff` — this was entirely a Python-mode mirror-fidelity fix,
+  not a compiled-engine or transpiler change.
+- Full `fastpy-engine` suite: **265/265**, zero test changes needed.
+- `fastpy check engine.py` — zero errors (unaffected).
+
+### Not done this session
+Async UCI `stop` support remains the one substantial item still open
+from Sessions 48-52 — needs a bigger architecture change (background
+thread + main loop polling stdin) and real care given D-85's rejected
+first attempt at a similar design. Needs a decision at the start of the
+next session: attempt it now, or defer it explicitly with reasoning the
+way Lazy SMP was deferred in D-74.
+
+**Files changed:**
+- `fastpy-engine/run.py` — `_sort_moves_py()` added, both existing
+  `move_list.sort(...)` call sites route through it
+- `docs/DECISIONS.md` — D-89
+- `docs/ROADMAP.md` — depth-5 residual item marked done with root cause;
+  NEXT UP updated to async UCI `stop`
+- `docs/SESSION_LOG.md` — this entry
+
+---
+
 ## Session 52 — chased search-driver windowing to its real root cause: a `fastpy` transpiler bug, not (only) windowing
 **Status:** COMPLETE ✅ — `fastpy/core/emitter.py`, `fastpy/tests/test_emitter.py`,
 `fastpy-engine/native/uci_main.cpp` changed; `docs/DECISIONS.md` (D-88),

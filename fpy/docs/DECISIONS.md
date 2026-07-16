@@ -2451,3 +2451,224 @@ restriction there.
   necessary, though not sufficient on its own, as this write-up is
   honest about). `engine.py` and `run.py` both untouched this session —
   the bug lived entirely in the transpiler, not in either mirror.
+
+---
+
+## D-89: depth-5 residual (D-88) confirmed and closed — Python-mode's
+  move-ordering tie-break wasn't a mirror of the compiled sort, and that
+  was the whole explanation (Session 53)
+
+  Picked up D-88's explicitly-unresolved flag: a small residual best-move
+  difference between the native compiled binary and `run.py`'s Python
+  mode persisted at depth 5 on the standing tactical FEN
+  (`r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4`)
+  even after D-88 fixed the `//` floor-division bug and confirmed move
+  generation and static evaluation were identical between drivers.
+  D-88 guessed "ordinary alpha-beta path-order variance" without
+  confirming a mechanism. Chosen over async UCI `stop` (the other open
+  carried-over option) because it's fully self-contained — no threading,
+  no C++ concurrency risk, directly closes a question three sessions
+  (48/50/52) have now flagged as open.
+
+  **Method:** built the real native UCI binary (`training/build_uci_engine.py`)
+  and ran it depth-by-depth on the tactical FEN and on startpos, alongside
+  `run.py`'s `_find_best_move_py()` on the identical positions, comparing
+  best move + score + node count at every depth 1-5. Depths 1-4 already
+  matched exactly (D-88's fix). Depth 5 still diverged: native picked
+  `b1c3` (score -3), Python picked `f3g5` (score -5) — the exact D-88
+  finding, reproduced first before touching anything.
+
+  **First hypothesis tested and ruled out:** root-level move-order ties.
+  Replicated `engine.py`'s exact selection-sort tie-break algorithm for
+  the *root* move list only (leaving every recursive call untouched) —
+  depth 5 still picked `f3g5`. Not the (sole) cause.
+
+  **Real cause, found by comparing the two "mirror" implementations
+  line-by-line for a difference D-88 didn't check:** `engine.py`'s
+  `sort_moves()` is an in-place O(n²) **selection sort** — not stable.
+  `run.py`'s `_alpha_beta_py()`/`_find_best_move_py()` both order moves
+  via `move_list.sort(key=lambda x: -x[1])` — Python's **Timsort**,
+  stable. For any two moves with equal MVV-LVA scores, Timsort preserves
+  their original (move-generation) relative order; the selection sort
+  instead always swaps the *first remaining* max-scoring element into
+  the current front slot, which can and does reorder equal-scored moves
+  relative to each other once even one swap has happened — a genuine,
+  provable divergence between the two implementations. This is present
+  at **every node** of the search tree (root and every recursive call),
+  not just the root — D-88 never checked interior-node ordering, only
+  the root's.
+
+  **Verification, direct rather than asserted:** rewrote a test copy of
+  `run.py` with a selection-sort-compatible ordering helper substituted
+  at *both* call sites (root and interior), and re-ran depths 1-5 on the
+  tactical FEN. Result: best move and score now match the native binary
+  **exactly at every depth**, including depth 5 (`b1c3`, score `-3` —
+  identical to native). Cross-checked on startpos too (the other
+  standing benchmark position, used throughout D-77 through D-88):
+  depths 1-5 also match exactly (`b1c3`/`b1c3`/`g1f3`/`g1f3`/`g1f3`,
+  scores `48`/`16`/`39`/`12`/`29` — identical to native at every depth).
+  Node *counts* still differ between the two drivers even after this fix
+  (e.g. startpos depth 5: native 17,352 vs. Python-mode 10,716) — not
+  unexpected or concerning: Python mode's hash-move promotion uses
+  `list.remove()`/`list.insert()` and the two drivers' TT-warm sequencing
+  across an iterative-deepening loop isn't byte-identical even with
+  matching tie-breaks. What matters — the actual search *decision* at
+  each depth — now agrees exactly, which is what D-88 left unconfirmed.
+
+  **Fix:** `run.py` gained `_sort_moves_py()`, a direct port of
+  `engine.py`'s selection-sort tie-break logic (operating on Python
+  `(move, score)` tuples instead of a C-array), and both existing
+  `move_list.sort(key=lambda x: -x[1])` call sites (`_alpha_beta_py`'s
+  interior-node ordering, `_find_best_move_py`'s root ordering) now call
+  it instead. No change to move generation, evaluation, pruning
+  thresholds, or TT logic — purely a tie-break-order fix. `engine.py`
+  untouched (confirmed byte-identical to the pre-session `main` via
+  `diff`) — this was entirely a Python-mode mirror-fidelity issue, not a
+  compiled-engine bug, matching D-88's own finding that the transpiler
+  bug it fixed lived entirely in the emitter, not `engine.py` itself.
+
+  **Full suite:** 265/265, zero test changes needed. `fastpy check
+  engine.py` — zero errors (unaffected, file untouched).
+
+  **What this means for future "residual divergence" investigations:**
+  the two drivers are not a black box relative to each other — every
+  documented remaining behavioral difference between native and
+  Python-mode search should now be explainable in terms of concrete
+  implementation deltas (as this and D-88 both were) rather than assumed
+  to be inherent noise. Async UCI `stop` remains the one substantial
+  item still open from Sessions 48-52 (needs a bigger architecture
+  change — background thread + main loop polling stdin — and D-85
+  already found and rejected one background-thread design for a genuine
+  C++ data race; a real fix needs either careful `std::atomic` use in
+  the hand-written `uci_main.cpp` alone, without engine.py needing to
+  observe the flag mid-search, or scoped as its own multi-session item
+  the way Lazy SMP was deferred in D-74).
+
+  **Files changed:** `fastpy-engine/run.py` only.
+
+---
+
+## D-90: async UCI `stop` shipped — depth-boundary polling instead of a
+  background thread, sidestepping D-85's data race instead of solving it
+  (Session 53)
+
+  The one substantial item left open from Sessions 48-52 (flagged again
+  at the end of D-89 this same session): a GUI sending `stop` while a
+  search is in flight had no effect until `go()` returned on its own,
+  regardless of depth/time settings — `native/uci_main.cpp`'s top-level
+  `stop` handler was a pure no-op comment saying as much since D-85.
+
+  **Why not the background-thread design again:** D-85 already built,
+  tested, and rejected exactly that approach for a *different* problem
+  (wall-clock time budgets) — a watchdog thread setting a shared flag
+  that the compiled `alpha_beta()`/`quiescence()` poll. Direct testing
+  found it doesn't work: a plain (non-atomic) global written by one
+  thread and read in a hot loop by another is a data race, and GCC's
+  optimizer is legally free to cache the read and never observe the
+  other thread's write — confirmed with a minimal 15-line repro that
+  hung forever at `-O3`. The same reasoning applies identically to a
+  `stop` flag: the read side lives inside `engine.py`'s compiled dialect
+  (Core Rule 6), which has no volatile/atomic type, and adding one would
+  need a real transpiler feature touching `core/parser.py`/
+  `core/type_system.py`/`core/emitter.py` in the `fastpy` repo — flagged
+  in D-85 as its own multi-session item, and Core Rule 5 ("the emitter
+  does zero analysis") argues against special-casing one global's
+  emission anyway. Revisited that reasoning directly rather than
+  assuming D-85 still applies unchanged; it does.
+
+  **What shipped instead:** no threading at all. `go()`'s existing
+  iterative-deepening loop already returns control to the single
+  calling thread between every completed depth — that's the exact point
+  `NODE_BUDGET` (D-85) is already checked. A new `stdin_has_pending_line()`
+  helper uses `poll()` (POSIX, `<poll.h>`) with a 0ms timeout to check,
+  non-blockingly, whether a full line is already sitting in stdin's
+  buffer; if so, `go()` reads and dispatches it right there (recognizing
+  `stop` and `quit`) instead of waiting for the loop to finish every
+  requested depth. Since this never involves a second thread, there is
+  no C++ memory-model race to reason about at all — not "safer in
+  practice," genuinely race-free by construction, unlike the flag design
+  D-85 tested and found broken.
+
+  **`go infinite` added as part of this:** previously unparsed by
+  `uci_main.cpp`'s `go` command handler — a bare `go infinite` silently
+  fell through to the 1000ms default budget, meaning infinite-analysis
+  mode had no way to ever stop on its own even in principle. Now sets
+  `movetime_ms = -1` (no deadline) and `max_depth = kInfiniteMaxDepth`
+  (40 — comfortably beyond anything reachable in practical time at
+  current search speed; exists only to keep the loop bounded in
+  principle if `stop` genuinely never arrives).
+
+  **`quit` handled the same way, and why `main()` needed a change too:**
+  if `go()`'s stdin-polling reads a `quit` line during a search, it sets
+  an output `quit_requested` flag and breaks the depth loop (printing
+  `bestmove` first, matching normal UCI shutdown expectations). `main()`
+  now checks that flag immediately after `go()` returns and breaks its
+  own top-level loop without trying to read another line — that `quit`
+  line was already consumed inside `go()`'s polling, so waiting for it
+  again at the top level would hang forever on the next `std::getline`.
+
+  **Honest limitation, verified by direct measurement, not assumed:**
+  this is depth-boundary granularity, not mid-node. Built a proper
+  interactive test harness (`subprocess.Popen` + read-until-prefix, not
+  a naive `printf | binary` blast — see below for why that distinction
+  mattered) and sent `stop` 1.5s into a `go infinite` search from
+  startpos: not honored until depth 11 completed, ~37.7s later, because
+  depth 11 alone took that long (1.27M → 39.05M nodes, a ~30x jump from
+  depth 10) at this branching factor and ~1M nodes/sec native search
+  speed. This is a real, sometimes-severe latency — not being hidden
+  behind "it technically works." What it fixes, unambiguously: `stop`
+  was previously *never* honored during search regardless of how long
+  that search ran; now it's honored at the next depth boundary, which
+  is a large improvement for shallow-to-medium depths and for
+  `movetime`/`wtime`-bounded games (where `NODE_BUDGET` already keeps
+  any single depth reasonably short) even though it doesn't fully solve
+  the deep-`infinite`-search case.
+
+  **A test-harness pitfall hit and fixed before trusting any result:**
+  the first verification attempt piped all UCI commands into the binary
+  at once (`printf 'uci\nisready\n...\ngo depth 5\nquit\n' | binary`) and
+  saw `go depth 5` stop after depth 1 — looked like a regression at
+  first glance. Root cause: with every line already sitting in the pipe
+  buffer up front, `poll()` correctly reports `quit` as "pending" the
+  instant depth 1 finishes, since it genuinely is sitting there — this
+  is indistinguishable, from the OS's point of view, from a GUI that
+  waited for `bestmove` and only then decided to send `quit`. Real UCI
+  GUIs don't send commands this way (they wait for a response before
+  sending the next line), so this was a test-harness artifact, not an
+  engine bug — but it's also a fair warning about what this design
+  actually does: it treats "a line is available to read" as the signal,
+  which is correct for any conformant GUI and would misfire for a
+  batch-piped script that doesn't wait for `bestmove`. Fixed by writing
+  a proper interactive harness (send one command, block reading until
+  the expected response prefix, only then send the next) and re-ran
+  `go depth 5` against it: all 5 depths ran, scores/nodes identical to
+  the pre-session baseline (`c4b3`/-22, `f3g5`/-16, `b1c3`/11, `b1c3`/2,
+  `b1c3`/-3 — matching D-89's just-fixed exact-match results).
+
+  **Files changed:** `fastpy-engine/native/uci_main.cpp` only. No
+  changes to `engine.py`, `run.py`, or the `fastpy` repo — confirmed via
+  direct `diff` against pre-session `main` that `engine.py` is byte-
+  identical, and `run.py` untouched from D-89's session-start state.
+
+  **Verification:** rebuilt via `training/build_uci_engine.py`, clean
+  compile at `-O3`. Full `fastpy-engine` pytest suite: 265/265 — the
+  existing suite spawns `run.py` (Python-mode UCI) for its UCI
+  integration tests (`tests/test_uci.py`), not the compiled native
+  binary at all, so this was unaffected by construction, not just
+  unaffected in practice; no pytest coverage of `native/uci_main.cpp`
+  exists (building it costs ~110-150s per D-75/D-79/D-80/D-81/D-85's
+  established GCC-pathology estimate, too expensive for a per-test
+  fixture), consistent with how D-84/D-85 also verified native-only
+  changes manually rather than adding pytest coverage for them. Manual
+  verification via the interactive harness: `go depth 5` unaffected
+  (exact match to pre-session output), `go movetime 500` unaffected,
+  pre-emptive `stop` (sent before any `go`) remains a harmless no-op, a
+  subsequent `go depth 3` after that no-op `stop` runs normally to
+  completion, `quit` during an active search exits the process cleanly
+  (return code 0) without hanging.
+
+  **What's still open:** true mid-node interruption remains blocked on
+  the same transpiler feature D-85 already identified (a volatile/atomic
+  global type in FastPy's dialect) — a real, well-scoped, multi-session
+  feature candidate whenever that's prioritized, not something either
+  this session or D-85 attempted to squeeze in early.

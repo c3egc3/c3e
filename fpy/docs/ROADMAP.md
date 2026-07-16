@@ -513,15 +513,59 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         `fastpy check engine.py` zero errors, `fastpy-engine` suite
         265/265 unaffected (Python mode never went through the buggy
         emitted C++).
-  - [ ] **NEXT UP:** no specific task queued. Options open: chase the
-        depth-5 residual divergence further (would need per-node
-        tracing to actually confirm the path-order-variance hypothesis
-        rather than just asserting it), async UCI `stop` support (needs
-        the search moved to a background thread — a bigger architecture
-        change, and D-85 already tried and rejected one background-
-        thread design for a data race, so this needs real care), or
-        something unrelated to search/UCI entirely. Needs a decision at
-        the start of next session.
+  - [x] **Depth-5 residual divergence (D-88) confirmed and closed
+        (Session 53, see D-89)** — chased the "ordinary alpha-beta
+        path-order variance" guess from D-88 to a concrete, provable
+        mechanism instead of leaving it asserted. Root cause:
+        `engine.py`'s compiled `sort_moves()` is an unstable in-place
+        selection sort; `run.py`'s Python-mode mirror used Python's
+        stable `list.sort()` for the same MVV-LVA ordering, at both the
+        root and every interior node. Equal-scored moves can land in a
+        different relative order between the two, which compounds
+        through the whole search tree via alpha-beta cutoff/window
+        timing. Fixed by adding `_sort_moves_py()` — a direct port of
+        the compiled selection-sort tie-break — to `run.py`, used at
+        both existing sort call sites. Verified directly: native and
+        Python-mode now agree exactly (move **and** score) at every
+        depth 1-5 on both the standing tactical FEN and startpos,
+        including the depth-5 case that was the whole open question.
+        `engine.py` untouched (confirmed byte-identical to pre-session
+        `main`). Full suite 265/265, zero test changes needed.
+  - [x] **Async UCI `stop` support (Session 53, see D-90)** — shipped
+        without a background thread, sidestepping D-85's data race
+        rather than solving it: `go()`'s existing iterative-deepening
+        loop already returns to the single calling thread between every
+        completed depth (same point `NODE_BUDGET` is checked), so a new
+        `stdin_has_pending_line()` (`poll()`, 0ms timeout) checks for a
+        waiting `stop`/`quit` line right there instead of waiting for
+        `go()` to finish every requested depth — no shared mutable
+        state, no second thread, genuinely race-free by construction.
+        `go infinite` also added (previously unparsed, fell through to
+        the 1000ms default — infinite mode had no way to ever stop on
+        its own). **Honest, measured limitation:** depth-boundary
+        granularity, not mid-node — `stop` sent 1.5s into a `go
+        infinite` search wasn't honored until depth 11 completed 37.7s
+        later. True mid-node interruption still needs the same
+        transpiler feature (a volatile/atomic FastPy global type) D-85
+        already identified as its own multi-session item. Full suite
+        265/265 (unaffected by construction — `test_uci.py` exercises
+        `run.py`, not the native binary); manual interactive-harness
+        verification of `go depth N`, `movetime`, pre-emptive `stop`,
+        and `quit`-during-search, all against the real compiled binary.
+        `engine.py`/`run.py` both untouched — `native/uci_main.cpp` only.
+  - [ ] **NEXT UP:** no specific task queued. The two items that have
+        driven Sessions 48-53 (search-driver reconciliation, async
+        stop) are both closed now. Real remaining options: (1) the
+        volatile/atomic FastPy global type that both D-85 and D-90
+        flagged as the actual prerequisite for true mid-node search
+        interruption — a genuine transpiler feature, multi-session
+        scope, would also unblock a real wall-clock time check instead
+        of the node-count estimate; (2) Lazy SMP, deferred since D-74;
+        (3) something outside search/UCI entirely (opening book, engine
+        strength testing against a reference opponent, etc). Needs an
+        actual decision at the start of next session — don't default
+        into more search/UCI polish by inertia now that the flagged
+        backlog is clear.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

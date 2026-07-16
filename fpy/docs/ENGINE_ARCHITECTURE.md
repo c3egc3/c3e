@@ -474,15 +474,36 @@ depth, not a single fixed multiplier.
   by the optimizer and never observed to change; confirmed with a
   minimal repro that hung forever at `-O3`) — see D-85 for the full
   writeup of why that approach doesn't work here.
-- **No async `stop` support.** A GUI sending `stop` while a search is
-  actually in flight has no effect until the current `go()` call
-  returns on its own — the main loop is blocked synchronously inside
-  `go()` and isn't polling stdin, so it can't notice the command
-  arriving. This is separate from the node-budget fix above (which
-  bounds a *time budget* expiring during search, not an explicit `stop`
-  command). Fixing it needs the search itself moved to a background
-  thread with the main loop continuing to read stdin — a bigger
-  architecture change, not attempted yet.
+- **Async `stop` support: depth-boundary granularity, not mid-node
+  (Session 53, D-90).** A GUI sending `stop` while a search is in
+  flight is now genuinely honored — previously it was a total no-op
+  until `go()` returned on its own regardless of depth/time settings.
+  D-85's rejected background-thread design (a shared flag set by a
+  watchdog thread, polled from inside `alpha_beta()`) is still the
+  reason this isn't finer-grained: that's a genuine C++ data race under
+  `-O3` (confirmed by a minimal repro that hung forever), and fixing it
+  properly needs a real FastPy transpiler feature (a volatile/atomic-
+  qualified global) that Core Rule 5 and D-85 both flagged as its own
+  multi-session item. This session sidesteps the problem instead of
+  solving it: still only one thread, ever. `go()`'s existing iterative-
+  deepening loop already returns to that one thread between every
+  completed depth (the same point `NODE_BUDGET` is already checked);
+  at that point, `poll()` with a 0ms timeout checks whether a line is
+  already sitting in stdin's buffer, and if so reads and dispatches it
+  right there instead of waiting for `go()` to finish every requested
+  depth. No shared mutable state, no second thread, nothing for the
+  compiler to race on. `go infinite` was also added as part of this
+  (previously unparsed — it silently fell through to the 1000ms
+  default, so infinite mode had no way to ever stop on its own even in
+  principle). **Honest limitation:** this is depth-boundary latency,
+  not truly mid-node — a single very slow depth still can't be
+  interrupted before it finishes. Measured directly: `stop` sent 1.5s
+  into a `go infinite` search on startpos wasn't honored until depth 11
+  completed, ~37.7s later, because depth 11 alone took that long at
+  this branching factor/search speed. Real GUIs generally treat a slow
+  `stop` response as tolerable (better than never), but this is a real,
+  sometimes-severe latency, not a full fix — worth knowing before
+  relying on `stop` for tight interactive turnaround at high depths.
 - **Best move can differ from Python mode's choice in near-equal
   positions.** Narrowed substantially in Session 52 (D-88), and its
   real cause corrected: the previous entry here attributed this to
