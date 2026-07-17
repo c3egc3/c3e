@@ -1680,3 +1680,64 @@ solve the calendar-time problem sharding does (10,000 games sequentially
 at ~100ms/move average is still 10,000 games sequentially), and pushes
 right up against the default job timeout as a fixed ceiling with no
 parallelism benefit at all, for no advantage over sharding.
+
+
+## D51 — Diagnostic Export "Result:" Line: Capture Reason at the Source, Not Reconstruct From Board State (2026-07-17)
+
+**Decision**: Added two globals to `web/index.html` — `gameOverWinner`
+('w'/'b'/null) and `gameOverReasonText` (short string: 'Checkmate',
+'Stalemate', 'King captured', 'Insufficient material', 'Threefold
+repetition', '50-move rule', 'Aborted', 'Resignation', 'Time forfeit') —
+set at each of the 8 sites that set `customGameOver = true`
+(`_checkGameOverInner`'s 6 branches, `handleAbort`, `confirmResign`,
+`handleClockTimeout`'s 2 directions), reset alongside `customGameOver` in
+`startGame()`. The diagnostic FEN export now reads these directly into a
+new `Result:` line instead of the export tool (or a human, or me)
+inferring the reason after the fact from raw board state.
+
+**Why capture at the source instead of reconstructing later**: This
+session's own diagnostic thread is the direct motivating evidence for
+why reconstruction is unreliable: a "Game over (in check)" export was
+initially assumed to mean checkmate, but "(in check)" is actually
+computed from `customInCheck` alone — an orthogonal fact about the final
+position, true for checkmate AND for a repetition/50-move draw that
+happens to land on a position with the side-to-move in check. Confirming
+the real reason required manually replaying the last several plies
+against the halfmove clock to count position recurrences by hand — slow,
+error-prone, and not something to redo for every future diagnostic
+export. Every termination branch already builds a perfectly clear `msg`
+string for the on-screen banner (e.g. `'🤝 Draw — Threefold
+repetition'`); the fix is simply to also store the *reason* (not the
+decorated banner text — see below) in a variable at the same moment,
+rather than trying to infer it from `customGameOver`/`customInCheck`/
+board state after the fact.
+
+**Why a separate `gameOverReasonText` instead of just reusing the
+existing `msg` string verbatim**: `msg` is decorated for the in-game
+banner (emoji, exclamation points, "You"/"AI Engine" phrasing tied to
+`playerColor`) — reusing it verbatim in the export would either
+duplicate that framing oddly in a technical diagnostic file, or require
+parsing it back apart to get White/Black + reason if the export ever
+needs to present the result generically (e.g. independent of which side
+the person happened to be playing that game). A short, undecorated
+reason string (`'Threefold repetition'`, `'50-move rule'`, etc.) plus a
+separate `gameOverWinner` color is more reusable and is what the export
+function combines into its own `Result:` phrasing
+(`'Result: White wins (you) — Checkmate'` /
+`'Result: Draw — Threefold repetition'` / `'Result: Aborted — no
+result'`), independent of the on-screen banner's wording.
+
+**Why `gameOverWinner` is a plain color ('w'/'b'/null), not "player" vs
+"AI"**: Keeps the stored fact objective (who actually won, in board
+terms) and lets the export derive the subjective "(you)"/"(AI)" framing
+from `playerColor` at read time — same reasoning as the existing
+`Turn to move:`/`Player is playing:` lines already being reported
+separately rather than pre-merged.
+
+**Scope note**: This only feeds the diagnostic export. It does not
+change any win/draw/loss detection logic itself (`_checkGameOverInner`'s
+actual conditions are untouched) and does not change what's shown on
+the in-game banner (`el.textContent`/`msg` still built exactly as
+before) — purely additive bookkeeping so the *reason* is captured
+once, correctly, at the moment it's known, instead of needing to be
+reverse-engineered later.

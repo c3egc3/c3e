@@ -7,6 +7,67 @@ Most recent session at TOP.
 
 ---
 
+## Session 78 — 2026-07-17 (diagnostic export "Result:" line — D51)
+
+**Built:**
+
+1. **`web/index.html`**: added `gameOverWinner`/`gameOverReasonText`
+   globals, set at all 8 `customGameOver = true` sites (checkmate,
+   stalemate, king captured, insufficient material, threefold
+   repetition, 50-move rule, abort, resign, and both directions of time
+   forfeit), reset in `startGame()`. Diagnostic FEN export now includes
+   a `Result:` line built from these — e.g. `Result: White wins (you)
+   — Checkmate`, `Result: Draw — Threefold repetition`, `Result:
+   Aborted — no result` — instead of leaving the reason to be
+   reverse-engineered from `Status`/`(in check)` after the fact.
+
+**Bugs fixed:** None in game logic — `_checkGameOverInner`'s actual
+win/draw conditions and the in-game banner text are untouched; purely
+additive result-capture for the diagnostic export.
+
+**Decisions made:** D51 — capture the reason at the source (the 8
+existing termination sites already know exactly why the game ended) as
+a short undecorated reason string + winner color, rather than trying to
+reconstruct it later from `customGameOver`/`customInCheck`/board state.
+Full rationale in `DECISIONS.md`.
+
+**Context — why this came up:** User uploaded diagnostic FEN exports to
+sanity-check the threefold-repetition system. Two things came out of
+that investigation, both closed by this change going forward: (1) an
+export showing `Status: Game over (in check)` was initially misread as
+implying checkmate — turned out `(in check)` is just an orthogonal
+`customInCheck` flag, unrelated to end-reason; hand-tracing the last 8
+plies against the halfmove clock showed the final position had only
+recurred twice, not three times, so that specific game most likely
+ended by checkmate rather than the repetition the move pattern visually
+suggested. (2) A separate, still-**unresolved** earlier export showed
+`moveHistory` (81 entries) inconsistent with the live board/turn state
+implied by the exported FEN's fullmove number (which matched only 79
+applied plies) — traced through all 4 move-commit code paths
+(`applyEngineMove`/`handleTap`/`handleDrop`/`doPromotion`) and confirmed
+each pushes to `moveHistory` and mutates `customTurn`/`fullmoveNumber`
+atomically in the same synchronous block, with no other mutation site
+found (ruled out undo — it's a stub in chaos mode — and ruled out the
+move-review/`viewIndex` system, which explicitly never touches the live
+board variables). No mechanism found in current `main` source that
+explains that specific desync; flagged as open, lower-priority given
+it hasn't recurred in later exports, and may simply have been a
+one-off from the export's ambiguous `Status` phrasing (now improved by
+this session's `Result:` line) rather than a deeper state bug.
+
+**Next session start point:** No specific task queued. Options: (a)
+if Gokul reproduces the `moveHistory`-vs-fullmove desync again with a
+fresh diagnostic export (now including a `Result:` line, which should
+make the reason unambiguous), dig further into it with that concrete
+example in hand; (b) otherwise fall back to the Phase 23 backlog per
+its own "don't skip ahead" rule — check with Gokul on 23.3's data
+volume before resuming Phase 23. Carried forward, non-blocking:
+`regression-gate` branch-protection setup (Session 75); manual
+multi-threaded `uci_match_runner.yml` run to measure 23.2's Elo impact
+(Session 76).
+
+---
+
 ## Session 77 — 2026-07-17 (Phase 23.3, code half: sharded self-play generation — D50)
 
 **Built:**
