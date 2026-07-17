@@ -1068,15 +1068,23 @@ item's ease/size estimate assumes the earlier ones are already in
 place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
 23.2 has already confirmed the data-volume theory).**
 
-- [ ] 23.1 — Lightweight SPRT-style regression testing gate. The
-             pinned-reference UCI match harness (D36) exists but is
-             used ad hoc, not as a mandatory pre-merge gate. Wire it
-             into `build.yml` as a required pass/fail threshold before
-             merge. Do this first — it makes every item below safer to
-             land. Ease: Small–Medium (wiring existing
-             `uci_match_runner`, not new infrastructure). Size: not
-             directly measurable in Elo, but multiplies confidence in
-             every other change on this list.
+- [x] 23.1 — Lightweight SPRT-style regression testing gate. DONE
+             (Session 75, D48). `uci_match_runner.rs` gained an optional
+             11th CLI arg (`min_score_pct`) that turns it into a
+             pass/fail gate — exits 1 if the candidate's score against
+             the baseline falls below the threshold, exits 0 otherwise
+             (existing manual `uci_match_runner.yml` invocations are
+             unaffected — they never pass this arg). New `regression-gate`
+             job in `build.yml`, runs automatically on every PR (not
+             manual-dispatch): builds the PR head ("candidate") and
+             current `main` tip ("baseline"), plays 20 games at 50ms/move,
+             fails the job if candidate scores below 35%. ⚠️ Not yet a
+             hard merge block — Gokul still needs to mark
+             `regression-gate` as a required status check in GitHub
+             branch protection settings (Settings → Branches → main,
+             from the mobile GitHub app or web) for it to actually block
+             merges; the job runs and reports either way even before
+             that's set.
 - [ ] 23.2 — Thread-differentiated Lazy SMP. Helper threads (`main.rs`)
              currently run identical search parameters, differing only
              in start timing and being time-unlimited. Vary LMR

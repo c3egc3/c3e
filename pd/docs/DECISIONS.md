@@ -1433,3 +1433,81 @@ anything worth keeping — report files delivered mid-conversation aren't
 docs/ files and aren't part of the Tier 1/Tier 2 reading discipline, so
 they'd have silently stopped being read the moment this conversation
 ended.
+
+
+## D48 — Regression Gate: exit-code threshold on uci_match_runner, gated against live `main`, not a pinned baseline file (2026-07-17)
+
+**Decision**: Implement 23.1 (lightweight SPRT-style regression gate) as
+a minimal extension of the existing `uci_match_runner.rs` (D36) rather
+than new infrastructure. Added one optional 11th CLI arg,
+`min_score_pct`: when supplied, the harness exits `1` if Engine A's
+score against Engine B falls below that percentage, `0` otherwise; when
+omitted (every existing manual `uci_match_runner.yml` invocation), the
+harness always exits `0`, exactly as before — the gate mode is strictly
+additive. A new `regression-gate` job in `build.yml` runs this
+automatically on every `pull_request` (unlike `uci_match_runner.yml`,
+which stays manual-dispatch for precision Elo/Skill-Level runs): it
+builds the PR head as "candidate" (Engine A) and the current tip of
+`main` as "baseline" (Engine B), plays 20 games at 50ms/move, and fails
+if candidate scores below 35%.
+
+**Why 35%, 20 games, 50ms/move**: This is explicitly a coarse smoke
+check, not a precision measurement — the roadmap item itself is titled
+"lightweight". At n=20 games, sampling noise alone is large enough that
+a strong regression (tens of Elo) can still occasionally land near 50%;
+a tight threshold like 45% would produce frequent false-positive gate
+failures on completely healthy PRs. 35% (~-108 Elo via the harness's
+own logistic conversion) is chosen to only catch clearly broken changes
+(a real bug, not a small tuning-noise fluctuation) while staying cheap
+enough to run on every PR — 20 games × up to 300 plies × 50ms worst-case
+is minutes, not the tens-of-minutes a precision run (100ms/move, 100+
+games) would cost. Precision Elo measurement stays on
+`uci_match_runner.yml`'s manual trigger, unchanged by this decision.
+
+**Why baseline = live `main`, not a pinned SHA/file**: Considered
+storing a baseline git SHA in a repo file (e.g.
+`.github/regression_baseline.txt`), updated by Gokul whenever a new
+baseline should be promoted. Rejected in favor of always checking out
+`ref: main` fresh for the baseline side: it needs no manual upkeep (a
+pinned-file baseline would silently go stale the moment nobody
+remembers to bump it, and Gokul is mobile-only — editing a SHA in a
+text file by hand is exactly the kind of fiddly manual step the rest of
+this workflow is built to avoid), and "does this PR make the engine
+weaker than what's already on `main`" is the actually-useful regression
+question, which a live comparison answers directly. Trade-off accepted:
+the baseline binary gets rebuilt on every PR run rather than cached
+across runs (mitigated by `Swatinem/rust-cache` on the baseline
+workspace same as everywhere else in `build.yml`).
+
+**Design notes**:
+- `regression_gate_passes(score_a_pct, min_score_pct)` pulled out as a
+  pure function (same pattern as `elo_diff_from_score`,
+  `split_uci_options`) so the pass/fail boundary is unit-tested without
+  spawning engine processes.
+- Engine A is always the candidate and Engine B always the baseline in
+  gate mode specifically so a failure message ("A scored 30% against
+  B") reads directly as "the candidate regressed" without needing to
+  remember an arbitrary A/B assignment.
+- **Not yet a hard merge block.** The `regression-gate` job runs and
+  reports on every PR starting this session, but GitHub only treats a
+  job as merge-blocking once it's marked a *required* status check in
+  branch protection settings — that's a repo-settings change, not a
+  code change, and needs to happen once from Gokul's side (Settings →
+  Branches → main, doable from the mobile GitHub app). Flagged in
+  ROADMAP.md 23.1 rather than silently assumed done.
+- Known limitation inherited from D36 unchanged: no per-move timeout on
+  the child process read, so a genuinely hung candidate binary blocks
+  the gate job until the CI job's own overall timeout, not a fast
+  failure. Acceptable for now — same acceptance rationale as D36 — but
+  worth revisiting if a hang is ever actually observed in a gate run.
+
+**Rejected alternative**: A true statistical SPRT (sequential
+probability ratio test, as used by Stockfish's fishtest) with LLR
+bounds and configurable elo0/elo1 hypotheses. Rejected as over-built for
+23.1's stated scope ("lightweight") and for a solo mobile-only
+maintainer — a true SPRT needs a variable, potentially large number of
+games per PR to reach a decision, which doesn't fit a fixed CI job
+budget as cleanly as a fixed-N threshold check. The roadmap explicitly
+calls this "SPRT-style", not SPRT; a fixed-N score threshold gets most
+of the practical benefit (catching real regressions before merge) at a
+fraction of the implementation and CI-time cost.

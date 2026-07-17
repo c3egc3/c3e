@@ -7,6 +7,57 @@ Most recent session at TOP.
 
 ---
 
+## Session 75 — 2026-07-17 (Phase 23.1: lightweight SPRT-style regression gate — D48)
+
+**Built:**
+
+1. **`uci_match_runner.rs` (D36 harness) extended, not replaced**: new
+   optional 11th CLI arg `min_score_pct` turns a match run into a
+   pass/fail gate — process exits `1` if Engine A's score falls below
+   the threshold, `0` otherwise. Arg is fully additive: every existing
+   `uci_match_runner.yml` manual invocation (pre/post-tuning Elo, Skill
+   Level tiers) never passes it, so those keep their exact prior
+   always-exits-0 behavior unchanged.
+2. **New pure function `regression_gate_passes(score_a_pct,
+   min_score_pct)`**, unit tested (3 new tests: no-threshold always
+   passes, at/above threshold passes, below threshold fails) — same
+   "pull the boundary logic out as a pure fn" pattern as
+   `elo_diff_from_score`/`split_uci_options` already in this file.
+3. **New `regression-gate` job added to `build.yml`**, runs
+   automatically on every `pull_request` (not manual-dispatch): builds
+   the PR head as candidate, current `main` tip as baseline, plays 20
+   games at 50ms/move via the harness, fails the job below 35% score.
+   Uploads the match summary as a build artifact either way for
+   debugging. Full rationale for the 35%/20-games/50ms choices and the
+   live-`main`-vs-pinned-baseline-file decision recorded in
+   `DECISIONS.md` D48.
+4. **`ROADMAP.md` 23.1 checked off**, flagged with an explicit ⚠️ that
+   the job existing and reporting is not the same as it *blocking*
+   merges — Gokul still needs to mark `regression-gate` as a required
+   status check in GitHub branch protection settings (one-time,
+   mobile-app-doable) before it actually gates anything.
+
+**Bugs fixed:** None — new capability on an existing, working harness,
+no prior behavior touched (verified: the new arg is strictly additive
+and every prior call site omits it).
+
+**Decisions made:** D48 — regression gate implemented as an exit-code
+threshold on the existing harness rather than new infrastructure or a
+true statistical SPRT; baseline is always live `main`, not a pinned
+SHA/file. Full rationale in `DECISIONS.md`.
+
+**Next session start point:** 23.2 — thread-differentiated Lazy SMP.
+Vary LMR aggressiveness / move-ordering tie-breaks by thread ID in the
+helper threads (`main.rs`) so they explore genuinely different tree
+regions instead of largely duplicating the main thread's search. Read
+`main.rs`'s current Lazy SMP thread-spawn code fresh before writing
+anything (not covered by any Tier 2 doc in enough implementation
+detail). One thing still outstanding from this session, non-blocking:
+Gokul needs to set `regression-gate` as a required branch-protection
+check on `main` for 23.1 to actually block merges, whenever convenient.
+
+---
+
 ## Session 74 — 2026-07-17 (ENGINE_ARCHITECTURE.md rewrite; competitive-analysis report generated, found wrong, corrected; corrected list embedded as ROADMAP Phase 23 — D47)
 
 **Built:**
