@@ -596,20 +596,46 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         and two ordinary uninterrupted searches also verified clean.
         `fastpy-engine` pytest suite unaffected: 265/265 (no existing
         test touches `native/uci_main.cpp`, before or after).
-  - [ ] **NEXT UP:** replace `NODE_BUDGET`'s node-count *estimate*
-        (D-85) with a genuine wall-clock deadline — the one piece D-91's
-        original two-part follow-up left open once D-92 shipped the
-        `stop` half. The same `stop_watcher()` thread (D-92) already
-        exists and already owns a poll loop during every search; it
-        could set `STOP_FLAG` (or a second Atomic global) once a
-        computed deadline elapses, instead of `go()` computing an
-        NPS-based node ceiling once per depth. Would remove D-85's
-        documented remaining gap (a depth whose per-node cost jumps
-        sharply above the running average can still miss the estimate).
-        Needs its own manual interactive-harness verification against
-        the real compiled binary, same as D-90/D-92 — this is exactly
-        the kind of concurrency-timing behavior that doesn't show up in
-        a unit test.
+  - [x] Replaced `NODE_BUDGET`'s node-count *estimate* (D-85) with a
+        genuine wall-clock deadline (D-93) — the piece D-91's original
+        two-part follow-up left open once D-92 shipped the `stop` half.
+        `go()`'s per-depth NPS-based node-ceiling computation removed
+        entirely; `stop_watcher()` (D-92) now takes a `Clock::time_point
+        deadline` parameter and checks it every ~10ms poll cycle
+        alongside stdin, calling `stop_request()` the instant it passes.
+        Zero `engine.py` changes needed — `search_aborted()` already ORs
+        node budget OR external stop, so a deadline-triggered stop
+        unwinds through the exact same path a `stop` command already
+        used. `NODE_BUDGET` itself untouched — still `run.py`'s
+        Python-mode mechanism (no watcher thread there to hand a
+        deadline to). Measured deadline precision directly across 5
+        budgets (100–2000ms): consistently 14.5–19.7ms overshoot,
+        regardless of budget size — unlike D-85's percentage-of-
+        estimate-error behavior. Specifically reproduced D-85's original
+        documented failure shape (a deadline landing mid-way into a
+        slow, still-growing depth-11 iteration) — 18.1ms overshoot, not
+        the multi-second overshoot that class of case produced before
+        any budget mechanism existed. Re-verified all of D-92's
+        regression scenarios against the new binary (`go infinite` +
+        `stop`, `go depth N` to completion, `quit` mid-search) —
+        nothing broke. `fastpy-engine` pytest suite unaffected: 265/265.
+  - [ ] **NEXT UP:** no specific task queued. D-91/D-92/D-93 closed out
+        the entire async-`stop`/time-management arc that's driven
+        Sessions 49, 53, and 55 — both flagged prerequisites (the
+        `Atomic[T]` transpiler type, and wiring it into both halves of
+        `fastpy-engine`'s search: `stop` and the deadline) are now done,
+        verified, and documented. Real remaining options: (1) Lazy SMP,
+        deferred since D-74 for being its own multi-session `std::thread`-
+        in-dialect commitment (native/uci_main.cpp already has real
+        `std::thread` precedent now, from D-92/D-93 — worth noting when
+        that's picked up); (2) bring genuine wall-clock time management
+        to Python-mode's `run.py` (currently still uses D-85's node-count
+        estimate with no thread to hand a deadline to) — smaller in
+        scope than Lazy SMP, not currently flagged as broken by anything,
+        so likely lower priority unless something surfaces; (3) something
+        outside search/UCI entirely (opening book, engine strength
+        testing against a reference opponent, etc). Needs an actual
+        decision at the start of next session.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

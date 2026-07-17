@@ -454,26 +454,37 @@ depth, not a single fixed multiplier.
   `native/uci_main.cpp` (compiled UCI wrapper) round-trip `...=R` moves
   correctly in both directions (parsing a GUI-supplied `e7e8r` and
   formatting one in `bestmove`/`info pv` output).
-- **Mid-search time management uses a node-count budget, not a true
-  wall-clock check (Session 49, D-85).** The iterative-deepening loop
-  used to only check elapsed time *between* depths — if depth N's own
-  search took longer than the remaining budget, it ran to completion
-  regardless (seen directly: a 2,400ms budget produced an 8,601ms
-  depth-11 iteration). Fixed via a `NODE_BUDGET` computed once per depth
-  from the running average nodes/sec so far × remaining time (with a
-  0.9 headroom fraction), checked inside `alpha_beta()`/`quiescence()`
-  on essentially every node. Measured after the fix: 500ms→484ms,
-  1000ms→1005ms, 2000ms→1919ms — no more full-depth overshoots. Still
-  an *estimate*, not a hard guarantee: FastPy has no clock access (Core
-  Rule 6), so this is a proxy via node count, and a depth whose per-node
-  cost jumps sharply above the running average (a sudden tactical
-  blowup) can still miss the estimate by more than the headroom
-  accounts for. A wall-clock-flag design (a watchdog thread) was tried
-  first and rejected — it's a genuine C++ data race (a plain global
-  written by one thread and read in a hot loop by another can be cached
-  by the optimizer and never observed to change; confirmed with a
-  minimal repro that hung forever at `-O3`) — see D-85 for the full
-  writeup of why that approach doesn't work here.
+- ~~**Mid-search time management uses a node-count budget, not a true
+  wall-clock check (Session 49, D-85).**~~ Fixed Session 55, part 3
+  (D-93), built on the same `Atomic[bool]`/watcher-thread infrastructure
+  D-92 used for `stop`. The iterative-deepening loop used to only check
+  elapsed time *between* depths — if depth N's own search took longer
+  than the remaining budget, it ran to completion regardless (seen
+  directly: a 2,400ms budget produced an 8,601ms depth-11 iteration).
+  D-85 first fixed this via a `NODE_BUDGET` computed once per depth from
+  the running average nodes/sec so far × remaining time, checked inside
+  `alpha_beta()`/`quiescence()` on essentially every node — a real
+  improvement (500ms→484ms, 1000ms→1005ms, 2000ms→1919ms) but still an
+  *estimate*: a depth whose per-node cost jumps sharply above the
+  running average could still miss it. D-85 also tried a watchdog-thread
+  design first and rejected it — a plain global written by one thread
+  and read in a hot loop by another is a genuine C++ data race (a
+  minimal repro hung forever at `-O3`) — correctly identifying the real
+  fix as needing a volatile/atomic-qualified FastPy global, which didn't
+  exist yet. D-91 built that type (`Atomic[T]`); D-92 used it for `stop`;
+  D-93 used the exact same `stop_watcher()` background thread (already
+  polling every ~10ms for stdin) to also check a genuine
+  `Clock::time_point` deadline and call `stop_request()` the instant it
+  passes — the same `Atomic[bool]` path `stop` already used, so zero
+  `engine.py` changes were needed (`search_aborted()` already ORs both).
+  Measured directly: 100ms→115.9ms, 300ms→314.5ms, 500ms→515.9ms,
+  1000ms→1019.7ms, 2000ms→2017.3ms — consistently ~15-20ms overshoot
+  (the watcher's own poll cadence) regardless of budget size, including
+  when the deadline was made to land mid-way into the exact class of
+  slow, still-growing iteration D-85's original writeup measured at
+  8,601ms — 18.1ms overshoot instead. `NODE_BUDGET` itself is untouched
+  and remains `run.py`'s Python-mode mechanism, which has no watcher
+  thread to hand a deadline to.
 - ~~**Async `stop` support: depth-boundary granularity, not mid-node
   (Session 53, D-90).**~~ Fixed Session 55 (D-92), built on D-91's new
   `Atomic[bool]` FastPy transpiler type. D-85/D-90's rejected

@@ -2867,3 +2867,80 @@ set `STOP_FLAG` (or a second `Atomic` global) when a wall-clock deadline
 elapses, replacing that estimate — flagged as the one remaining item
 from D-91's original two-part follow-up, left for a future session
 rather than folded into this one.
+
+## D-93: `NODE_BUDGET`'s node-count estimate replaced by a genuine wall-clock deadline (native mode only)
+
+**Context:** D-92 (this same session, immediately prior) wired
+`Atomic[bool]` into `fastpy-engine` for genuine mid-node `stop`, and
+explicitly left open the other half of D-91's original two-part
+follow-up: D-85's `NODE_BUDGET` mechanism is a per-depth *estimate*
+(remaining time × this search's own observed nodes/sec so far), not a
+true wall-clock check — documented at the time as having one remaining
+failure mode (a depth whose per-node cost jumps sharply above the
+running average can still miss the projected ceiling; the original
+D-85 writeup measured an 8,601ms iteration against a 2,400ms budget
+before any budget mechanism existed at all).
+
+**Decision:** `native/uci_main.cpp`'s `go()` no longer computes or sets
+`NODE_BUDGET` at all. Instead, `go()` computes a single
+`Clock::time_point deadline` once (`t0 + movetime_ms`, or
+`Clock::time_point::max()` for a `go depth N`/`go infinite` with no time
+limit), and hands it to `stop_watcher()` (D-92's stdin-owning background
+thread) as a parameter. The watcher's existing ~10ms poll loop now also
+checks `Clock::now() >= deadline` on every iteration, calling
+`stop_request()` the instant it's true — the exact same `Atomic[bool]`
+path `stop`/`quit` already used. **No `engine.py` changes were needed
+for this** — `search_aborted()` (D-92) already ORs `node_budget_exceeded()
+OR stop_requested()`, so a deadline-triggered stop unwinds through
+`alpha_beta()`/`quiescence()`/`find_best_move()`'s root loop exactly the
+same way a `stop` command already did, including all of D-85's existing
+root-loop protections (move 0 always trusted, aborted depths not stored
+to the TT as EXACT).
+
+`NODE_BUDGET`/`node_budget_set()`/`node_budget_clear()`/
+`node_budget_exceeded()` themselves are untouched in `engine.py` —
+they remain `run.py`'s Python-mode time-management mechanism (Python
+mode is single-threaded with no watcher thread to hand a deadline to,
+so it has no substitute for the estimate). `go()` still calls
+`node_budget_clear()` once per search as defensive hygiene, and the
+aspiration-window retry loop still checks `node_budget_exceeded()`
+alongside `stop_requested()` (harmless — always false in native mode
+now that nothing sets it — kept so the check doesn't silently depend on
+an assumption that could go stale if NODE_BUDGET's native usage is ever
+reintroduced).
+
+**Why this is a strict improvement, not a trade-off:** D-85's estimate
+had unbounded worst-case overshoot (any depth whose actual cost diverges
+enough from the running nps average) in exchange for node-granularity
+precision when the estimate happened to be accurate. D-93's wall-clock
+check has bounded worst-case overshoot (~10ms, the watcher's own poll
+cadence) by construction, regardless of how a given depth's per-node
+cost behaves — it's checking the actual thing that matters (elapsed
+time) rather than a proxy for it. The only cost is that ~10ms floor
+instead of potentially-tighter node-granularity, which is imperceptible
+to any real GUI or human.
+
+**Verification:** `fastpy-engine` pytest suite 265/265 (unaffected —
+`engine.py`/`run.py` weren't changed this part). `fastpy check
+engine.py` zero errors, `run.py` parses clean. Built the actual UCI
+binary and measured deadline precision directly across five budgets
+(100/300/500/1000/2000ms) on a busy middlegame FEN: overshoot was
+15.9/14.5/15.9/19.7/17.3ms respectively — consistently tight regardless
+of budget size, unlike D-85's percentage-of-estimate-error behavior.
+Also specifically reproduced D-85's documented failure shape: a 2000ms
+budget landing mid-way into the same slow depth-11 iteration measured in
+D-92's verification (which alone had been running long enough to be
+visibly the bottleneck) — overshoot was 18.1ms, not the multi-second
+overshoot that class of case produced before any budget mechanism
+existed. Re-ran all of D-92's regression scenarios against the new
+binary to confirm nothing broke: `go infinite` + `stop` (10.4ms
+latency), `go depth 6` to natural completion (6 info lines, correct
+bestmove), `quit` mid-search (17.1ms clean exit).
+
+**What's still open:** none from D-91's original two-part follow-up —
+both the `stop` half (D-92) and the deadline half (D-93) are now done.
+Python-mode (`run.py`) still uses the D-85 node-count estimate with no
+wall-clock alternative, since it has no background thread to check one
+from; bringing real time-based cutoffs to Python mode would need its own
+threading model, out of scope here and not currently flagged by anything
+in ROADMAP.

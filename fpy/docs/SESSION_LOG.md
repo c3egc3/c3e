@@ -4,13 +4,15 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
-## Session 55 — `Atomic[T]` added to FastPy's dialect (D-91), then wired into fastpy-engine for genuine mid-node `stop` (D-92)
+## Session 55 — `Atomic[T]` added to FastPy's dialect (D-91), wired into fastpy-engine for mid-node `stop` (D-92), then for a genuine wall-clock deadline (D-93)
 **Status:** COMPLETE ✅ — Part 1 (D-91): `fastpy` repo changed
 (`core/parser.py`, `core/emitter.py`, `tests/test_parser.py`,
 `tests/test_type_system.py`, `tests/test_emitter.py`). Part 2 (D-92):
 `fastpy-engine` repo changed (`engine.py`, `run.py`,
-`native/uci_main.cpp`, `training/build_uci_engine.py`). Docs updated:
-`docs/DECISIONS.md` (D-91, D-92), `docs/ROADMAP.md`,
+`native/uci_main.cpp`, `training/build_uci_engine.py`). Part 3 (D-93):
+`fastpy-engine/native/uci_main.cpp` changed again (`engine.py`/`run.py`
+untouched — `search_aborted()` from D-92 already covered it). Docs
+updated: `docs/DECISIONS.md` (D-91, D-92, D-93), `docs/ROADMAP.md`,
 `docs/ENGINE_ARCHITECTURE.md`, this file.
 
 ### `Go` trigger
@@ -147,6 +149,52 @@ with the measured before/after), this file.
 `fastpy-engine/training/build_uci_engine.py`. `fastpy` repo untouched
 in this part (D-91's changes from earlier in this same session stand
 as already presented).
+
+### Part 3 (same session, continued): `NODE_BUDGET`'s estimate replaced by a genuine wall-clock deadline (D-93)
+Picked up immediately after presenting D-92's files, per Gokul's "Next".
+This closes out the second (and last) piece D-91's original two-part
+follow-up left open.
+
+`native/uci_main.cpp`: `go()` no longer computes a per-depth NPS-based
+node ceiling at all — that whole block, and the `kDefaultNpsEstimate`/
+`kMinMsForEstimate`/`kBudgetFraction` constants it used, are gone.
+Instead `go()` computes a single `Clock::time_point deadline` once
+(`t0 + movetime_ms`, or `Clock::time_point::max()` for no time limit)
+and passes it to `stop_watcher()` (D-92's background thread), whose
+existing ~10ms poll loop now also checks the deadline and calls
+`stop_request()` the instant it passes — the same `Atomic[bool]` path
+`stop`/`quit` already used. **Zero `engine.py` changes needed** —
+`search_aborted()` (D-92) already ORs node budget OR external stop, so
+this reuses the exact same abort path throughout `alpha_beta()`/
+`quiescence()`/`find_best_move()`. `NODE_BUDGET` itself is untouched —
+still `run.py`'s Python-mode mechanism, unaffected by any of this.
+
+**Verification:** `fastpy-engine` pytest suite 265/265 (unaffected,
+`engine.py`/`run.py` unchanged this part). `fastpy check engine.py`
+zero errors. Built the real UCI binary and measured deadline precision
+directly across 5 budgets (100/300/500/1000/2000ms): 15.9/14.5/15.9/
+19.7/17.3ms overshoot respectively — tight and consistent regardless of
+budget size, unlike D-85's percentage-of-estimate-error behavior.
+Specifically reproduced D-85's own originally-documented failure shape
+(a deadline landing mid-way into a slow, still-growing depth-11
+iteration, the same one measured in D-92's verification) — 18.1ms
+overshoot instead of the multi-second overshoot that failure class
+produced before any budget mechanism existed. Re-ran all of D-92's
+regression scenarios against the new binary to confirm nothing broke:
+`go infinite` + `stop` (10.4ms), `go depth 6` to natural completion (6
+info lines, correct bestmove), `quit` mid-search (17.1ms clean exit).
+
+Docs updated: `DECISIONS.md` (D-93), `ROADMAP.md` (closed out this
+item — no queued NEXT UP remains, three open options listed for next
+session's actual decision), `ENGINE_ARCHITECTURE.md` (D-85's
+node-count-estimate limitation marked fixed, with the measured
+before/after), this file.
+
+**Files changed this part:** `fastpy-engine/native/uci_main.cpp`,
+verified against the existing `fastpy-engine/training/
+build_uci_engine.py` (unchanged this part — `-pthread` was already
+added in Part 2). `engine.py`/`run.py` untouched this part. `fastpy`
+repo untouched this part.
 
 ---
 
