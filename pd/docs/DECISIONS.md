@@ -1606,3 +1606,77 @@ LMR/move-ordering are the correct, narrower place to add this kind of
 variation because they affect *which lines get explored* without
 changing *how the position is evaluated or how far a given tier is
 allowed to look*.
+
+
+## D50 — Self-Play Scale-Up: Sharded GitHub Actions Matrix + Merge, Not a Kaggle Job (2026-07-17)
+
+**Decision**: Implement the code half of 23.3 by rewriting
+`.github/workflows/selfplay.yml` from a single sequential job into a
+3-job pipeline: `plan-shards` (builds a `[0..shards-1]` JSON list from
+the `shards` input in plain bash, since Actions matrices need a
+JSON-shaped source and `workflow_dispatch` inputs are plain strings) →
+`selfplay-shard` (matrix job, one independent self-play batch per shard
+on a disjoint seed range, `seed_start + shard*games_per_shard ..
++games_per_shard-1`) → `merge-shards` (downloads every shard artifact,
+concatenates into one combined file, uploads as a single 30-day-retention
+artifact). `selfplay.rs` itself is unchanged — the scale-up is entirely
+in how many times it's invoked in parallel, not in the binary's own
+logic.
+
+**Why GitHub Actions sharding, not a dedicated Kaggle job**: D41's
+"Rejected" section floated "a genuinely bigger self-play dataset
+(500K-1M+ rows via a dedicated Kaggle job)" as the eventual lever, and
+the roadmap's own Ease/Size note for 23.3 says "background GitHub
+Actions self-play generation" — the two docs point in slightly different
+directions, and this session's choice is GitHub Actions, not Kaggle,
+for a mobile-only-maintainer reason: self-play generation is CPU search
+work (no GPU, no training loop, nothing Kaggle's notebook environment
+offers over a plain compiled binary), and `selfplay.yml` already existed
+as a `workflow_dispatch`-triggered, mobile-app-runnable job — sharding
+it is a same-surface-area change (still "tap Run workflow", still
+downloads one artifact). A Kaggle job would mean Gokul manually
+uploading a Kaggle notebook, managing a Kaggle session from a phone
+browser, and downloading results from a different platform than the one
+everything else in this repo already runs on. GitHub Actions is strictly
+the lower-friction choice for the *generation* half; Kaggle stays exactly
+where it already was — the *training* half, unchanged by this decision.
+
+**Why a matrix + merge instead of one bigger sequential job**: The prior
+workflow's largest recorded run was `n3000` (3,000 games, one job, one
+runner) — whatever job-length constraint let that run complete becomes
+the ceiling on total games per invocation. Fanning the same total game
+count across N parallel runners doesn't change total CPU-time spent, but
+does divide wall-clock time by roughly N (self-play games are
+embarrassingly parallel — no shared state between games), which is the
+actually-scarce resource for a solo maintainer who has to remember to
+come back and start the next run. `fail-fast: false` on the shard matrix
+so one flaky shard doesn't discard every other shard's already-generated
+data; `merge-shards` runs with `if: always()` and reports (via a
+`::warning::`) when fewer than `shards` files landed, rather than
+silently producing a smaller combined file with no indication anything
+was short.
+
+**Why intermediate shard artifacts get 1-day retention, not 30**: Only
+the merged combined file is the actual deliverable Gokul downloads and
+feeds to Kaggle; the per-shard files exist solely so `merge-shards` can
+assemble them. Keeping them at the default 30-day retention would just
+be redundant storage — the same data lives in the combined artifact —
+so they're set to expire quickly instead.
+
+**Scope boundary, explicitly not closed this session**: This decision
+covers the *generation infrastructure* only. Actually running enough
+`selfplay.yml` invocations to meaningfully grow past the current ~500K-
+row total, merging multiple runs' combined artifacts into one training
+set, and re-running the Kaggle NNUE training job on the larger dataset
+are all still-open follow-up actions requiring Gokul to trigger things
+by hand — none of that can happen inside a single coding session. 23.3
+stays unchecked in `ROADMAP.md` until that compute has actually
+happened, not just become possible.
+
+**Rejected alternative**: A single job with a higher `num_games` value
+and a longer configured `timeout-minutes`, relying on GitHub's up-to-6-
+hour default job ceiling headroom. Rejected because it doesn't actually
+solve the calendar-time problem sharding does (10,000 games sequentially
+at ~100ms/move average is still 10,000 games sequentially), and pushes
+right up against the default job timeout as a fixed ceiling with no
+parallelism benefit at all, for no advantage over sharding.

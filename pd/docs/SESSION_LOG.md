@@ -7,6 +7,55 @@ Most recent session at TOP.
 
 ---
 
+## Session 77 — 2026-07-17 (Phase 23.3, code half: sharded self-play generation — D50)
+
+**Built:**
+
+1. **`.github/workflows/selfplay.yml` rewritten**: was one sequential
+   job (max ~3,000 games/run observed, the prior `n3000` artifact), now
+   a 3-job pipeline — `plan-shards` (builds a `[0..shards-1]` matrix
+   from the `shards` input via plain bash), `selfplay-shard` (matrix
+   job, one independent batch per shard, disjoint seed range per
+   shard), `merge-shards` (downloads + concatenates every shard into
+   one combined artifact, 30-day retention; runs with `if: always()`
+   and warns if fewer than `shards` files landed). `selfplay.rs` itself
+   untouched — only how many times it's invoked in parallel changed.
+   Defaults: 10 shards × 300 games = 3,000 games/run, same total ceiling
+   as before but ~10x less wall-clock time; both inputs overridable for
+   bigger runs.
+2. **`ROADMAP.md` 23.3 left unchecked, split explicitly**: code/infra
+   half done this session; compute half (actually triggering enough
+   runs to grow past ~500K rows, merging multiple runs, retraining on
+   Kaggle) is still open and needs Gokul to trigger `selfplay.yml`
+   repeatedly across future sessions/days.
+
+**Files touched:** `.github/workflows/selfplay.yml`.
+
+**Bugs fixed:** None — new workflow structure, `selfplay.rs` binary
+unchanged.
+
+**Decisions made:** D50 — GitHub Actions sharding chosen over a
+dedicated Kaggle generation job (generation is plain CPU search work,
+no GPU/training-loop benefit from Kaggle, and Actions was already the
+mobile-runnable surface this used); matrix+merge chosen over one bigger
+sequential job to cut wall-clock time via parallelism, not just raise a
+ceiling. Full rationale in `DECISIONS.md`.
+
+**Next session start point:** Nothing code-shaped is queued next on
+Phase 23 until 23.3's compute half actually produces more data — the
+natural next session either (a) helps Gokul interpret/kick off
+`selfplay.yml` runs and plan a merge-and-retrain pass once enough
+combined artifacts exist, or (b) if Gokul says data volume isn't ready
+yet, skips ahead to 23.4 is explicitly NOT allowed per Phase 23's own
+"don't skip ahead" rule — check with Gokul before starting anything
+Phase-23-shaped next session; otherwise pull a different, independent
+task off the backlog. Two items still carried forward, both requiring
+Gokul, neither blocking: (1) `regression-gate` branch-protection setup
+(Session 75); (2) manual multi-threaded `uci_match_runner.yml` run to
+measure 23.2's Elo impact (Session 76).
+
+---
+
 ## Session 76 — 2026-07-17 (Phase 23.2: thread-differentiated Lazy SMP — D49)
 
 **Built:**

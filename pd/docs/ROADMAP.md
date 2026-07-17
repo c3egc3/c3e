@@ -1120,6 +1120,31 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              GitHub Actions self-play generation, not a coding task).
              Size: Large — the single biggest lever on this list if
              data volume is confirmed as the actual bottleneck.
+             **Code half DONE (Session 77, D50)**: `selfplay.yml`
+             rewritten from one sequential job (max ~3,000 games/run,
+             the prior `n3000` artifact) into a sharded fan-out —
+             `plan-shards` job builds a `[0..shards-1]` matrix from the
+             `shards` input, `selfplay-shard` runs one independent
+             self-play batch per shard on a disjoint seed range, then
+             `merge-shards` downloads and concatenates every shard's
+             output into one combined artifact (30-day retention) so
+             Gokul only downloads one file per run, not `shards` of
+             them, on mobile. Defaults: 10 shards × 300 games = 3,000
+             games/run at roughly 10x the old workflow's wall-clock
+             throughput (same total-games ceiling per run, much less
+             calendar time) — `shards`/`games_per_shard` are both
+             overridable per-run for bigger batches.
+             **Compute half NOT started.** This still needs Gokul to
+             actually trigger `selfplay.yml` from the Actions tab
+             (mobile-app-doable) — likely repeatedly across several
+             sessions/days with a fresh `seed_start` each time — to
+             accumulate meaningfully past the current ~500K-row total
+             before this item can be marked done and 23.4/23.5
+             unblocked. Downloaded combined artifacts still need
+             merging into the actual training dataset for the next
+             Kaggle NNUE run by hand (no code change needed for that
+             step — it's the same manual hand-off Colab/Kaggle training
+             already used before this session).
 - [ ] 23.4 — Variant-specific opening statistics. No aggregation of
              self-play results into a root-level move-preference table
              exists. No curated opening theory can substitute — 2.16M
