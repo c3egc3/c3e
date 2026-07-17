@@ -1378,3 +1378,58 @@ feasible, but the two-file version is the officially-documented
 wasm-bindgen pattern (pass bytes to `init()`) versus text-munging
 generated code that could silently break on a wasm-bindgen upgrade;
 not worth the fragility for saving one file.
+
+## D47 — Post-Release Improvements Tracked as ROADMAP Phase 23, Numbered in Execution Order (2026-07-17)
+
+**Decision**: The 5-item post-world-release improvement list (thread-
+differentiated Lazy SMP, NNUE data scale-up, NNUE architecture upgrade,
+variant-specific opening statistics, SPRT-style testing gate) is tracked
+as `ROADMAP.md` Phase 23, checkbox-style like every other phase — not
+left as standalone report files. Item numbers (23.1-23.5) are the
+recommended *execution* order, not a topic grouping: 23.1 (testing
+gate) → 23.2 (thread-differentiated SMP) → 23.3 (NNUE data scale-up) →
+23.4 (opening statistics) → 23.5 (NNUE architecture upgrade), with an
+explicit warning at the top of the phase against skipping ahead.
+
+**Why**: Two standalone report files
+(`pet_dragon_competitive_analysis.md`, superseded by
+`pet_dragon_improvement_roadmap.md`) were generated this session as
+conversational deliverables — useful for a one-time read, but not
+tracked anywhere the project's existing docs-are-the-memory discipline
+would catch them again next session. Folding the corrected list into
+`ROADMAP.md` means it gets the same treatment as every other piece of
+planned work: read every session (Tier 1), checked off as completed,
+carried forward if not. Numbering by execution order rather than topic
+means a future session (or Gokul, mobile-only, scanning quickly) reads
+top-to-bottom correctly without needing to separately consult a
+"recommended sequencing" footnote that could drift out of sync with the
+list above it.
+
+**Context — this list exists because of a real mistake worth recording
+plainly**: an earlier draft of this same analysis (same session)
+incorrectly claimed continuation history, correction history, IIR,
+razoring, singular extensions, ProbCut, and best-move-stability time
+management were all missing. All seven were already implemented as of
+Phase 13 — the draft was built from a stale `ENGINE_ARCHITECTURE.md`
+(still describing Phase 7/8 scaffolding) plus general chess-programming
+knowledge, without cross-checking actual source. A second, smaller
+mistake happened during the correction itself: an initial grep for
+`razor` (lowercase) missed the actual `Razoring` comment (capital R) in
+source, nearly reintroducing the same class of error while fixing it.
+Both `ENGINE_ARCHITECTURE.md` (full rewrite, verified line-by-line
+against `src/`) and this improvement list were corrected in the same
+session before anything wrong was committed to `ROADMAP.md` — but the
+lesson generalizes: **cross-check any "what's missing" claim against
+actual current source before writing it down, especially when a
+project doc that's supposed to describe that source is more than a
+session or two old.** `ENGINE_ARCHITECTURE.md` itself had drifted for
+many sessions without being caught, since Tier 2 docs are only read
+once per fresh session and nothing in the working process previously
+required reconciling it against `src/` directly.
+
+**Rejected**: Leaving the improvement list as standalone report files
+only, on the theory that "the repo is the memory" already covers
+anything worth keeping — report files delivered mid-conversation aren't
+docs/ files and aren't part of the Tier 1/Tier 2 reading discipline, so
+they'd have silently stopped being read the moment this conversation
+ended.

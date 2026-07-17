@@ -7,6 +7,70 @@ Most recent session at TOP.
 
 ---
 
+## Session 74 — 2026-07-17 (ENGINE_ARCHITECTURE.md rewrite; competitive-analysis report generated, found wrong, corrected; corrected list embedded as ROADMAP Phase 23 — D47)
+
+**Built:**
+
+1. **Competitive analysis vs. top-class engines (Stockfish 18, Leela
+   Chess Zero, Komodo Dragon), first draft.** Grounded correctly on the
+   external side (CCRL rankings, Stockfish's actual recent additions —
+   correction history, singular extensions with multi-cut/negative
+   extensions — verified via web search), but built on the Pet Dragon
+   side from a stale `ENGINE_ARCHITECTURE.md` (still describing Phase
+   7/8 scaffolding) plus general knowledge instead of checking actual
+   source. Listed 7 already-implemented techniques as gaps.
+
+2. **`ENGINE_ARCHITECTURE.md` fully rewritten**, verified line-by-line
+   against actual current `src/` (pulled fresh via codeload tarball,
+   grepped struct definitions and function signatures directly) rather
+   than assumed. Confirmed the full real state: PVS, null-move pruning,
+   LMR, razoring, futility pruning, ProbCut, IIR, singular extensions,
+   correction history, 1-ply continuation history, best-move-stability
+   time management, Lazy SMP, MultiPV, pondering, Skill Levels, Syzygy,
+   and the real NNUE blend state (0% default, both tested sizes lost to
+   HCE) — all confirmed present and correctly documented for the first
+   time since early scaffolding.
+
+3. **Caught my own verification bug while fixing the first draft**: an
+   initial case-sensitive `grep razor` missed the actual `Razoring`
+   comment (capital R) in `alpha_beta.rs`, which would have
+   reintroduced the exact same class of error inside the correction
+   itself. Caught by re-running case-insensitive before finalizing
+   anything.
+
+4. **Improvement report regenerated, corrected to 5 real items**
+   (thread-differentiated Lazy SMP, NNUE data scale-up, NNUE
+   architecture upgrade, variant-specific opening statistics, SPRT-
+   style testing gate), each confirmed absent from actual source rather
+   than assumed, with an explicit copyright-cleanliness note per item
+   (all are original-code implementations of general algorithmic
+   techniques, same pattern as everything already in the engine).
+
+5. **Corrected list embedded into `ROADMAP.md` as Phase 23** (D47) —
+   checkbox-tracked like every other phase rather than left as
+   standalone report files, numbered 23.1-23.5 in actual recommended
+   execution order (not topic-grouped) per Gokul's explicit request,
+   with a warning against skipping ahead since later items assume
+   earlier ones are done.
+
+**Bugs fixed:** None in the engine itself — this was a documentation-
+accuracy and analysis-correction session. The two "bugs" were in my own
+process (stale-doc-sourced false claims, then a case-sensitivity slip
+while correcting them), both caught and fixed before anything wrong
+reached `ROADMAP.md` or `DECISIONS.md`.
+
+**Decisions made:** D47 — track post-release improvements as a numbered
+ROADMAP phase, not standalone reports; full rationale and the two-
+mistake postmortem recorded there.
+
+**Next session start point:** Nothing mid-flight. Phase 23 is ready to
+work top-to-bottom starting with 23.1 (SPRT-style testing gate)
+whenever Gokul wants to pick it up. `ENGINE_ARCHITECTURE.md` is now
+accurate and current — safe to treat as reliable Tier 2 context again
+without re-verifying against source, until it next drifts.
+
+---
+
 ## Session 73 — 2026-07-17 (WASM release assets added; v3.0.0 tag silently failed and was diagnosed; v3.3.3 confirmed fully working — D46 updated)
 
 **Built:**

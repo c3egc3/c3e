@@ -1048,7 +1048,76 @@ deleted the root `index.html`.
 
 ---
 
-## Test Coverage Summary
+## Phase 23 — Post-Release Improvement Roadmap ⏳ (Session 74, corrected against verified source — see DECISIONS.md D47)
+
+*Established after a corrected competitive-analysis pass (Session 74).
+An earlier draft incorrectly listed continuation history, correction
+history, IIR, razoring, singular extensions, ProbCut, and best-move-
+stability time management as gaps — all five were already implemented
+as of Phase 13. See ENGINE_ARCHITECTURE.md §3 for the full verified
+list of what's already in place. Every item below is confirmed absent
+from actual source, not assumed. All five are implementable as
+original code with no copyright concern — general algorithmic
+techniques, not borrowed artifacts (see full rationale in the
+improvement roadmap report).*
+
+**⚠️ Complete these in the numbered order below — the numbering IS the
+recommended execution order (23.1 → 23.5), not a topic grouping. Do
+not skip ahead to 23.4/23.5 before earlier items are done; each later
+item's ease/size estimate assumes the earlier ones are already in
+place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
+23.2 has already confirmed the data-volume theory).**
+
+- [ ] 23.1 — Lightweight SPRT-style regression testing gate. The
+             pinned-reference UCI match harness (D36) exists but is
+             used ad hoc, not as a mandatory pre-merge gate. Wire it
+             into `build.yml` as a required pass/fail threshold before
+             merge. Do this first — it makes every item below safer to
+             land. Ease: Small–Medium (wiring existing
+             `uci_match_runner`, not new infrastructure). Size: not
+             directly measurable in Elo, but multiplies confidence in
+             every other change on this list.
+- [ ] 23.2 — Thread-differentiated Lazy SMP. Helper threads (`main.rs`)
+             currently run identical search parameters, differing only
+             in start timing and being time-unlimited. Vary LMR
+             aggressiveness / move-ordering tie-breaks per thread ID so
+             helpers explore genuinely different tree regions instead
+             of largely duplicating the main thread. Smallest item with
+             no dependencies — do it right after 23.1. Ease:
+             Small–Medium (parameterize existing constants by thread
+             ID, no new algorithm). Size: Small–Medium, scales with
+             core count.
+- [ ] 23.3 — NNUE training data scale-up. Code is complete and
+             production-ready (`nnue/`, `evaluate_blended()`); both
+             tested network sizes lost to HCE (D34/D41), most plausibly
+             from data starvation — roughly half a million combined
+             self-play + Lichess rows vs. the hundreds of billions
+             top-class engines train on. Background compute task, can
+             start in parallel with other work once 23.1/23.2 land.
+             Ease: Small (code, done) / Large (compute — background
+             GitHub Actions self-play generation, not a coding task).
+             Size: Large — the single biggest lever on this list if
+             data volume is confirmed as the actual bottleneck.
+- [ ] 23.4 — Variant-specific opening statistics. No aggregation of
+             self-play results into a root-level move-preference table
+             exists. No curated opening theory can substitute — 2.16M
+             starting positions means nothing exists anywhere to
+             reference, for anyone; this is the one genuinely novel
+             item on the list. Sequence after 23.3 has produced a
+             healthy volume of self-play data to draw on. Ease: Medium
+             (data-aggregation script over existing `selfplay.rs`
+             output, small root lookup). Size: Small–Medium, high
+             strategic-novelty value.
+- [ ] 23.5 — NNUE architecture upgrade: king-relative bucketed
+             features, replacing the current flat 768+128=896 input
+             set. Sequence LAST — only worth the effort once 23.3
+             confirms the data-volume theory was actually correct; a
+             better-shaped network trained on the same starved dataset
+             won't outperform a smaller one. Ease: Large (new feature
+             indexing, retraining pipeline, quantization changes).
+             Size: Large.
+
+
 **Confirmed via Session 71's real CI `cargo test` log (rustc 1.97.0,
 Actions run) — this is a full, current, authoritative count, not an
 estimate.** Per-module breakdown below is still not recomputed (lib's
