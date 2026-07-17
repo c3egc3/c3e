@@ -2944,3 +2944,93 @@ wall-clock alternative, since it has no background thread to check one
 from; bringing real time-based cutoffs to Python mode would need its own
 threading model, out of scope here and not currently flagged by anything
 in ROADMAP.
+
+## D-94: opening book added — a small, hand-picked table of exact-prefix opening lines
+
+**Context:** ROADMAP's NEXT UP after D-93 closed out the entire async-
+`stop`/time-management arc (D-85→D-90→D-91→D-92→D-93) listed three open
+options, none decided: Lazy SMP (its own multi-session commitment),
+genuine wall-clock time management for Python-mode `run.py` (not
+currently flagged as broken by anything), or something outside
+search/UCI entirely. Picked the third — specifically an opening book —
+to avoid over-indexing three sessions in a row on search-internals
+concurrency work, and because it's a well-scoped, single-session,
+immediately-useful feature with no dependency on anything left open.
+
+**Decision:** A small (11-entry) hand-picked opening book covering a
+handful of the most common early-game lines (1.e4/1.d4/1.Nf3 and their
+most standard replies, plus the 4-ply Ruy Lopez line). Implemented
+**entirely at the UCI-driver level, not in `engine.py`** — Core Rule 4
+("FastPy is chess-engine-specific") is why: a book lookup is
+driver-level UCI-protocol logic (deciding whether to search at all,
+keyed on the played-move history the UCI loop already tracks), not
+board representation, move generation, or search, so nothing about it
+needs compiling or belongs in the FastPy dialect.
+
+Entries key on the **exact ordered sequence of UCI move strings** played
+since the standard starting position — a straight prefix match, not a
+position-hash lookup. Deliberately not attempting to generalize across
+transpositions (1.Nf3 d5 2.d4 reaching the same position as 1.d4 d5
+2.Nf3 isn't recognized as the same key) — that would need real position
+hashing to do correctly, and isn't worth the complexity for a book this
+size. A sequence not found simply falls through to a real search exactly
+as before this feature existed — the book can never make the engine
+play a *worse* move than search would have chosen on its own, only skip
+search for a position judged sound in advance.
+
+Implemented independently in both drivers, mirroring the existing
+convention of Python/C++ search-function pairs staying behaviourally
+aligned rather than sharing source across languages:
+- `run.py`: `OPENING_BOOK` dict + `_book_lookup()`. `_apply_position()`
+  now returns `(board, move_history, is_standard_start)` instead of just
+  `board` — `is_standard_start` is `False` for any `position fen ...`
+  game, which permanently disables the book for that game (a FEN game
+  might coincidentally reach a position whose move-count matches a book
+  key by chance, but never the actual standard-opening position the key
+  represents). `uci_loop()`'s `go` handler checks the book before parsing
+  any time/depth parameters — a hit responds immediately with zero
+  search. `ucinewgame` resets `move_history`/`is_standard_start` back to
+  book-eligible.
+- `native/uci_main.cpp`: `kOpeningBook` (`std::vector<BookEntry>`) +
+  `book_lookup()` (linear scan — fine at 11 entries, not worth a hash
+  map). `main()`'s loop gained `move_history`/`is_standard_start` locals
+  with the same reset/disable semantics as `run.py`, checked before `go`
+  parses its own arguments.
+
+**Verification:** 7 new UCI-integration tests in `tests/test_uci.py`
+(`TestOpeningBook`): fresh-startpos hit (`e2e4`, near-instant even with
+`go depth 20` requested — confirms zero search actually ran), response
+to `1.e4` (`c7c5`) and `1.d4` (`d7d5`), the full 4-ply Ruy Lopez line
+(`f1b5`), an off-book first move (`1.a3`) correctly falling through to a
+real search, a `position fen ...` game correctly NOT triggering the book
+even though its empty move-history would otherwise match
+`OPENING_BOOK[()]` (used a FEN where `e2e4` isn't even legal — black to
+move, no pawn on e2 — so a wrongly-applied book would produce an
+illegal `bestmove`), and `ucinewgame` correctly restoring book
+eligibility after a FEN-started game. Full `fastpy-engine` suite:
+272/272 (265 baseline + 7 new). Two pre-existing tests in
+`test_phase4.py` (`test_go_movetime_outputs_info`,
+`test_go_depth_outputs_all_info_lines`) needed their fixture position
+changed from a bare `position startpos` to an off-book `1.a3` line —
+their original fixture now legitimately hits the book (correct new
+behavior) and returns an instant `bestmove` with no `info depth` lines
+at all, which broke what those two tests were actually trying to check
+(info-line output shape during a real search); the off-book fixture
+restores that without changing either test's actual assertions.
+`fastpy check engine.py` zero errors, `run.py` parses clean (both
+unchanged by this feature beyond `run.py`'s driver-level additions
+above — `engine.py` itself was never touched).
+
+Manually verified the compiled binary too (native mode has no automated
+pytest coverage for `uci_main.cpp`, same situation as D-92/D-93):
+6 interactive UCI sessions confirming all of the same scenarios above
+against the real compiled binary, including exact latency (fresh
+startpos → `e2e4` in 1.3ms, confirming no search ran).
+
+**What's explicitly NOT attempted:** no move weighting, no
+transposition-aware lookup, no learning/expansion from played games, no
+attempt at real opening theory coverage beyond the 11 hand-picked
+entries. This is a small, honest, single-session-scoped feature — a
+genuine competition-grade book (position-hash keyed, much larger,
+possibly with move weights) would be a much bigger undertaking and
+isn't currently flagged as needed by anything in ROADMAP.

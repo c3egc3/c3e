@@ -619,23 +619,46 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         regression scenarios against the new binary (`go infinite` +
         `stop`, `go depth N` to completion, `quit` mid-search) —
         nothing broke. `fastpy-engine` pytest suite unaffected: 265/265.
-  - [ ] **NEXT UP:** no specific task queued. D-91/D-92/D-93 closed out
-        the entire async-`stop`/time-management arc that's driven
-        Sessions 49, 53, and 55 — both flagged prerequisites (the
-        `Atomic[T]` transpiler type, and wiring it into both halves of
-        `fastpy-engine`'s search: `stop` and the deadline) are now done,
-        verified, and documented. Real remaining options: (1) Lazy SMP,
-        deferred since D-74 for being its own multi-session `std::thread`-
-        in-dialect commitment (native/uci_main.cpp already has real
-        `std::thread` precedent now, from D-92/D-93 — worth noting when
-        that's picked up); (2) bring genuine wall-clock time management
-        to Python-mode's `run.py` (currently still uses D-85's node-count
-        estimate with no thread to hand a deadline to) — smaller in
-        scope than Lazy SMP, not currently flagged as broken by anything,
-        so likely lower priority unless something surfaces; (3) something
-        outside search/UCI entirely (opening book, engine strength
-        testing against a reference opponent, etc). Needs an actual
-        decision at the start of next session.
+  - [x] Opening book added (D-94) — picked over Lazy SMP and Python-mode
+        wall-clock time management to avoid three straight sessions on
+        search-internals concurrency, and because it's fully self-
+        contained (no dependency on anything D-91/D-92/D-93 left open).
+        Small (11-entry) hand-picked table, exact-move-sequence-prefix
+        keyed, implemented entirely at the UCI-driver level (Core Rule 4
+        — not FastPy dialect data, `engine.py` untouched) in both
+        `run.py` (`OPENING_BOOK`/`_book_lookup()`, `_apply_position()`
+        now also returns `move_history`/`is_standard_start`) and
+        `native/uci_main.cpp` (`kOpeningBook`/`book_lookup()`, same
+        tracking added to `main()`'s loop) — mirrors the existing
+        Python/C++ search-function-pair convention. `position fen ...`
+        permanently disables the book for that game, `ucinewgame`
+        restores eligibility. A sequence not in the book always falls
+        through to a real search unchanged. 7 new tests in
+        `TestOpeningBook` (test_uci.py): fresh-startpos hit (near-instant,
+        confirms zero search ran), two single-reply lines, the 4-ply Ruy
+        Lopez line, off-book fallthrough, FEN-disables-book (using a FEN
+        where the book's move would be illegal, to catch a wrongly-
+        applied book unambiguously), `ucinewgame` resetting eligibility.
+        Two pre-existing `test_phase4.py` tests needed an off-book
+        fixture move (their bare `startpos` fixture now legitimately hits
+        the book, correctly, which broke what they were actually
+        checking — info-line output shape during a real search).
+        272/272 (fastpy-engine). Manually verified the compiled binary
+        too (6 interactive sessions, same scenarios, matching latency).
+  - [ ] **NEXT UP:** no specific task queued. Two options carried over
+        from before D-94 (still open, D-94 didn't touch either): (1)
+        Lazy SMP, deferred since D-74 for being its own multi-session
+        `std::thread`-in-dialect commitment (native/uci_main.cpp already
+        has real `std::thread` precedent now, from D-92/D-93); (2) bring
+        genuine wall-clock time management to Python-mode's `run.py`
+        (currently still uses D-85's node-count estimate with no thread
+        to hand a deadline to) — smaller in scope than Lazy SMP, not
+        currently flagged as broken by anything. Plus a new option this
+        session surfaced: (3) expand the opening book (D-94) — it's
+        currently a deliberately small 11-entry table; a larger or
+        position-hash-keyed (transposition-aware) version was explicitly
+        flagged as future scope, not attempted this session. Needs an
+        actual decision at the start of next session.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

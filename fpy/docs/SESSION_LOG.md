@@ -4,16 +4,19 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
-## Session 55 — `Atomic[T]` added to FastPy's dialect (D-91), wired into fastpy-engine for mid-node `stop` (D-92), then for a genuine wall-clock deadline (D-93)
+## Session 55 — `Atomic[T]` added to FastPy's dialect (D-91), wired into fastpy-engine for mid-node `stop` (D-92) and a genuine wall-clock deadline (D-93), then an opening book (D-94)
 **Status:** COMPLETE ✅ — Part 1 (D-91): `fastpy` repo changed
 (`core/parser.py`, `core/emitter.py`, `tests/test_parser.py`,
 `tests/test_type_system.py`, `tests/test_emitter.py`). Part 2 (D-92):
 `fastpy-engine` repo changed (`engine.py`, `run.py`,
 `native/uci_main.cpp`, `training/build_uci_engine.py`). Part 3 (D-93):
 `fastpy-engine/native/uci_main.cpp` changed again (`engine.py`/`run.py`
-untouched — `search_aborted()` from D-92 already covered it). Docs
-updated: `docs/DECISIONS.md` (D-91, D-92, D-93), `docs/ROADMAP.md`,
-`docs/ENGINE_ARCHITECTURE.md`, this file.
+untouched — `search_aborted()` from D-92 already covered it). Part 4
+(D-94): `fastpy-engine/run.py`, `fastpy-engine/native/uci_main.cpp`,
+`fastpy-engine/tests/test_uci.py`, `fastpy-engine/tests/test_phase4.py`
+changed (`engine.py` untouched — Core Rule 4, book logic isn't dialect
+data). Docs updated: `docs/DECISIONS.md` (D-91, D-92, D-93, D-94),
+`docs/ROADMAP.md`, `docs/ENGINE_ARCHITECTURE.md`, this file.
 
 ### `Go` trigger
 Fresh conversation. Read ROADMAP/SESSION_LOG (Tier 1) and full Tier 2
@@ -195,6 +198,76 @@ verified against the existing `fastpy-engine/training/
 build_uci_engine.py` (unchanged this part — `-pthread` was already
 added in Part 2). `engine.py`/`run.py` untouched this part. `fastpy`
 repo untouched this part.
+
+### Part 4 (same session, continued): opening book added (D-94)
+Picked up immediately after presenting D-93's files, per Gokul's
+"Continue to next" — ROADMAP had no queued task after D-93 closed out
+the async-stop/time-management arc, so this required an actual pick
+among three open options. Chose an opening book (the "something outside
+search/UCI entirely" option) over Lazy SMP or Python-mode wall-clock
+time management, specifically to avoid three straight sessions spent on
+search-internals concurrency, and because it's fully self-contained —
+no dependency on anything D-91/D-92/D-93 left open.
+
+Small (11-entry) hand-picked table of common opening lines
+(1.e4/1.d4/1.Nf3 and their most standard replies, plus the 4-ply Ruy
+Lopez line), keyed on the exact ordered sequence of UCI moves played
+since the standard starting position — a straight prefix match, not a
+position-hash lookup (deliberately not transposition-aware; see D-94 for
+why that's out of scope for a book this size). Implemented entirely at
+the UCI-driver level, not in `engine.py` — Core Rule 4 means a book
+lookup (deciding whether to search at all) isn't FastPy dialect data,
+so `engine.py` was never touched.
+
+`run.py`: `OPENING_BOOK`/`_book_lookup()`. `_apply_position()` now
+returns `(board, move_history, is_standard_start)` instead of just
+`board` — the single call site in `uci_loop()` was updated accordingly.
+`is_standard_start` is `False` for any `position fen ...` game,
+permanently disabling the book for it. `uci_loop()`'s `go` handler
+checks the book before parsing any time/depth parameters.
+
+`native/uci_main.cpp`: `kOpeningBook`/`book_lookup()` (linear scan, fine
+at 11 entries), mirroring `run.py`'s table independently — same
+convention already established for the Python/C++ search-function
+pairs. `main()`'s loop gained the same `move_history`/`is_standard_start`
+tracking and reset/disable semantics.
+
+**Verification:** 7 new tests (`TestOpeningBook` in `test_uci.py`):
+fresh-startpos hit responding `e2e4` near-instantly even with `go depth
+20` requested (confirms zero search actually ran, not just a fast one),
+responses to `1.e4`/`1.d4`, the full 4-ply Ruy Lopez line, an off-book
+first move correctly falling through to a real search, a `position fen
+...` game correctly NOT triggering the book despite its empty move
+history otherwise matching `OPENING_BOOK[()]` (used a FEN where the
+book's move isn't even legal, so a wrongly-applied book would be caught
+unambiguously), and `ucinewgame` restoring book eligibility after a
+FEN-started game.
+
+Two pre-existing tests in `test_phase4.py`
+(`test_go_movetime_outputs_info`, `test_go_depth_outputs_all_info_lines`)
+broke: their bare `position startpos` fixture now legitimately hits the
+book (correct new behavior) and returns an instant `bestmove` with no
+`info depth` lines — which broke what those tests were actually
+checking (info-line output shape during a real search, not opening-book
+behavior). Fixed by changing their fixture to an off-book `1.a3` line,
+without touching either test's actual assertions. Full `fastpy-engine`
+suite: 272/272 (265 baseline + 7 new). `fastpy check engine.py` zero
+errors, `run.py` parses clean (both unaffected beyond the driver-level
+additions — `engine.py` itself untouched this part).
+
+Manually verified the compiled binary too, same approach as D-92/D-93
+(no automated pytest coverage exists for `uci_main.cpp`): 6 interactive
+UCI sessions reproducing every scenario above against the real binary,
+including exact latency (fresh startpos → `e2e4` in 1.3ms).
+
+Docs updated: `DECISIONS.md` (D-94), `ROADMAP.md` (closed out this item;
+two carried-over options plus a new "expand the book" option listed for
+next session's decision), this file.
+
+**Files changed this part:** `fastpy-engine/run.py`,
+`fastpy-engine/native/uci_main.cpp`, `fastpy-engine/tests/test_uci.py`,
+`fastpy-engine/tests/test_phase4.py`. `engine.py` untouched this part.
+`fastpy` repo untouched this part.
 
 ---
 
