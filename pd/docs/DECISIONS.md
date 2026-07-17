@@ -1511,3 +1511,98 @@ budget as cleanly as a fixed-N threshold check. The roadmap explicitly
 calls this "SPRT-style", not SPRT; a fixed-N score threshold gets most
 of the practical benefit (catching real regressions before merge) at a
 fraction of the implementation and CI-time cost.
+
+
+## D49 — Thread-Differentiated Lazy SMP: Small Fixed Offset Tables Keyed on thread_id, Not Per-Thread RNG (2026-07-17)
+
+**Decision**: Implement 23.2 by adding a single new `SearchInfo.thread_id`
+field (`usize`, default `0`), set explicitly per helper thread in
+`main.rs`'s Lazy SMP spawn loop (`for tid in 1..threads`). Two existing
+call sites read it to vary behavior:
+
+1. `search::pruning::lmr_thread_base(thread_id) -> f64` replaces the
+   hardcoded `0.75` constant in `alpha_beta.rs`'s LMR reduction formula.
+   Cycles through a 4-entry fixed table (`[0.75, 0.45, 1.05, 0.60]`),
+   indexed by `thread_id % 4`.
+2. `search::ordering::thread_tie_break(thread_id, from, to) -> i32` adds
+   a small (`0..=3`) deterministic offset to a quiet move's ordering
+   score in `score_move()`, via a cheap multiplicative hash mix of
+   `(thread_id, from, to)`.
+
+Both functions return the untouched original value at `thread_id == 0`
+(the main thread) by construction — `lmr_thread_base(0) == 0.75` exactly,
+`thread_tie_break(0, _, _) == 0` always. This is the load-bearing safety
+property: single-threaded search (`Threads` 1, the default) and the main
+thread's own search in a multi-threaded run are provably byte-identical
+to before this change. Only helper threads' internal exploration
+changes, and helpers never report a result to the GUI (Phase 19's
+existing MultiPV note already established this: helpers exist purely to
+populate the shared TT, never to be authoritative on their own line).
+
+**Why fixed offset tables, not per-thread RNG seeded off thread_id**: A
+seeded-RNG approach (e.g. a small PRNG per thread, seeded by thread_id,
+sampled once at thread spawn for that thread's LMR base and reused every
+node) was considered and rejected for two reasons: (1) it's strictly more
+machinery — a PRNG struct threaded through `SearchInfo` — for the exact
+same practical effect as a lookup table, since the value only needs to be
+distinct-and-stable per thread_id, not actually random or resampled
+per-node; (2) a fixed table is trivially unit-testable by exact value
+(`lmr_thread_base(1)` always equals the same number), where a seeded-RNG
+approach would need either a fixed-seed determinism test anyway (no
+stronger a guarantee) or would introduce nondeterminism into the test
+suite for no real benefit — nothing about SMP tree diversity requires
+true randomness, only decorrelation between threads, which a fixed table
+already provides.
+
+**Why `thread_tie_break` uses a hash mix instead of a second fixed
+table**: Unlike LMR (one value needed per thread), the tie-break needs a
+value per `(thread_id, from, to)` triple — 4096 combinations for 64
+squares — so a literal table isn't practical. A cheap multiplicative mix
+(same style as a simple hash function, not cryptographic) gives enough
+avalanche that adjacent squares don't get visibly correlated offsets,
+while staying a pure, allocation-free, branch-light function suitable for
+the move-ordering hot path.
+
+**Why magnitude is capped at `0..=3` for the tie-break**: `QUIET_BASE_SCORE`
+is `0` and quiet moves are ordered purely by `history_score` (typically
+tens to low thousands in magnitude once history/continuation-history
+tables warm up) — a `0..=3` offset can only ever resolve a genuine tie or
+near-tie between two quiet moves with (near-)identical history scores.
+It cannot promote a quiet move ahead of a killer (`300_000`+), a capture,
+or a meaningfully-history-favored quiet move, so this cannot introduce a
+tactical blind spot — only reorders among moves the engine already
+considered roughly equally good.
+
+**Why LMR offsets are a small non-monotonic set rather than scaling
+linearly with thread_id**: Recorded in `lmr_thread_base`'s own doc
+comment (kept there, not duplicated at length here) — Lazy SMP gets
+diminishing/negative returns from ever-more-aggressive reduction across
+many threads, so a handful of repeating "personalities" decorrelates
+helpers without any of them reducing so hard they stop contributing
+useful TT entries.
+
+**Known gap, explicitly not closed this session**: Elo impact of this
+change is not yet measured. The new 23.1 `regression-gate` job runs
+single-threaded by default (candidate vs. baseline `pet_dragon`, no
+`Threads` setoption sent) and is sized as a 20-game/50ms smoke check, not
+built to detect a genuine SMP-scaling improvement, which needs `Threads`
+set >1 on both sides and meaningfully more games to resolve at this
+sample size. Measuring this is a manual `uci_match_runner.yml` run
+(`engine_a_uci_options`/`engine_b_uci_options` = `"setoption name
+Threads value N"` on a multi-core CI runner) — left as a follow-up, not
+folded into this session, since 23.2 itself was scoped as the code
+change, not the validation run.
+
+**Rejected alternative**: Vary `skill_level` or `contempt` per helper
+thread instead of/in addition to LMR and move ordering, on the theory
+that a wider spread of "personalities" (some more tactical, some more
+positional) would diversify helpers further. Rejected: `skill_level` and
+`contempt` are deliberately kept identical across all threads (see the
+existing Phase 20 comment in `main.rs` — helpers already must match the
+main thread's Skill Level depth cap, or they populate the shared TT with
+full-strength lines that leak into a low-skill main search). Diversifying
+those specifically would reintroduce the exact bug Phase 20 closed;
+LMR/move-ordering are the correct, narrower place to add this kind of
+variation because they affect *which lines get explored* without
+changing *how the position is evaluated or how far a given tier is
+allowed to look*.

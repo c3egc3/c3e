@@ -7,6 +7,58 @@ Most recent session at TOP.
 
 ---
 
+## Session 76 — 2026-07-17 (Phase 23.2: thread-differentiated Lazy SMP — D49)
+
+**Built:**
+
+1. **`SearchInfo.thread_id: usize` added** (`search/mod.rs`), default `0`,
+   set explicitly per helper in `main.rs`'s Lazy SMP spawn loop (`for tid
+   in 1..threads`, was `for _ in 1..threads`). Main thread's `SearchInfo`
+   is never touched, so it stays `thread_id == 0` implicitly.
+2. **`search::pruning::lmr_thread_base(thread_id) -> f64`** — new pure
+   function, replaces the hardcoded `0.75` LMR-formula constant in
+   `alpha_beta.rs`'s reduction calculation. Cycles through a 4-entry
+   table; `thread_id == 0` always returns exactly `0.75` (byte-identical
+   to prior behavior). 3 new unit tests.
+3. **`search::ordering::thread_tie_break(thread_id, from, to) -> i32`** —
+   new pure function, adds a small (`0..=3`) deterministic offset to
+   quiet-move ordering scores in `score_move()`, so ties break
+   differently per helper thread. `thread_id == 0` always returns `0`. 4
+   new unit tests (main-thread-zero, determinism, bounded magnitude,
+   varies-across-threads).
+4. **`ROADMAP.md` 23.2 checked off**, flagged that Elo impact of this
+   change is not yet measured — the 23.1 regression gate runs
+   single-threaded and isn't sized to detect an SMP-scaling improvement;
+   a manual multi-threaded `uci_match_runner.yml` run is the way to
+   measure it, left as an open follow-up.
+
+**Files touched:** `src/search/mod.rs`, `src/search/pruning.rs`,
+`src/search/ordering.rs`, `src/search/alpha_beta.rs`, `src/main.rs`.
+
+**Bugs fixed:** None — additive change to an existing, working feature.
+Verified additive-only via `diff` against the freshly-fetched pre-edit
+version of every touched file before finalizing (all edits were pure
+insertions/single-line replacements, no unrelated lines touched).
+
+**Decisions made:** D49 — fixed offset tables keyed on `thread_id`
+(not per-thread RNG), main thread always pinned to the original
+constant/zero-offset in both new functions, `skill_level`/`contempt`
+deliberately left undiversified per Phase 20's existing constraint. Full
+rationale in `DECISIONS.md`.
+
+**Next session start point:** 23.3 — NNUE training data scale-up. This
+is a background-compute task, not primarily a coding task (code in
+`nnue/`/`evaluate_blended()` is already complete per Phase 16) — starting
+point is scoping how much additional self-play + Lichess data is
+realistically achievable via GitHub Actions compute before deciding
+whether to actually kick off generation. Two open items carried forward,
+neither blocking: (1) Gokul still needs to set `regression-gate` as a
+required branch-protection check (from Session 75); (2) a manual
+multi-threaded `uci_match_runner.yml` run to actually measure 23.2's Elo
+impact hasn't been done yet.
+
+---
+
 ## Session 75 — 2026-07-17 (Phase 23.1: lightweight SPRT-style regression gate — D48)
 
 **Built:**

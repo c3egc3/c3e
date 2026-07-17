@@ -1085,7 +1085,8 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              from the mobile GitHub app or web) for it to actually block
              merges; the job runs and reports either way even before
              that's set.
-- [ ] 23.2 — Thread-differentiated Lazy SMP. Helper threads (`main.rs`)
+- [x] 23.2 — Thread-differentiated Lazy SMP. DONE (Session 76, D49).
+             Helper threads (`main.rs`)
              currently run identical search parameters, differing only
              in start timing and being time-unlimited. Vary LMR
              aggressiveness / move-ordering tie-breaks per thread ID so
@@ -1095,6 +1096,19 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              Small–Medium (parameterize existing constants by thread
              ID, no new algorithm). Size: Small–Medium, scales with
              core count.
+             New `SearchInfo.thread_id` field (default 0, set per-helper
+             in `main.rs`'s spawn loop); `search::pruning::lmr_thread_base()`
+             varies the LMR formula's base constant per thread (main
+             thread pinned to the original 0.75, unchanged);
+             `search::ordering`'s `thread_tie_break()` adds a small
+             deterministic offset to quiet move scores, also zero for the
+             main thread. Full rationale in `DECISIONS.md` D49. ⚠️ Elo
+             impact not yet measured — 23.1's `regression-gate` job
+             (20 games/50ms, single-threaded by default) isn't built to
+             detect an SMP-scaling improvement; a manual
+             `uci_match_runner.yml` run with `Threads` > 1 on both sides
+             (higher game count) is the way to actually measure this, not
+             yet done.
 - [ ] 23.3 — NNUE training data scale-up. Code is complete and
              production-ready (`nnue/`, `evaluate_blended()`); both
              tested network sizes lost to HCE (D34/D41), most plausibly
