@@ -813,17 +813,36 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       deliberately still not done — Threads=1 is the standard UCI/GUI
       convention (Stockfish defaults to it too), not clearly worth
       changing on reflection, not just deferred for lack of time.
-- [ ] **NEXT UP (Session 58):** one option carried over from Session 56,
-      still untouched: a smarter `Threads` default than the current
-      hard-coded 1 (see above — reconsidered twice now, still an open
-      question whether it's even a good idea, not just unstarted work).
-      Two fresh options are also reasonable at this point: opening-book
-      transposition-awareness (D-94/D-98, still exact-prefix-match only,
-      explicitly flagged future scope in both entries, still not
-      started); or something outside the Lazy SMP/opening-book orbit
-      entirely — three sessions in a row (56, 57, 58) have now stayed
-      within that same area of the engine. Needs an actual decision at
-      the start of next session.
+- [x] **NEXT UP (Session 58) resolved (Session 59, see D-100):** handed
+      the choice of direction and deliberately picked something outside
+      the Lazy SMP/opening-book orbit — three sessions running (56, 57,
+      58) had stayed within it, flagged below as worth reconsidering.
+      Found and fixed a real, previously-undiscovered correctness gap:
+      `halfmove_clock` only ever incremented, never reset on a pawn
+      move or capture, so the fifty-move rule was silently untracked
+      everywhere (confirmed via grep — nothing read the field before
+      this session). Fixed in `make_move()` (reset logic, computed
+      before the function's existing capture-clearing mutations run —
+      order matters here) and wired into `alpha_beta()`/`quiescence()`
+      (both compiled and `run.py`'s Python-mode mirrors) as a draw-score
+      short-circuit, checked before the TT probe specifically because
+      `board.hash` doesn't encode `halfmove_clock`. 9 new tests
+      (`TestFiftyMoveRule` in `test_move_gen.py`). `fastpy` 386/386,
+      `fastpy-engine` 285/285 (276 + 9 new). `fastpy check engine.py`
+      zero errors, compiles clean. Both carried-over Session 56 options
+      (smarter `Threads` default, opening-book transposition-awareness)
+      remain untouched, still open. See D-100.
+- [ ] **NEXT UP (Session 59):** two items now open — within-search
+      repetition detection (checking a position against the current
+      search path's own history) and game-level threefold-repetition
+      detection (checking against the actual game's played-move
+      history, structurally similar to the opening book's
+      `move_history` tracking at the UCI-driver level per D-94) —
+      both flagged by D-100 as real, related gaps to this session's
+      fifty-move-rule fix, neither addressed yet. Also still open from
+      Session 56: a smarter `Threads` default, and opening-book
+      transposition-awareness (D-94/D-98). Needs an actual decision at
+      the start of next session — four candidates now on the table.
 
 ---
 

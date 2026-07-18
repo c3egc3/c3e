@@ -3484,3 +3484,133 @@ deliberately, since Threads=1 is the standard UCI/GUI convention most
 engines (including Stockfish) also default to, and changing it wasn't
 clearly a good idea on reflection, not just deferred for lack of time.
 Opening-book transposition-awareness (D-94/D-98) remains untouched.
+
+## D-100: fifty-move rule was silently untracked — `halfmove_clock` only ever incremented, never reset; fixed in `make_move()` and wired into both `alpha_beta()` and `quiescence()`
+
+**Session 59 — deliberately picked outside the Lazy SMP/opening-book
+orbit** Sessions 56, 57, and 58 all stayed within that same area
+(D-96/D-97/D-98/D-99); ROADMAP flagged this explicitly as worth
+reconsidering. Handed the choice of direction and picked a genuine,
+previously-undiscovered correctness gap instead of either carried-over
+option (a smarter `Threads` default, or opening-book
+transposition-awareness — both remain untouched, still open).
+
+**The bug:** `BoardState.halfmove_clock` exists (per
+`ENGINE_ARCHITECTURE.md`'s board representation, present since Sprint 7)
+and is incremented on every `make_move()` call — but was never reset to
+0 on a pawn move or capture. This field only ever grew, monotonically,
+for the entire game. Nothing anywhere in the codebase read it before
+this session (confirmed via grep — zero hits outside its declaration
+and the FEN-parsing line that loads its initial value). The fifty-move
+rule (a legal, real draw claim once 50 full moves pass with no pawn
+move or capture) was consequently invisible to the engine end-to-end:
+not tracked correctly, and not checked by the search at all. A real
+game reaching that point would have the engine continue evaluating and
+searching as if the game could go on indefinitely, when a draw is (at
+minimum) claimable and, past 75 moves under FIDE rules, automatic.
+
+**The fix, in three parts, all in this session:**
+
+1. **`engine.py`'s `make_move()`** — `is_pawn_move`/`is_capture` are now
+   computed at the very top of the function, immediately after decoding
+   `from_sq`/`to_sq`/`promo`/`flag`, and *before* any of the function's
+   existing mutations run. This ordering is load-bearing: the existing
+   code clears the captured piece's bitboard bit as its very first
+   mutating step, so checking "was the destination square occupied by
+   an opponent piece" after that point would always see 0 — every
+   capture would look like a non-capture. `is_capture` also covers
+   `FLAG_EN_PASSANT` explicitly, since an en passant capture's victim
+   square (one rank behind `to_sq`) is never the same as `to_sq` itself
+   and so isn't caught by the normal to-square-occupied check.
+   `halfmove_clock` is set to 0 when either condition holds, otherwise
+   incremented exactly as before. `make_move_with_accumulator()` (the
+   NNUE-accumulator-maintaining wrapper, D-70/D-72) calls `make_move()`
+   internally rather than duplicating its logic, so it inherited the
+   fix with zero changes of its own. `make_null_move()` (D-54/search
+   pruning heuristic, not a real game move) deliberately does not touch
+   `halfmove_clock` — correct as-is, since a null move isn't part of the
+   actual game history the fifty-move rule tracks.
+
+2. **`engine.py`'s `alpha_beta()` and `quiescence()`** — both now check
+   `board.halfmove_clock >= 100` (50 full moves = 100 half-moves)
+   immediately after the existing node-count/`search_aborted()` checks,
+   returning a draw score (0) before doing anything else. In
+   `alpha_beta()` specifically, this check is placed *before* the TT
+   probe, not after — deliberately. `board.hash` (the Zobrist hash used
+   as the TT key) does not encode `halfmove_clock` at all; two different
+   game histories can reach bit-for-bit the same board position with
+   different halfmove-clock values and therefore the same hash. Probing
+   the TT first could return a cached score from a game history where
+   this position wasn't yet a forced draw, silently masking a real one.
+   Checking the clock first sidesteps the whole question. This mirrors
+   the existing pattern for checkmate/stalemate detection (`count == 0`
+   → return `NEG_INF + depth` or `0` — also unconditional, also ahead
+   of any score that could be stale relative to the true game state).
+
+3. **`run.py`'s `_alpha_beta_py()` and `_quiescence_py()`** — mirrored
+   identically, in the same relative position, for behavioral parity
+   with the compiled versions (the established convention throughout
+   this project — see every `_xxx_py()` docstring's "mirrors
+   engine.py's ..." note). `run.py` doesn't have a separate
+   `_make_move_py()`; it imports `make_move` from `engine.py` directly
+   and runs the exact same dialect code as plain Python (this is *why*
+   `engine.py` can run correctly as plain Python per Core Rule 2 — the
+   fifty-move-rule fix in `make_move()` therefore applies to Python-mode
+   automatically, with no separate Python-mode copy needed).
+
+**A real dialect constraint surfaced along the way:** none this
+session — unlike D-99's `uint64[MAX_SMP_THREADS]` literal-size
+requirement, this feature needed no new FastPy transpiler capability.
+`bool8` locals assigned conditionally inside a struct method,
+`BoardState` method calls (`white_pieces()`/`black_pieces()`) used to
+compute `is_capture`, and a plain early-return on an `int32` field
+comparison are all patterns the dialect already supported before this
+session; `fastpy check` passed on the first attempt.
+
+**Verification:**
+- `fastpy check engine.py` — zero errors.
+- `fastpy build engine.py --optimize O3` — compiles clean; emitted C++
+  confirmed (via direct grep of the generated `.cpp`) to contain the
+  `halfmove_clock = 0` / `+ 1` branch in `make_move` and the
+  `halfmove_clock >= 100` early-return in both `alpha_beta` and
+  `quiescence`, exactly once each, no duplication.
+- Compiled binary runs and exits 0 (`main()` remains the deliberate
+  no-op stub, Core Rule 6 — unaffected by this session).
+- 9 new tests added to `tests/test_move_gen.py`'s new
+  `TestFiftyMoveRule` class: `make_move()`'s reset-vs-increment
+  behavior across quiet moves, pawn pushes, pawn captures, piece
+  captures, en passant (the case that would break a naive
+  to-square-only capture check), and promotion; `_alpha_beta_py()`/
+  `_quiescence_py()` returning exactly 0 at `halfmove_clock == 100`;
+  and a boundary test confirming `halfmove_clock == 99` does NOT force
+  a draw — using a position with white up a queen and more material so
+  the real search score (`> VAL_QUEEN`) is an unambiguous contrast
+  against the forced-0 draw score one ply later, rather than relying on
+  the roughly-symmetric starting position's near-zero eval to prove
+  anything. Full suites: `fastpy` 386/386 (unchanged — this is a
+  `fastpy-engine`-only session), `fastpy-engine` 285/285 (276 prior +
+  9 new).
+- This sandbox's C++ toolchain build occasionally exceeds
+  `toolchain.py`'s hardcoded 120-second `compile_cpp()` timeout
+  (`core/toolchain.py` line ~623) on this environment's single vCPU —
+  the ~101K-line emitted C++ (dominated by the NNUE weight-embedding
+  tables, D-69) is genuinely slow to optimize at `-O3
+  -march=native` under CPU contention. Confirmed this is a pre-existing
+  environment constraint, not a regression from this session's change:
+  a direct `g++` invocation with a longer timeout, on the exact same
+  emitted `.cpp`, compiles successfully and produces a correct
+  standalone binary. Not something to fix in this session (out of
+  scope — this session's change is a two-line diff in emitted C++
+  terms, not something that could plausibly move compile time across a
+  120-second threshold on its own).
+
+**What's still open:** within-search repetition detection (checking a
+position against the current search path's own history, to prune
+repeated positions inside a single search tree — distinct from this
+session's fifty-move-rule fix) and game-level threefold-repetition
+detection (checking a position against the actual game's played-move
+history, structurally similar to how the opening book already tracks
+`move_history` at the UCI-driver level per D-94) are both real, related
+gaps, not addressed this session. Flagging both as candidates for a
+future session, the same way D-94 flagged opening-book
+transposition-awareness.

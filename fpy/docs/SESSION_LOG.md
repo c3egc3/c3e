@@ -2,6 +2,92 @@
 
 Append-only. One entry per session. Most recent at top.
 
+## Session 59 — Fifty-move rule was silently untracked (D-100): `halfmove_clock` only ever incremented, never reset; fixed in `make_move()` and wired into `alpha_beta()`/`quiescence()`
+**Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
+`fastpy-engine/tests/test_move_gen.py` changed. Docs updated:
+`docs/DECISIONS.md` (D-100), `docs/ROADMAP.md`, this entry.
+
+**Baseline (Go-trigger PROCESS check, D-61/D-65):** re-verified against
+freshly-pulled `main` in both repos before any change. `fastpy`
+386/386, `fastpy-engine` 276/276, `run.py` parses clean, `fastpy check
+engine.py` zero errors, `OPENING_BOOK` confirmed at 46 entries —
+matched Session 58's claimed end state exactly.
+
+**Decision made:** three sessions running (56, 57, 58) had all stayed
+within the Lazy SMP/opening-book area, flagged explicitly in ROADMAP as
+worth reconsidering. Offered the choice of a carried-over item vs. a
+new area; handed the specific task back to me. Chose to look for a
+genuine, previously-undiscovered gap rather than default to either
+carried-over option — found one: `board.halfmove_clock` exists (part
+of `BoardState` since Sprint 7, documented in
+`ENGINE_ARCHITECTURE.md`'s board representation) but grep confirmed
+nothing anywhere in the codebase ever read it, and `make_move()` only
+ever incremented it, never reset it. The fifty-move rule was
+consequently invisible end-to-end — a real correctness gap for actual
+play, not a hypothetical one. See D-100 for the full writeup.
+
+**What shipped:**
+1. `engine.py`'s `make_move()` now computes `is_pawn_move`/`is_capture`
+   *before* any of its existing mutations run (the function's first
+   mutating step already clears the captured piece's bitboard bit, so
+   checking capture status any later would always see a non-capture);
+   `halfmove_clock` resets to 0 on either condition, increments
+   otherwise. En passant is handled explicitly (`FLAG_EN_PASSANT` →
+   `is_capture = True`) since its victim square isn't `to_sq` and so
+   isn't caught by the normal to-square-occupied check.
+   `make_move_with_accumulator()` inherited the fix for free (it calls
+   `make_move()` internally rather than duplicating its logic).
+   `make_null_move()` deliberately untouched — a search heuristic, not
+   a real game move.
+2. `engine.py`'s `alpha_beta()` and `quiescence()` both now return a
+   draw score (0) once `board.halfmove_clock >= 100`. In `alpha_beta()`
+   this check sits *before* the TT probe, deliberately: `board.hash`
+   doesn't encode `halfmove_clock`, so two different game histories
+   reaching the same position could otherwise share a stale TT entry
+   that masks a forced draw.
+3. `run.py`'s `_alpha_beta_py()`/`_quiescence_py()` mirrored
+   identically for behavioral parity. `run.py` has no separate
+   `_make_move_py()` — it imports and runs `engine.py`'s `make_move()`
+   directly as plain Python, so the `make_move()` fix applies to
+   Python-mode automatically with no second copy needed.
+
+**No new dialect constraint this session** — unlike D-99's array-size
+literal requirement, everything needed (`bool8` locals, existing
+`BoardState` method calls, an early-return on an `int32` comparison)
+was already supported; `fastpy check` passed on the first attempt.
+
+**Verification:** `fastpy check engine.py` zero errors. `fastpy build
+--optimize O3` compiles clean; grepped the emitted `.cpp` directly to
+confirm the `halfmove_clock = 0`/`+ 1` branch and both
+`halfmove_clock >= 100` early-returns are present exactly once each, no
+duplication. Compiled binary runs, exits 0 (the deliberate `main()`
+no-op stub, unaffected). 9 new tests in a new `TestFiftyMoveRule` class
+(`test_move_gen.py`): reset-vs-increment across quiet moves/pawn
+pushes/pawn captures/piece captures/en passant/promotion, exact-0 draw
+score at `halfmove_clock == 100` for both `_alpha_beta_py()` and
+`_quiescence_py()`, and a boundary test at `halfmove_clock == 99` using
+a white-up-a-queen-plus position so the real search score
+(`> VAL_QUEEN`) is an unambiguous contrast against the forced-0 draw
+one ply later. Full suites: `fastpy` 386/386 (unchanged this session),
+`fastpy-engine` 285/285 (276 prior + 9 new).
+
+**Environment note, not a regression:** this sandbox's single vCPU
+occasionally pushes the ~101K-line emitted C++ (dominated by NNUE
+weight tables, D-69) past `toolchain.py`'s hardcoded 120-second
+`compile_cpp()` timeout at `-O3 -march=native`. Confirmed pre-existing
+and unrelated to this session's change — a direct `g++` invocation with
+a longer timeout, on the identical emitted `.cpp`, compiles
+successfully. This session's diff is two lines' worth of emitted C++;
+not plausibly capable of moving compile time across that threshold on
+its own. Not addressed here — out of scope.
+
+**What's still open:** within-search repetition detection and
+game-level threefold-repetition detection are both real, related gaps
+this session's fix does not cover — flagged in D-100 and ROADMAP as new
+candidates. Both Session 56 carry-overs (smarter `Threads` default,
+opening-book transposition-awareness) also remain untouched. Four
+candidates now open; needs a decision at the start of Session 60.
+
 ## Session 58 — Accurate per-thread node counts (D-99): `NODE_COUNT` grown to one slot per thread, `thread_id` threaded through the search, cost measured (not assumed) to be nothing
 **Status:** COMPLETE ✅ — `fastpy-engine/engine.py`,
 `fastpy-engine/run.py`, `fastpy-engine/native/uci_main.cpp` changed.
