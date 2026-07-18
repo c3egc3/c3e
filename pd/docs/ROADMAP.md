@@ -1109,17 +1109,14 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              `uci_match_runner.yml` run with `Threads` > 1 on both sides
              (higher game count) is the way to actually measure this, not
              yet done.
-- [ ] 23.3 — NNUE training data scale-up. Code is complete and
+- [x] 23.3 — NNUE training data scale-up. DONE as scoped (data volume
+             is no longer the open question — see below for what's now
+             blocking NNUE instead). Code was complete and
              production-ready (`nnue/`, `evaluate_blended()`); both
-             tested network sizes lost to HCE (D34/D41), most plausibly
-             from data starvation — roughly half a million combined
-             self-play + Lichess rows vs. the hundreds of billions
-             top-class engines train on. Background compute task, can
-             start in parallel with other work once 23.1/23.2 land.
-             Ease: Small (code, done) / Large (compute — background
-             GitHub Actions self-play generation, not a coding task).
-             Size: Large — the single biggest lever on this list if
-             data volume is confirmed as the actual bottleneck.
+             earlier tested network sizes lost to HCE (D34/D41), most
+             plausibly from data starvation — roughly half a million
+             combined self-play + Lichess rows vs. the hundreds of
+             billions top-class engines train on.
              **Code half DONE (Session 77, D50)**: `selfplay.yml`
              rewritten from one sequential job (max ~3,000 games/run,
              the prior `n3000` artifact) into a sharded fan-out —
@@ -1129,22 +1126,45 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              `merge-shards` downloads and concatenates every shard's
              output into one combined artifact (30-day retention) so
              Gokul only downloads one file per run, not `shards` of
-             them, on mobile. Defaults: 10 shards × 300 games = 3,000
-             games/run at roughly 10x the old workflow's wall-clock
-             throughput (same total-games ceiling per run, much less
-             calendar time) — `shards`/`games_per_shard` are both
-             overridable per-run for bigger batches.
-             **Compute half NOT started.** This still needs Gokul to
-             actually trigger `selfplay.yml` from the Actions tab
-             (mobile-app-doable) — likely repeatedly across several
-             sessions/days with a fresh `seed_start` each time — to
-             accumulate meaningfully past the current ~500K-row total
-             before this item can be marked done and 23.4/23.5
-             unblocked. Downloaded combined artifacts still need
-             merging into the actual training dataset for the next
-             Kaggle NNUE run by hand (no code change needed for that
-             step — it's the same manual hand-off Colab/Kaggle training
-             already used before this session).
+             them, on mobile.
+             **Compute half DONE (Session 79)**: Gokul ran 10 rounds
+             of the sharded workflow (seeds 0-27000), producing
+             2,428,608 fresh self-play rows — verified distinct by
+             SHA-256 across all 10 files, non-overlapping seed ranges,
+             only 1.79% incidental cross-file row duplication (normal
+             noise, not a seed collision). Combined with 50,000 Lichess
+             rows and trained via `train_nnue.yml`: best epoch 6/10,
+             val_loss=0.50108, a real improvement over the old
+             483,080-row run's 0.53776. **The data-starvation theory is
+             now confirmed on the loss metric** — more data measurably
+             helped the training objective.
+             **But actual play strength still lost badly**: a 20-game
+             pure-NNUE-vs-HCE match was a 20-0 shutout. `eval_diag.yml`
+             found the raw network saturating at the ±1500cp clamp on
+             6/8 test positions (including ones that should read near
+             zero) — a calibration/training-config bug (see D52), not
+             a data-volume or architecture-size problem. **New,
+             better-understood blocker, tracked as its own item now**:
+             see 23.3b below. 23.4/23.5 (which assumed 23.3 would
+             settle the data-volume question one way or another) are
+             now unblocked to proceed independently of whether 23.3b
+             resolves NNUE, since they don't depend on NNUE specifically.
+- [ ] 23.3b — NNUE logit-saturation fix (D52, Session 79). Leading
+             hypothesis: `train_nnue.rs`'s `lambda=0.7` blend leaves 30%
+             loss weight on the raw game-result (hard 0/1/0.5) label for
+             self-play rows; BCE-on-logits against a hard target has no
+             natural ceiling, so that component rewards the network
+             pushing its raw output toward extreme, saturated logits.
+             `weight_decay=0.01`/`grad_clip_norm=1.0` (D30/D33) apparently
+             aren't enough to counter this at 5x the old data volume.
+             Proposed first experiment: retrain with `lambda` raised
+             toward 0.9-1.0 (less/no hard-label pull), same data, same
+             architecture — a clean single-variable test. Whether to
+             adjust `weight_decay`/`grad_clip_norm` too, or in place of
+             lambda, is an open call for the next session, not decided
+             yet. Ease: Small (hyperparameter-only retrain, same
+             infrastructure). Size: unknown until tested — could fully
+             resolve NNUE's practical viability, or reveal a deeper issue.
 - [ ] 23.4 — Variant-specific opening statistics. No aggregation of
              self-play results into a root-level move-preference table
              exists. No curated opening theory can substitute — 2.16M

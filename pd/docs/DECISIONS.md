@@ -1681,6 +1681,19 @@ at ~100ms/move average is still 10,000 games sequentially), and pushes
 right up against the default job timeout as a fixed ceiling with no
 parallelism benefit at all, for no advantage over sharding.
 
+**Correction (added Session 79, 2026-07-18)**: The Scope-boundary
+paragraph above says "re-running the Kaggle NNUE training job" —
+that's wrong and shouldn't have been written without checking first.
+NNUE training does not go through Kaggle at all; `train_nnue.yml` runs
+the whole training loop natively on GitHub Actions via `train_nnue.rs`
+(Phase 16.5), no Python/Kaggle notebook involved. Kaggle was the
+original Phase 16.5 plan (D18.5/D21) but was superseded by this native
+Actions workflow before D50 was written; this decision entry just
+never got double-checked against the actual current workflow file.
+Left the original paragraph as-is above (the record of what was
+believed at the time) rather than editing it — this correction is the
+fix, per this doc's own convention of appending rather than rewriting.
+
 
 ## D51 — Diagnostic Export "Result:" Line: Capture Reason at the Source, Not Reconstruct From Board State (2026-07-17)
 
@@ -1741,3 +1754,75 @@ the in-game banner (`el.textContent`/`msg` still built exactly as
 before) — purely additive bookkeeping so the *reason* is captured
 once, correctly, at the moment it's known, instead of needing to be
 reverse-engineered later.
+
+
+## D52 — NNUE Re-Parked (Again): 5x More Data Closes Most of the Loss Gap But Uncovers a Logit-Saturation Bug — Data Volume Was Not the Real Blocker (2026-07-18)
+
+**Context**: D34 parked NNUE after it lost to HCE on 483,080 rows
+(val_loss 0.53776). D41 re-tested a bigger architecture (hidden_size=128)
+on the same small dataset and it also lost, re-confirming the park but
+leaving open whether data volume (not architecture) was the actual
+bottleneck. Phase 23.3 (D50, this session's earlier half) built the
+infrastructure to test that directly: 2,428,608 fresh self-play rows,
+5x the old dataset, same hidden_size=32 architecture as D34 for a clean
+comparison.
+
+**What happened**: Training on the full 2,478,608-row combined dataset
+(2,428,608 self-play + 50,000 Lichess) genuinely improved the loss
+metric — best epoch 6/10, val_loss=0.50108, a real and meaningfully
+sized drop from 0.53776. That part of the data-starvation theory holds.
+But a 20-game pure-NNUE-vs-pure-HCE match (`NNUEWeight=100` vs default 0,
+via `uci_match_runner.yml`) was a **20-0 shutout in HCE's favor** — not
+a modest edge, a complete rout. Zero draws.
+
+A 20-0 sweep is a different signal than "NNUE is weaker" — a merely
+weaker-but-functional eval still flukes occasional wins on tactics. The
+`eval_diag.yml` diagnostic (Phase 17.5d) confirmed why: **6 of 8 test
+positions came back pinned at exactly the ±1500cp hard clamp**,
+including positions that should evaluate near zero (a symmetric random
+start) or moderately, not maximally. The network isn't giving a graded,
+weaker opinion — it's collapsed into near-binary "very winning / very
+losing" outputs with almost no signal in between, which would make any
+search using it play close to randomly among any moves that aren't
+already obviously winning or losing.
+
+**Leading hypothesis for the saturation, not yet confirmed by a
+follow-up run**: `train_nnue.rs`'s loss blends `lambda=0.7` eval-target
+(soft, sigmoid-bounded) with 30% weight on the raw game *result* — a
+hard 0/1/0.5 label — for self-play rows. BCE loss against a hard target
+has no natural ceiling: loss keeps shrinking the more extreme (larger-
+magnitude logit) the network's prediction gets, so the hard-label
+component actively rewards logit blow-up. `weight_decay=0.01` and
+`grad_clip_norm=1.0` (D30/D33) exist specifically to counter this
+tendency, tuned against the old 483K-row dataset — they may simply not
+be strong enough at 5x the data and (likely) more gradient steps.
+
+**Decision**: Re-park NNUE again, same as D34/D41, but on a materially
+different and more useful basis than either prior park: this time the
+blocker is identified as a specific, plausibly-fixable training-config
+issue (logit saturation from hard-label blending) rather than "needs
+more data" (now tested and largely resolved on the loss metric, yet the
+strength problem persisted) or "needs more capacity" (D41 already ruled
+that out at the old data volume). The next experiment — raising `lambda`
+toward 0.9-1.0 to reduce or remove the hard-result component's pull
+toward saturation, same data, same architecture — is a single-variable
+follow-up test, explicitly deferred to a fresh session per Gokul's
+request rather than run immediately at the end of this one.
+
+**Why not immediately retrain with a guessed lambda value in this same
+session**: Two reasons. First, Gokul explicitly asked to document
+everything now and explore further in a new session — respecting that
+directly. Second, `weight_decay`/`grad_clip_norm` are both plausible
+co-contributors and haven't been ruled out; jumping straight to a
+lambda change without first deciding whether to isolate lambda alone
+or adjust multiple knobs at once risks another single, ambiguous data
+point rather than a clean test. That decision belongs at the start of
+the next session, with full context, not rushed at the tail of this
+one.
+
+**What's NOT the takeaway**: This is not evidence that NNUE can't work
+for Pet Dragon, and it's not a reason to abandon the data-scale-up
+effort — the loss-metric improvement from 5x the data was real. It's
+evidence that the *training configuration* (specifically the
+result-blend mechanism) needs attention before more data or a bigger
+network can be fairly evaluated again.

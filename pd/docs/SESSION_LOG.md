@@ -7,6 +7,75 @@ Most recent session at TOP.
 
 ---
 
+## Session 79 — 2026-07-18 (Phase 23.3 compute done, NNUE retrained and re-parked — D52)
+
+**Built/done, roughly in order:**
+
+1. **Merged 10 sharded self-play runs** (seeds 0-27000, from Session 77's
+   `selfplay.yml`) into one 2,428,608-row file. Verified all 10 source
+   files distinct by SHA-256, seed ranges non-overlapping, only 1.79%
+   incidental cross-file row duplication (normal, not a seed collision).
+2. **Corrected a real error from Session 77's D50**: NNUE training does
+   not go through Kaggle — `train_nnue.yml` runs it natively on GitHub
+   Actions (Phase 16.5). D50 has a correction note appended (not
+   rewritten). This was flagged as owed at the end of Session 78 and is
+   now fixed.
+3. **Walked Gokul through the real hand-off**: merged file uploaded as a
+   GitHub Release asset (486MB, over the 25MB repo-upload limit),
+   reused an existing completed `lichess_sample.yml` run
+   (28721456844) instead of regenerating, triggered `train_nnue.yml`
+   with both.
+4. **Training completed**: 2,478,608 total rows (2,428,608 self-play +
+   50,000 Lichess), best epoch 6/10, val_loss=0.50108 — a real
+   improvement over the old 483,080-row run's 0.53776.
+5. **`src/nnue/inference.rs` doc-comment update prepared** (stale
+   val_loss/row-count numbers corrected) — delivered to Gokul,
+   **not yet confirmed committed**.
+6. **Match-tested the new network**: first attempt (Gokul-triggered) was
+   `main` vs `main` with no NNUE options — didn't actually test
+   anything, caught and re-run correctly. Real test — pure HCE
+   (`NNUEWeight=0`) vs pure new-NNUE (`NNUEWeight=100`), 20 games — was
+   a **20-0 shutout for HCE**.
+7. **Ran `eval_diag.yml`** to diagnose the shutout rather than assume
+   "just weaker": found the raw network saturating at the ±1500cp hard
+   clamp on 6/8 test positions, including ones that should read near
+   zero. Traced the likely mechanism to `train_nnue.rs`'s `lambda=0.7`
+   blend leaving 30% loss weight on the hard game-result label, which
+   BCE-on-logits has no natural incentive to keep bounded —
+   `weight_decay=0.01`/`grad_clip_norm=1.0` (D30/D33) apparently
+   insufficient at 5x the old data volume.
+
+**Bugs fixed:** None shipped this session — the saturation issue was
+diagnosed, not yet fixed. Root cause is a hypothesis (well-evidenced,
+not yet confirmed by a follow-up run).
+
+**Decisions made:** D52 — NNUE re-parked again, this time on a
+materially better-understood basis: data volume is confirmed NOT the
+blocker (loss metric improved substantially with 5x data, strength
+didn't), a specific training-config mechanism is the leading suspect
+instead of "needs more data/capacity." Correction appended to D50 (see
+above). Full rationale in `DECISIONS.md`.
+
+**`ROADMAP.md` changes:** 23.3 marked done (data volume question
+settled); new 23.3b added for the logit-saturation fix, explicitly left
+open pending the next session's decision on which hyperparameter(s) to
+adjust first (`lambda` alone vs. also touching `weight_decay`/
+`grad_clip_norm`).
+
+**Next session start point:** Gokul explicitly asked to document
+everything and defer further exploration to a fresh session — so:
+decide the retrain experiment design for 23.3b (lambda-only vs.
+multi-knob), then run it via `train_nnue.yml` on the same 2.48M-row
+dataset (already uploaded as a GitHub Release, reusable — no need to
+re-merge or re-upload), and re-check with `eval_diag.yml` before
+spending another `uci_match_runner.yml` run. Carried forward, none
+blocking: (1) `regression-gate` branch-protection setup (Session 75);
+(2) manual multi-threaded `uci_match_runner.yml` run to measure 23.2's
+Elo impact (Session 76). (`src/nnue/inference.rs`'s doc-comment update
+— confirmed committed same-session, no longer open.)
+
+---
+
 ## Session 78 — 2026-07-17 (diagnostic export "Result:" line — D51)
 
 **Built:**
