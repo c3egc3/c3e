@@ -538,5 +538,91 @@ depth, not a single fixed multiplier.
   accumulated floating-point-free but still order-sensitive alpha
   updates) rather than a remaining defect. Not chased further this
   session — see D-88 for the full investigation and what was and
-  wasn't confirmed.
+  wasn't confirmed. **Session 56 note:** this same class of
+  non-determinism now also shows up across different `Threads` settings
+  of the SAME driver (see below) — expected, same underlying cause
+  (which TT entries exist changes move ordering/pruning), not a new
+  defect.
+
+## Lazy SMP (Session 56 / D-96, D-97)
+
+Real thread-based multi-core search, shipped with **zero `engine.py`
+changes** — a correction to Session 38's original scoping (D-74), which
+assumed this needed `std::thread` support added to the FastPy dialect
+itself. That assumption predates D-92 (Session 55), which already
+established the actual pattern needed: a real `std::thread` spawned
+from hand-written `native/uci_main.cpp`, calling directly into
+engine.cpp's already-compiled functions, never touching engine.py or
+the FastPy dialect surface. Lazy SMP needed the identical pattern again
+— search-worker threads instead of a stdin/stop watcher.
+
+**How it works:** `setoption name Threads value N` (default 1, clamped
+to `[1, 64]`) sets how many search threads `go()` runs. `Threads=1`
+(the default — most GUIs never send `setoption`, so this preserves
+pre-Session-56 behavior exactly, byte-for-byte) spawns nothing extra.
+`Threads > 1` spawns `N-1` silent helper threads alongside the existing
+D-92 stop-watcher — each running its own iterative-deepening loop, on
+its own private `BoardState` (passed by value, no shared mutable
+board), with no `info`/PV output at all. What makes it "Lazy SMP" and
+not just N independent unrelated searches: every thread shares ONE
+transposition table (`TT_HASH`/`TT_SCORE`/`TT_DEPTH`/`TT_FLAG`/
+`TT_MOVE` — plain BSS globals in engine.cpp), genuinely unsynchronized
+between threads, deliberately. A thread that finishes a subtree first
+deposits a TT entry that every other thread — searching the same
+position with naturally different OS-scheduling-driven timing — can
+reuse as a hash move/cutoff hint. That cross-pollination through a
+lock-free shared TT is where the actual speedup comes from; it requires
+the TT to have no locks, so occasional benign entry corruption from two
+threads racing to write the same slot is accepted, filtered the same
+way an ordinary stale entry from an earlier search already was (hash +
+depth sanity checks in `tt_probe()`).
+
+**What's accepted as approximate, and why:** `NODE_COUNT` becomes a
+shared, unsynchronized counter under `Threads > 1` — `info nodes`/`nps`
+output is an approximate aggregate, not an exact count (possible lost
+increments under concurrent writes). This is a deliberate trade, not an
+oversight: `NODE_COUNT[0] += 1` runs on literally every
+`alpha_beta()`/`quiescence()` call, the single hottest line in the
+entire engine, so making it atomic would tax every search — including
+the `Threads=1` default most games use — to fix a purely informational
+display value. This is categorically different from why `STOP_FLAG`
+needed `Atomic[bool]` (D-91/D-92): a plain-bool `STOP_FLAG` was a
+genuine correctness bug (a confirmed-by-repro infinite hang, not just
+an off value). An accurate per-thread node count is a real, flagged,
+not-yet-started follow-up (see ROADMAP) — it would need a `thread_id`
+parameter threaded through the recursive search functions to give each
+thread its own counter slot.
+
+**A real bug found via this session's own stress testing (D-97), fixed
+before shipping:** `go()`'s depth loop checked `stop_requested()`
+unconditionally at the top of every iteration, including depth 1. If
+`STOP_FLAG` was already true the instant the loop started — which
+D-96's own thread-spawn overhead (63 sequential `std::thread`
+constructions on a heavily-loaded or single-core machine can itself eat
+a meaningful fraction of a small `movetime` budget) made far easier to
+trigger than before — depth 1 was skipped entirely, and `go()` returned
+the illegal `bestmove 0000` for a position that plainly has legal
+moves. Reproduced directly (`Threads=64`, `movetime 100`, off-book
+position): ~50% failure rate over repeated runs. Fixed by mirroring a
+guarantee `find_best_move()`'s own root-move loop already makes ("move
+0 is always trusted, even under abort") one level up in `go()`: `if
+(depth > 1 && stop_requested()) break;` — depth 1 is now always
+attempted. Re-verified 15/15 clean after the fix.
+
+**Verification:** `Threads=1` reconfirmed byte-identical to pre-session
+output — node counts and scores match exactly at every depth 1-6 on an
+off-book position, only wall-clock timing differs, as always.
+`Threads=4`/`Threads=64` verified to search without crashing and always
+return a legal move. 12 rapid `go infinite`/`stop` cycles under
+`Threads=4` (randomized position/timing) completed cleanly, no hangs.
+`stop` sent 1s into a `Threads=8` `go infinite` search returned
+`bestmove` in 26ms, confirming mid-node stop propagation (D-91/D-92's
+`Atomic[bool]` `STOP_FLAG`) still works with helper threads active.
+Full suites unaffected: `fastpy` 386/386, `fastpy-engine` 276/276
+(`engine.py`/`run.py` both untouched — `native/uci_main.cpp` only). Per
+this project's existing convention, no pytest test builds the native
+binary (see `test_node_budget.py`'s docstring) — verified via paced
+UCI subprocess sessions against the real compiled binary instead, the
+same approach every other native-driver-only session (D-84, D-87 native
+parts, D-88 through D-95's native parts) has used.
 | 6 | ⏳ | 1B NPS | Lazy SMP multi-core, BMI2 magic bitboards |

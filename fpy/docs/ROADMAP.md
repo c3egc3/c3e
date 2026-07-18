@@ -673,16 +673,35 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         already-buffered `quit` almost instantly — correct new
         behavior, not a regression). Full suites: `fastpy` 386/386,
         `fastpy-engine` 276/276. `fastpy check engine.py` zero errors.
-  - [ ] **NEXT UP:** no specific task queued. Two options carried over,
-        neither touched this session: (1) Lazy SMP, deferred since D-74
-        for being its own multi-session `std::thread`-in-dialect
-        commitment (both drivers now have real `std::thread`/
-        `threading` precedent, from D-92/D-93 natively and D-95 in
-        Python-mode); (2) expand the opening book (D-94) — still a
-        deliberately small 11-entry table; a larger or position-hash-
-        keyed (transposition-aware) version remains explicitly flagged
-        as future scope. Needs an actual decision at the start of next
-        session.
+  - [x] Lazy SMP shipped (Session 56, see D-96/D-97) — picked over
+        expanding the opening book. Correcting the D-74 scoping note two
+        bullets below: D-92 already established the exact pattern real
+        thread-based Lazy SMP needed (a `std::thread` spawned from
+        hand-written `native/uci_main.cpp`, calling directly into
+        engine.cpp's already-compiled functions) — so this shipped with
+        **zero `engine.py` changes**, not the multi-session
+        transpiler-feature commitment D-74 assumed. `setoption name
+        Threads value N` (default 1, matching standard UCI/GUI
+        convention) spawns N-1 silent helper threads sharing one TT with
+        the main search thread — genuinely unsynchronized by design (the
+        actual "Lazy" in Lazy SMP; a stale/corrupted always-replace TT
+        entry is filtered the same way an old search's stale entry
+        already was). Also found and fixed a real bug along the way
+        (D-97): the depth loop's stop check could trip before depth 1
+        ever ran (STOP_FLAG already true from a deadline that elapsed
+        during this session's own added thread-spawn overhead),
+        returning illegal `bestmove 0000` — reproduced directly at
+        `Threads=64`/`movetime 100` (~50% of runs), fixed by mirroring
+        `find_best_move()`'s own existing "move 0 always trusted"
+        guarantee one level up ("depth 1 always searched"). `Threads=1`
+        (the default) reconfirmed byte-identical to pre-session output
+        (node counts/scores/moves match exactly across depths 1-6, only
+        wall-clock timing noise differs). Full suites: `fastpy` 386/386,
+        `fastpy-engine` 276/276 (native-driver behavior verified by hand
+        via paced UCI subprocess sessions, matching this project's
+        existing convention — no pytest test builds the native binary,
+        see `test_node_budget.py`'s docstring). `engine.py` and `run.py`
+        both untouched — `native/uci_main.cpp` only.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through
@@ -715,21 +734,20 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       fails low against everything else. Re-implemented from scratch;
       the Session 22 log/D-53 description of this was never actually
       committed to the code (see D-55). See D-57 for the real design.
-- [ ] Lazy SMP multi-core search — DEFERRED behind the NNUE
-      weight-embedding scoping item above (decided Session 38, see D-74).
-      Two genuinely different projects hide under this one name: (a)
-      process-level parallelism (N independent OS processes each running
-      the existing binary, keep the best result — no transpiler changes,
-      doable in a normal session, but no shared TT between workers, so
-      no real synergy) vs. (b) real thread-based Lazy SMP (threads
-      sharing one TT with intentionally unsynchronized access — the
-      actual technique — needs `std::thread` support added to the
-      dialect itself, no existing precedent, multi-session commitment).
-      Decided against starting the easier-but-weaker (a) as a stopgap —
-      this arc hasn't taken the weaker-but-easier path anywhere else and
-      shouldn't start here. (b) is real future work, deliberately not
-      started until it can be its own dedicated multi-session arc rather
-      than squeezed in as "the other option" to NNUE scoping.
+- [x] Lazy SMP multi-core search — deferred Session 38 (D-74), shipped
+      Session 56 (D-96/D-97, see the entry above). D-74 predicted this
+      needed `std::thread` support added to the FastPy dialect itself;
+      that assumption turned out to be outdated by the time this was
+      picked up — D-92 (Session 55) had already established the actual
+      pattern needed (a hand-written `std::thread` in
+      `native/uci_main.cpp` calling into already-compiled engine.cpp
+      functions), so real thread-based Lazy SMP (option (b) below)
+      shipped with zero engine.py/transpiler changes, not the
+      multi-session commitment originally assumed. Process-level
+      parallelism (option (a)) was never pursued — the same call D-74
+      made, still correct: it would have been weaker (no shared TT) and
+      this arc never needed the easier-but-weaker stopgap once the real
+      approach turned out to be in-scope for one session.
 - [ ] **Target: 1,000,000,000 NPS on modern multi-core hardware**
 - [x] Benchmark LMR / null move / aspiration windows / futility pruning
       node reduction (Session 19) — LMR dominates (~25x at depth 5 on
@@ -751,6 +769,21 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 - [x] Adaptive `NULL_MOVE_R` (Session 23) — R=2/3/4 tiered by depth via
       `null_move_r()`, floor-clamped so `depth - 1 - R >= 1` always
       holds; see D-54
+- [ ] **NEXT UP (Session 56):** Lazy SMP (D-96/D-97, above) is a real
+      first slice, not a finished feature. Genuine open follow-ups, none
+      started this session: (1) accurate per-thread node counts —
+      `NODE_COUNT` is currently one shared racy global (D-96 documents
+      this as an accepted approximation under `Threads > 1`); a
+      per-thread-slot array indexed by a `thread_id` threaded through
+      `alpha_beta()`/`quiescence()`/`find_best_move()` would make it
+      exact instead, at the cost of a real (if likely small) per-node
+      parameter-passing overhead on the single hottest path in the
+      engine — worth measuring, not assuming, before committing to it;
+      (2) a smarter `Threads` default than the current hard-coded 1 —
+      e.g. `std::thread::hardware_concurrency()`-based, still capped and
+      still overridable via `setoption` — deliberately NOT done this
+      session to keep the default behavior-preserving; (3) expand the
+      opening book (D-94) — still open, untouched since D-94.
 
 ---
 

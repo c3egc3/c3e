@@ -2,6 +2,112 @@
 
 Append-only. One entry per session. Most recent at top.
 
+## Session 56 — Lazy SMP shipped (D-96), zero `engine.py` changes; a real time-pressure bug found via its own SMP stress testing and fixed (D-97)
+**Status:** COMPLETE ✅ — `fastpy-engine/native/uci_main.cpp` only.
+`engine.py` and `run.py` both untouched (confirmed byte-identical to
+freshly-pulled `main` at session start and again after all changes).
+Docs updated: `docs/DECISIONS.md` (D-96, D-97), `docs/ROADMAP.md`,
+`docs/ENGINE_ARCHITECTURE.md`, this entry.
+
+**Baseline (Go-trigger PROCESS check, D-61/D-65):** re-verified against
+freshly-pulled `main` in both repos before any change, per this
+project's standing rule. `fastpy` 386/386, `fastpy-engine` 276/276,
+`run.py` parses clean, `fastpy check engine.py` zero errors — all
+matched Session 55's claimed end state exactly, no repeat of the D-86
+"claimed but not committed" failure mode.
+
+**Decision made:** ROADMAP's post-D-95 NEXT UP listed two carried-over
+options — Lazy SMP (deferred since D-74) or expanding the opening book
+(D-94). Picked Lazy SMP, on a finding worth stating up front: D-74's
+scoping note ("real thread-based Lazy SMP needs `std::thread` support
+added to the FastPy dialect itself, no existing precedent,
+multi-session commitment") was written before D-92 (Session 55)
+existed. D-92 already built exactly that precedent for a different
+purpose (the stdin/stop-watcher thread) — a real `std::thread` spawned
+from hand-written `native/uci_main.cpp`, calling directly into
+engine.cpp's already-compiled functions. Lazy SMP needed the identical
+pattern again, so this shipped as a single-session native-driver-only
+change instead of the multi-session transpiler commitment originally
+assumed. See D-96 for the full design and D-97 for a real bug found and
+fixed along the way.
+
+**What shipped (D-96):** `setoption name Threads value N` (default 1,
+clamped `[1, 64]`, matching standard UCI/GUI convention — most GUIs
+never send `setoption` at all, so the default reproduces pre-session
+single-threaded behavior byte-for-byte). `Threads > 1` spawns `N-1`
+silent helper threads (`smp_helper_worker()`), each running its own
+iterative-deepening loop on its own private `BoardState` (by value — no
+shared mutable board), sharing ONE transposition table with the main
+search thread — genuinely unsynchronized between threads, deliberately:
+that lock-free sharing is the actual "Lazy" in Lazy SMP and is where
+the real speedup comes from (a thread that finishes a subtree first
+deposits a TT entry every other thread can reuse as a hash move/cutoff
+hint). `NODE_COUNT`'s aggregate under `Threads > 1` is accepted as
+approximate (racy, informational-only) rather than made atomic — a
+deliberate trade explained in D-96: `NODE_COUNT[0] += 1` runs on every
+single search node, so atomic-izing it would tax the `Threads=1`
+default case most games actually use, to fix a display value, not a
+correctness issue (categorically different from why `STOP_FLAG` needed
+`Atomic[bool]` in D-91/D-92 — that was a genuine confirmed-by-repro
+hang, not an approximate value). Also added a one-time single-threaded
+priming step in `main()` (direct calls to `init_zk_table()`/
+`init_magic_tables()` before the UCI loop starts) to remove a
+first-call race between the main thread and helper threads on two
+lazily-guarded global tables — the writes were already deterministic/
+idempotent so this wasn't corrupting anything, but was cheap to remove
+outright.
+
+**A real bug found via this session's own stress testing (D-97):**
+`setoption name Threads value 64` immediately followed by `go movetime
+100` returned the illegal `bestmove 0000` (zero `info` lines) in
+roughly half of repeated runs on this project's single-core sandbox.
+Root cause: `go()`'s depth loop checked `stop_requested()`
+unconditionally, including at depth 1 — if `STOP_FLAG` was already true
+the instant the loop started (which spawning 63 sequential
+`std::thread`s can itself cause, by eating a meaningful fraction of a
+small `movetime` budget before the main loop's first depth-1 attempt
+even runs), depth 1 was skipped entirely and `best_move` never left its
+initial 0. This predates D-96 — always theoretically possible under
+extreme time pressure — but D-96's own overhead made it trivially
+reproducible for the first time. Fixed by mirroring a guarantee
+`find_best_move()`'s own root-move loop already makes ("move 0 always
+trusted, even under abort") one level up: `if (depth > 1 &&
+stop_requested()) break;`. Re-verified 15/15 clean after the fix
+(previously ~50% failure rate).
+
+**Verification:** `Threads=1` (default) reconfirmed byte-identical to
+pre-session output — node counts (41/197/2250/5174/16258/39443) and
+scores match exactly at every depth 1-6 on an off-book position (`1.
+a3`), only wall-clock `nps`/`time` differ, as always. `Threads=4`/
+`Threads=64` verified to search without crashing and always return a
+legal move (post-D-97 fix); expectedly sometimes pick a different
+(comparably-scored) best move than `Threads=1` on near-equal positions
+— same non-determinism category D-88 already documented for
+native-vs-Python, now also across `Threads` settings of the same
+driver. 12 rapid `go infinite`/`stop` cycles under `Threads=4`
+(randomized position/timing) all completed cleanly, no hangs. `stop`
+sent 1s into a `Threads=8` `go infinite` search returned `bestmove` in
+26ms — mid-node stop propagation (D-91/D-92's `Atomic[bool]`
+`STOP_FLAG`) still works with helper threads active. Full suites:
+`fastpy` 386/386, `fastpy-engine` 276/276, both unaffected (`engine.py`/
+`run.py` untouched). No new pytest test added for the native-driver
+behavior itself — per this project's existing, explicit convention
+(`test_node_budget.py`'s docstring: "native/uci_main.cpp's actual
+budget computation is exercised by hand"), verified instead via paced
+UCI subprocess sessions against the real compiled binary, same approach
+every other native-driver-only session has used (D-84 through D-95's
+native parts).
+
+**What's still open:** three genuine, not-yet-started follow-ups, all
+flagged in ROADMAP: (1) accurate per-thread node counts (would need a
+`thread_id` parameter threaded through the recursive search functions
+— a real, not-yet-measured perf cost, worth measuring before
+committing); (2) a hardware-aware `Threads` default instead of the
+current hard-coded 1 (deliberately not done this session, to keep the
+default behavior-preserving); (3) expand the opening book (D-94) —
+still untouched since D-94.
+
+
 ---
 
 ## Session 55 — `Atomic[T]` added to FastPy's dialect (D-91), wired into fastpy-engine for mid-node `stop` (D-92) and a genuine wall-clock deadline (D-93), an opening book (D-94), then genuine wall-clock time management + real stop/quit for Python-mode (D-95)
