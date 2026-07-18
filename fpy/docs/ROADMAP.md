@@ -645,20 +645,44 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
         checking — info-line output shape during a real search).
         272/272 (fastpy-engine). Manually verified the compiled binary
         too (6 interactive sessions, same scenarios, matching latency).
-  - [ ] **NEXT UP:** no specific task queued. Two options carried over
-        from before D-94 (still open, D-94 didn't touch either): (1)
-        Lazy SMP, deferred since D-74 for being its own multi-session
-        `std::thread`-in-dialect commitment (native/uci_main.cpp already
-        has real `std::thread` precedent now, from D-92/D-93); (2) bring
-        genuine wall-clock time management to Python-mode's `run.py`
-        (currently still uses D-85's node-count estimate with no thread
-        to hand a deadline to) — smaller in scope than Lazy SMP, not
-        currently flagged as broken by anything. Plus a new option this
-        session surfaced: (3) expand the opening book (D-94) — it's
-        currently a deliberately small 11-entry table; a larger or
-        position-hash-keyed (transposition-aware) version was explicitly
-        flagged as future scope, not attempted this session. Needs an
-        actual decision at the start of next session.
+  - [x] Genuine wall-clock time management + real `stop`/`quit` brought
+        to Python-mode's `run.py` (D-95) — picked over Lazy SMP and
+        further opening-book expansion. `_stop_watcher_py()` mirrors
+        native/uci_main.cpp's stop_watcher() (D-92/D-93) via
+        `threading.Thread`; `_iterative_deepening_py()` checks
+        `stop_requested()` at the top of its depth loop (must be BEFORE
+        starting a new depth, not just after — see D-95 for why a
+        stop-triggered abort could otherwise corrupt an already-trusted
+        depth's result) and after each depth's info line. `go infinite`
+        no longer caps at a fixed 5000ms — relies on a real external
+        stop now, matching native's semantics. Found and fixed two real
+        bugs along the way: (1) `engine.py`'s `stop_clear()`/
+        `stop_request()` silently discarded their writes under plain
+        Python execution (missing `global STOP_FLAG` — fixed at the
+        transpiler level, `core/parser.py` gained `visit_Global()`, a
+        pure no-op in the IR that makes the same source correct under
+        both compiled and plain-Python execution); (2) a genuine
+        `sys.stdin` buffered-read-ahead bug where a `readline()` call
+        could silently consume bytes belonging to a LATER command,
+        invisible to a subsequent `select()` — fixed by switching all
+        stdin reads in `run.py`'s UCI handling to raw byte-at-a-time
+        `os.read()` (`_read_line_raw()`). 4 new tests
+        (`TestGenuineStop` in `test_uci.py`). One pre-existing
+        `test_phase4.py` test needed its own subprocess sequencing
+        (D-95's real stop-watcher now correctly honors an
+        already-buffered `quit` almost instantly — correct new
+        behavior, not a regression). Full suites: `fastpy` 386/386,
+        `fastpy-engine` 276/276. `fastpy check engine.py` zero errors.
+  - [ ] **NEXT UP:** no specific task queued. Two options carried over,
+        neither touched this session: (1) Lazy SMP, deferred since D-74
+        for being its own multi-session `std::thread`-in-dialect
+        commitment (both drivers now have real `std::thread`/
+        `threading` precedent, from D-92/D-93 natively and D-95 in
+        Python-mode); (2) expand the opening book (D-94) — still a
+        deliberately small 11-entry table; a larger or position-hash-
+        keyed (transposition-aware) version remains explicitly flagged
+        as future scope. Needs an actual decision at the start of next
+        session.
   - [x] Emitter: struct methods emit `const` unconditionally (Session 37
         / D-73) — `_emit_function` now calls a new `_method_mutates_self()`
         helper (walks `IRAssign`/`IRAugAssign` targets through

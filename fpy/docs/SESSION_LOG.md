@@ -4,7 +4,7 @@ Append-only. One entry per session. Most recent at top.
 
 ---
 
-## Session 55 — `Atomic[T]` added to FastPy's dialect (D-91), wired into fastpy-engine for mid-node `stop` (D-92) and a genuine wall-clock deadline (D-93), then an opening book (D-94)
+## Session 55 — `Atomic[T]` added to FastPy's dialect (D-91), wired into fastpy-engine for mid-node `stop` (D-92) and a genuine wall-clock deadline (D-93), an opening book (D-94), then genuine wall-clock time management + real stop/quit for Python-mode (D-95)
 **Status:** COMPLETE ✅ — Part 1 (D-91): `fastpy` repo changed
 (`core/parser.py`, `core/emitter.py`, `tests/test_parser.py`,
 `tests/test_type_system.py`, `tests/test_emitter.py`). Part 2 (D-92):
@@ -15,8 +15,12 @@ untouched — `search_aborted()` from D-92 already covered it). Part 4
 (D-94): `fastpy-engine/run.py`, `fastpy-engine/native/uci_main.cpp`,
 `fastpy-engine/tests/test_uci.py`, `fastpy-engine/tests/test_phase4.py`
 changed (`engine.py` untouched — Core Rule 4, book logic isn't dialect
-data). Docs updated: `docs/DECISIONS.md` (D-91, D-92, D-93, D-94),
-`docs/ROADMAP.md`, `docs/ENGINE_ARCHITECTURE.md`, this file.
+data). Part 5 (D-95): `fastpy/core/parser.py`, `fastpy-engine/engine.py`,
+`fastpy-engine/run.py`, `fastpy-engine/tests/test_uci.py`,
+`fastpy-engine/tests/test_phase4.py` changed (`native/uci_main.cpp`
+untouched — Python-mode only). Docs updated: `docs/DECISIONS.md` (D-91
+through D-95), `docs/ROADMAP.md`, `docs/ENGINE_ARCHITECTURE.md`, this
+file.
 
 ### `Go` trigger
 Fresh conversation. Read ROADMAP/SESSION_LOG (Tier 1) and full Tier 2
@@ -268,6 +272,82 @@ next session's decision), this file.
 `fastpy-engine/native/uci_main.cpp`, `fastpy-engine/tests/test_uci.py`,
 `fastpy-engine/tests/test_phase4.py`. `engine.py` untouched this part.
 `fastpy` repo untouched this part.
+
+### Part 5 (same session, continued): genuine wall-clock time management + real stop/quit for Python-mode `run.py` (D-95)
+Picked up immediately after presenting D-94's files, per Gokul's
+"Continue to next" — again no queued task, required an actual pick
+among the three carried-over options. Chose bringing genuine wall-clock
+time management to Python-mode's `run.py` over Lazy SMP (bigger,
+deferred since D-74) or further opening-book expansion — smaller in
+scope, closes a real capability gap between the two drivers, and
+mirrors D-92/D-93's already-proven native design closely.
+
+`_stop_watcher_py()` (new): a `threading.Thread` spawned once per `go`
+command, mirroring `native/uci_main.cpp`'s `stop_watcher()` almost
+exactly — exclusively owns stdin for the search's duration, polls a
+real wall-clock deadline every ~10ms alongside stdin, calls
+`stop_request()` on `stop`/`quit` or deadline expiry.
+`_iterative_deepening_py()` checks `stop_requested()` at the top of its
+depth loop (before starting a new depth — required to prevent a
+stop-triggered abort from corrupting an already-trusted depth's result
+via `_find_best_move_py()`'s move-0-always-trusted guarantee, D-85) and
+again after each depth's info line. `go infinite` no longer caps at a
+fixed 5000ms — a real external stop now, matching native.
+
+**Two real bugs found and fixed along the way, not anticipated going
+in:**
+
+1. `engine.py`'s `stop_clear()`/`stop_request()` (from D-92) silently
+   discarded their writes under plain Python execution — missing
+   `global STOP_FLAG` meant `STOP_FLAG = True` created a function-local
+   variable instead of writing the module global (a genuine Python-vs-
+   compiled scoping divergence invisible to `fastpy check`, invisible
+   under compiled execution, and invisible under D-92 too since D-92
+   only ever called these from native code). Fixed at the transpiler
+   level: `core/parser.py` gained `visit_Global()` — a `global NAME`
+   statement is a pure no-op in the emitted IR (compiled C++ needs
+   nothing for it) but makes the identical source also correct under
+   plain Python. Every other global in `engine.py` is array-shaped and
+   was never at risk (indexed assignment doesn't rebind the name).
+
+2. A genuine `sys.stdin` buffered-read-ahead bug: a single
+   `readline()` call can silently consume bytes belonging to a LATER
+   command already sitting in the pipe, invisible to a subsequent
+   `select()` (which only sees new bytes at the raw fd level, not bytes
+   already vacuumed into `TextIOWrapper`'s private buffer). Confirmed
+   with a minimal two-reader repro that hung indefinitely; `buffering=1`
+   and a small `BufferedReader` size did NOT fix it (tried both, still
+   hung); switching to raw byte-at-a-time `os.read()` did. Added
+   `_read_line_raw()` and switched BOTH `uci_loop()`'s main loop and
+   `_stop_watcher_py()` to use it exclusively — `sys.stdin.readline()`
+   is no longer used anywhere in this file's UCI handling. Per-byte
+   syscall overhead is negligible for short, GUI-paced UCI lines.
+
+**Verification:** Full `fastpy` suite 386/386 (parser's new
+`visit_Global()`, otherwise unaffected). Full `fastpy-engine` suite:
+276/276 (272 baseline + 4 new `TestGenuineStop` tests: `go infinite` +
+`stop` returning promptly, `quit` mid-search exiting cleanly, movetime
+overshoot staying small, uninterrupted search unaffected). One
+pre-existing `test_phase4.py` test needed its own dedicated subprocess
+sequencing — `_run_uci()`'s shared helper batches a trailing `quit`
+into the same write as the test commands, and D-95's real watcher now
+correctly honors that already-buffered `quit` almost instantly
+(previously invisible until the search finished on its own — exactly
+the bug D-95 fixed), cutting the search short after depth 1. That's
+correct new behavior, not a regression, so the fix was read-until-
+bestmove-then-quit sequencing, not reverting anything. `fastpy check
+engine.py` zero errors, `run.py` parses clean. Directly re-verified the
+original failure scenario end-to-end: went from a 5+ second hang
+(`stop` never detected) to 342ms after both fixes.
+
+Docs updated: `DECISIONS.md` (D-95), `ROADMAP.md` (closed out this
+item; two carried-over options remain for next session's decision),
+this file.
+
+**Files changed this part:** `fastpy/core/parser.py`,
+`fastpy-engine/engine.py`, `fastpy-engine/run.py`,
+`fastpy-engine/tests/test_uci.py`, `fastpy-engine/tests/test_phase4.py`.
+`native/uci_main.cpp` untouched this part — Python-mode only.
 
 ---
 

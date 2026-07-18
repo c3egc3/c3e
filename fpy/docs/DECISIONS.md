@@ -3034,3 +3034,125 @@ entries. This is a small, honest, single-session-scoped feature — a
 genuine competition-grade book (position-hash keyed, much larger,
 possibly with move weights) would be a much bigger undertaking and
 isn't currently flagged as needed by anything in ROADMAP.
+
+## D-95: genuine wall-clock time management + real `stop`/`quit` brought to Python-mode's `run.py`, plus a real stdin-buffering bug fixed along the way
+
+**Context:** ROADMAP's post-D-94 NEXT UP listed three open options: Lazy
+SMP (its own multi-session commitment), bringing genuine wall-clock time
+management to Python-mode's `run.py` (the D-92/D-93 fix applied so far
+only to `native/uci_main.cpp`), or expanding the opening book further.
+Picked the second — smaller, well-precedented (mirrors D-92/D-93's
+native design almost exactly), and closes a real capability gap between
+the two drivers rather than polishing something already working.
+
+**Decision:** `run.py`'s `uci_loop()` was single-threaded until now — a
+`go` command ran `_iterative_deepening_py()` synchronously to
+completion before the outer loop's stdin read ever ran again, so a
+`stop`/`quit` sent mid-search sat unread until the search finished on
+its own (landing in the `('stop', ...)` no-op branch, functionally
+identical to never having been sent — the exact limitation D-90 fixed
+for native mode). Added `_stop_watcher_py()`, a background
+`threading.Thread` spawned once per `go` command, mirroring
+`native/uci_main.cpp`'s `stop_watcher()` (D-92/D-93) almost exactly:
+exclusively owns stdin for the search's duration, polls a real
+wall-clock deadline every ~10ms alongside stdin, and calls engine.py's
+`stop_request()` the instant `stop`/`quit` arrives or the deadline
+passes. `_iterative_deepening_py()` now checks `stop_requested()` at the
+top of its depth loop (before starting a new depth — see below for why
+this specific placement matters) and again right after each depth's
+info line, mirroring `native/uci_main.cpp`'s `go()` loop precisely.
+`go infinite` no longer silently caps itself at 5000ms (that cap
+existed only because Python-mode had no real stop to rely on) — it now
+means what it says, relying entirely on an external `stop`/`quit`,
+matching native's `kInfiniteMaxDepth` semantics.
+
+**Why the depth-loop's stop check has to happen BEFORE starting a new
+depth, not just after:** `_find_best_move_py()`'s root loop (D-92)
+always trusts move 0's result even if the search was aborted mid-move —
+D-85's guarantee that a real legal move is always returned, even under
+a near-zero budget. If `STOP_FLAG` became true between two depths (the
+watcher running concurrently) and the loop didn't check it before
+starting the next depth, that next depth's move-0 search would abort on
+its very first node (`alpha_beta()` checks `search_aborted()` at entry)
+and return a meaningless score at the aspiration window's edge — which
+would then get blindly stored into `best_move`/`best_score`, corrupting
+the previous depth's genuinely-completed result. Checking at the top of
+the loop avoids ever starting that doomed call.
+
+**A real bug found and fixed along the way (not initially anticipated):**
+`engine.py`'s `stop_clear()`/`stop_request()` (D-92) did `STOP_FLAG =
+False`/`True` with no `global STOP_FLAG` declaration. Under **plain
+Python execution only**, an assignment to a name inside a function
+without `global` creates a new function-local variable instead of
+writing the module global — invisible to `fastpy check` (which only
+validates types, not Python's runtime scoping rules) and invisible
+under compiled execution (C++ has no such scoping rule at all), so this
+silently discarded every write and only surfaced now that Python-mode
+actually exercises the write path for the first time (D-92 only ever
+called these from `native/uci_main.cpp`, where the bug doesn't exist).
+Every other global in `engine.py` is array-shaped (`NAME[0] = value`),
+which was never at risk — indexed assignment mutates the existing
+object rather than rebinding the name. Fixed at the transpiler level:
+`core/parser.py` gained `visit_Global()`, treating a `global NAME`
+statement as a pure no-op in the emitted IR (compiled C++ needs nothing
+for it — plain assignment already targets the global there) while
+making the identical source also correct under plain Python execution.
+`engine.py`'s `stop_clear()`/`stop_request()` now declare `global
+STOP_FLAG`.
+
+**A second real bug found and fixed** (this is the one that took the
+most direct investigation): even after the `global` fix, `stop`/`quit`
+detection was still unreliable specifically when several UCI commands
+arrived in rapid succession (e.g. a GUI or test harness sending
+`position`, `go infinite`, and `stop` back-to-back without waiting for
+`readyok` in between). Root cause, confirmed with a minimal standalone
+repro: `sys.stdin` (a buffered `TextIOWrapper`) can silently read AHEAD
+of what a single `readline()` call asked for, pulling any additional
+bytes already sitting in the OS pipe into its own internal buffer —
+invisible to a later `select.select([sys.stdin], ...)` call, which only
+reports NEW bytes still at the raw file-descriptor level, not bytes
+already vacuumed into a buffered object's private cache. Concretely: the
+FIRST `readline()` reading `position ...` could silently consume `go
+infinite` and `stop` too, and the watcher thread's `select()` would then
+wait forever for bytes that were already gone. Verified this precisely:
+a two-reader repro (one doing a single `readline()`, a second checking
+`select()` immediately after) hung indefinitely; switching both readers
+to raw byte-at-a-time `os.read()` fixed it completely, since
+`os.read(fd, 1)` never consumes more than the 1 byte explicitly
+requested — nothing is ever left stranded in a hidden buffer. Tried
+`buffering=1` (line-buffered) and a `BufferedReader(buffer_size=1)`
+first — neither actually fixed it, confirming the issue is specifically
+about `TextIOWrapper`/`BufferedReader`'s read-ahead behavior on refill,
+not something a smaller declared buffer size alone prevents. Added
+`_read_line_raw()` (byte-at-a-time via `os.read()`) and switched BOTH
+`uci_loop()`'s main command loop and `_stop_watcher_py()` to use it
+exclusively — `sys.stdin.readline()` is no longer used anywhere in this
+file's UCI protocol handling. The per-byte syscall overhead is
+negligible for short, human/GUI-paced UCI lines — nowhere close to a
+bottleneck next to the search itself.
+
+**Verification:** Full `fastpy` suite 386/386 (parser's new
+`visit_Global()`, unaffected otherwise). Full `fastpy-engine` suite:
+276/276 (272 baseline + 4 new `TestGenuineStop` tests in `test_uci.py`:
+`go infinite` + `stop` returning promptly rather than waiting for a
+fixed fallback, `quit` mid-search exiting the process cleanly, movetime
+deadline overshoot staying small, and an uninterrupted search still
+completing normally with all expected info lines — the watcher's
+presence must be invisible to ordinary play). One pre-existing
+`test_phase4.py` test (`test_go_depth_outputs_all_info_lines`) needed
+its own dedicated subprocess handling instead of the shared `_run_uci()`
+helper — that helper batches a trailing `quit` into the same write as
+the test commands, and D-95's real stop-watcher now correctly honors an
+already-buffered `quit` almost instantly (previously invisible until
+the search finished on its own, which is exactly the bug D-95 fixed),
+cutting the search short after depth 1 — the CORRECT new behavior, not
+a regression, so the fix was sequencing (read until `bestmove`, only
+send `quit` after) rather than reverting anything. `fastpy check
+engine.py` zero errors, `run.py` parses clean. Directly re-verified the
+original failure scenario (`position`/`go infinite`/`stop` sent
+back-to-back with no synchronization) went from a 5+ second hang
+(`stop` never detected at all) to 342ms end-to-end after both fixes.
+
+**What's still open:** Lazy SMP (deferred since D-74) and further
+opening-book expansion (D-94) remain the two carried-over options —
+neither touched this session.
