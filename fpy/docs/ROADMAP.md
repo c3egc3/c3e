@@ -769,21 +769,40 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
 - [x] Adaptive `NULL_MOVE_R` (Session 23) — R=2/3/4 tiered by depth via
       `null_move_r()`, floor-clamped so `depth - 1 - R >= 1` always
       holds; see D-54
-- [ ] **NEXT UP (Session 56):** Lazy SMP (D-96/D-97, above) is a real
-      first slice, not a finished feature. Genuine open follow-ups, none
-      started this session: (1) accurate per-thread node counts —
-      `NODE_COUNT` is currently one shared racy global (D-96 documents
-      this as an accepted approximation under `Threads > 1`); a
-      per-thread-slot array indexed by a `thread_id` threaded through
-      `alpha_beta()`/`quiescence()`/`find_best_move()` would make it
-      exact instead, at the cost of a real (if likely small) per-node
-      parameter-passing overhead on the single hottest path in the
-      engine — worth measuring, not assuming, before committing to it;
-      (2) a smarter `Threads` default than the current hard-coded 1 —
-      e.g. `std::thread::hardware_concurrency()`-based, still capped and
-      still overridable via `setoption` — deliberately NOT done this
-      session to keep the default behavior-preserving; (3) expand the
-      opening book (D-94) — still open, untouched since D-94.
+- [x] **NEXT UP (Session 56) resolved (Session 57, see D-98):** picked
+      option (3) — expanded the opening book — over the two SMP
+      follow-ups, as a self-contained, non-concurrency change of pace
+      after two SMP-focused sessions in a row. `OPENING_BOOK`/
+      `kOpeningBook` grew from 11 to 46 entries (both `run.py` and
+      `native/uci_main.cpp`, mirrored exactly), covering Ruy Lopez/
+      Italian/Petrov, Sicilian, French, Caro-Kann, Scandinavian,
+      Alekhine's, Pirc/Modern, Queen's Gambit/Slav/QGA, King's Indian/
+      Grunfeld/Nimzo-Indian setups, Dutch, and English — still the same
+      small-hand-picked, exact-prefix-match design as D-94, just wider.
+      Every one of the 35 new entries was validated programmatically
+      against the engine's own legal-move generator before being added
+      (both that the prefix is a legal sequence AND the reply is legal
+      in the resulting position) — caught one real typo (a bishop
+      retreat square copied from the wrong ply) before it shipped. Full
+      suites unaffected: `fastpy` 386/386, `fastpy-engine` 276/276.
+      Options (1) and (2) below remain untouched, still open.
+- [ ] **NEXT UP (Session 57):** two options carried over from Session
+      56, neither touched since: (1) accurate per-thread node counts —
+      `NODE_COUNT` is currently one shared racy global under Lazy SMP's
+      `Threads > 1` (D-96); a per-thread-slot array indexed by a
+      `thread_id` threaded through `alpha_beta()`/`quiescence()`/
+      `find_best_move()` would make it exact instead, at the cost of a
+      real (if likely small) per-node parameter-passing overhead on the
+      single hottest path in the engine — worth measuring, not
+      assuming, before committing to it; (2) a smarter `Threads` default
+      than the current hard-coded 1 — e.g.
+      `std::thread::hardware_concurrency()`-based, still capped and
+      still overridable via `setoption` — deliberately not done in
+      Session 56 to keep the default behavior-preserving. A third,
+      fresh option is now also reasonable: the opening book (D-94/D-98)
+      is still exact-prefix-match only, no transposition awareness —
+      explicitly flagged future scope in both D-94 and D-98, still not
+      started. Needs an actual decision at the start of next session.
 
 ---
 

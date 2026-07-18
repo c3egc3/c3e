@@ -2,6 +2,67 @@
 
 Append-only. One entry per session. Most recent at top.
 
+## Session 57 — Opening book expanded 11 → 46 entries (D-98), every new entry validated against the engine's own legal-move generator
+**Status:** COMPLETE ✅ — `fastpy-engine/run.py`,
+`fastpy-engine/native/uci_main.cpp` changed (mirrored exactly, same
+convention D-94 established). `engine.py` untouched (Core Rule 4 —
+opening-book logic is UCI-driver-level, not dialect data). Docs
+updated: `docs/DECISIONS.md` (D-98), `docs/ROADMAP.md`, this entry.
+
+**Baseline (Go-trigger PROCESS check, D-61/D-65):** re-verified against
+freshly-pulled `main` in both repos before any change. `fastpy`
+386/386, `fastpy-engine` 276/276, `run.py` parses clean, `fastpy check
+engine.py` zero errors — matched Session 56's claimed end state exactly.
+
+**Decision made:** handed the choice of which Session 56 NEXT UP
+follow-up to pick up (accurate per-thread node counts, a smarter
+`Threads` default, or opening book expansion). Picked opening book
+expansion — self-contained, no concurrency subtlety unlike the other
+two, and a genuine change of pace after two SMP-focused sessions in a
+row (D-96, D-97). See D-98 for the full writeup.
+
+**What shipped:** `OPENING_BOOK`/`kOpeningBook` grew from 11 to 46
+entries, both files mirrored exactly. New coverage: deeper Ruy Lopez/
+Italian/Petrov lines, deeper Sicilian lines, French Defense, Caro-Kann,
+Scandinavian, Alekhine's Defense, Pirc/Modern, deeper Queen's Gambit/
+Slav/QGA lines, King's Indian/Grunfeld/Nimzo-Indian setups, Dutch
+Defense, English Opening — standard theory, 2-6 plies deep. Same
+design as D-94: small, hand-picked, exact-prefix-match keys, no
+transposition awareness (still explicitly flagged future scope). The
+original 11 entries are untouched — purely additive.
+
+**Validation methodology — the actual point of this session:** built a
+standalone harness (not committed — a one-off verification tool) that
+replays every candidate entry's move-history prefix through the
+engine's own `_generate_legal_moves_py()` and confirms both the prefix
+is a legal sequence AND the reply is a legal move in the resulting
+position. This caught a real error on the first draft:
+`('e2e4','e7e5','g1f3','b8c6','f1b5','a7a6'): 'f1a4'` — the bishop had
+already moved to b5 two plies earlier in this exact line, so retreating
+it "from f1" was never legal; the correct square is `b5a4`. Fixed,
+re-validated: all 46 entries pass. A hand-typed UCI move string is
+exactly the kind of data this project doesn't otherwise ship
+un-verified (cf. D-51's generated-not-hand-typed Zobrist table) — this
+is genuinely hand-authored data, which is why it got a dedicated
+programmatic check rather than being trusted on inspection.
+
+**Verification:** Full suites unaffected: `fastpy` 386/386,
+`fastpy-engine` 276/276 (zero test changes needed — the original 11
+entries' existing `TestOpeningBook` tests in `test_uci.py` weren't
+touched). Spot-checked 4 of the 35 new entries directly against the
+real compiled binary (French Defense, Caro-Kann, English Opening, the
+6-ply Ruy Lopez Morphy Defense line) — all returned the expected move
+near-instantly with zero `info` lines (confirms no search ran, matching
+D-94's verification shape). Cross-checked one new line against
+Python-mode `run.py` too — both drivers agree. Off-book fallthrough
+(`1.a3`) reconfirmed still triggers a real search unchanged. `fastpy
+check engine.py` zero errors.
+
+**What's still open:** transposition-aware (position-hash-keyed) book
+lookup remains future scope, not started. Accurate per-thread node
+counts and a smarter `Threads` default (Session 56's other two
+follow-ups) remain untouched, carried over in ROADMAP.
+
 ## Session 56 — Lazy SMP shipped (D-96), zero `engine.py` changes; a real time-pressure bug found via its own SMP stress testing and fixed (D-97)
 **Status:** COMPLETE ✅ — `fastpy-engine/native/uci_main.cpp` only.
 `engine.py` and `run.py` both untouched (confirmed byte-identical to

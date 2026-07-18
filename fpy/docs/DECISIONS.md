@@ -3312,3 +3312,78 @@ unaffected (the `depth > 1` guard only changes behavior when
 `STOP_FLAG` is already true at depth 1 — a case that essentially never
 arises under `Threads=1`'s much smaller thread-spawn overhead, and never
 arose in any of this session's `Threads=1` verification runs).
+
+## D-98: Opening book expanded 11 → 46 entries, every new entry validated programmatically against the engine's own legal-move generator
+
+**Context:** Handed the choice of which Session 56 NEXT UP follow-up to
+pick up (accurate per-thread node counts, a smarter `Threads` default,
+or expanding the opening book, D-94). Picked opening book expansion:
+self-contained (no concurrency subtlety, unlike the other two options),
+a genuine change of pace after two SMP-focused sessions in a row (D-96,
+D-97), and a concrete, measurable improvement to actual play (wider
+book coverage means less wasted search time and more reliable play
+against real GUIs across common openings, not just the original 11
+hand-picked lines).
+
+**Decision:** `OPENING_BOOK` (`run.py`) and `kOpeningBook`
+(`native/uci_main.cpp`) both grew from 11 to 46 entries, mirrored
+exactly (same entries, same order) — same convention D-94 established.
+Same design as D-94, deliberately unchanged: small, hand-picked, sound
+lines; exact full-move-history-prefix keys, not position-hash/
+transposition-aware (still explicitly flagged as future scope, not
+attempted here — a position reachable by more than one move order, e.g.
+1.Nf3 d5 2.d4 vs. 1.d4 d5 2.Nf3, is still not recognized as the same
+key). New coverage: deeper Ruy Lopez/Italian/Petrov lines, deeper
+Sicilian lines, French Defense, Caro-Kann, Scandinavian, Alekhine's
+Defense, Pirc/Modern, deeper Queen's Gambit/Slav/QGA lines, King's
+Indian/Grunfeld/Nimzo-Indian setups, Dutch Defense, and English Opening
+— all standard, well-established theory, 2-6 plies deep per line,
+matching the original entries' depth range. The original 11 entries
+are untouched (same keys, same replies) — this is purely additive.
+
+**Validation methodology (the actual point of this entry):** hand-typing
+46 UCI move-string entries is exactly the kind of task where a single
+typo ships a broken (illegal) book move straight into a game — and one
+did surface during drafting. Rather than eyeball-checking each line
+against opening theory from memory, built a standalone harness
+(`validate_book.py`, not committed — a one-off verification tool, not a
+runtime artifact) that replays every entry's move-history prefix from
+`BoardState()` through the engine's own `_generate_legal_moves_py()`
+(the same function `run.py`'s actual search uses), confirming both that
+the prefix itself is a legal move sequence AND that the entry's reply
+is a legal move in the resulting position — not a hand-verification
+against remembered chess theory, a direct check against this specific
+engine's own move generator. Caught exactly one real error on the first
+pass: `('e2e4','e7e5','g1f3','b8c6','f1b5','a7a6'): 'f1a4'` — the
+bishop had already moved to b5 two plies earlier in this same line, so
+retreating it from f1 (where it no longer was) was never a legal move;
+the correct retreat square is `b5a4`. Fixed and re-validated: all 46
+entries pass. This is the same category of discipline this project has
+applied elsewhere when hand-authored data could silently be wrong (e.g.
+D-51's Zobrist key table, generated rather than hand-typed, for the
+same reason) — a book entry is unusual in this codebase in being
+genuinely hand-authored data rather than derived/generated, which is
+exactly why it got its own dedicated validation pass instead of being
+trusted on inspection.
+
+**Verification:** Full suites unaffected — `fastpy` 386/386,
+`fastpy-engine` 276/276 (zero test changes needed; the original 11
+entries' existing `TestOpeningBook` tests in `test_uci.py` still pass
+unchanged since those exact entries weren't touched). Spot-checked 4 of
+the 35 new entries directly against the real compiled binary (French
+Defense, Caro-Kann, English Opening, and the 6-ply Ruy Lopez Morphy
+Defense line) — all returned the expected book move near-instantly (no
+`info` lines, confirming no search ran), matching the same verification
+shape D-94 used. Cross-checked one new line (`e2e4 e7e6 d2d4 d7d5`,
+French Defense) against Python-mode `run.py` too — both drivers agree
+(`b1c3`). Off-book fallthrough (`1.a3`) reconfirmed still triggers a
+real search unchanged. `fastpy check engine.py` zero errors — this
+session touched neither `engine.py` nor the FastPy dialect surface at
+all (Core Rule 4: opening-book logic is UCI-driver-level, not dialect
+data, same as D-94 established).
+
+**What's still open:** transposition-aware (position-hash-keyed) book
+lookup remains explicitly future scope, not started (D-94, reaffirmed
+here). Accurate per-thread node counts and a smarter `Threads` default
+(both from D-96/D-97's follow-up list) remain untouched, carried over
+in ROADMAP.
