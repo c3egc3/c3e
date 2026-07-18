@@ -786,23 +786,44 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       retreat square copied from the wrong ply) before it shipped. Full
       suites unaffected: `fastpy` 386/386, `fastpy-engine` 276/276.
       Options (1) and (2) below remain untouched, still open.
-- [ ] **NEXT UP (Session 57):** two options carried over from Session
-      56, neither touched since: (1) accurate per-thread node counts —
-      `NODE_COUNT` is currently one shared racy global under Lazy SMP's
-      `Threads > 1` (D-96); a per-thread-slot array indexed by a
-      `thread_id` threaded through `alpha_beta()`/`quiescence()`/
-      `find_best_move()` would make it exact instead, at the cost of a
-      real (if likely small) per-node parameter-passing overhead on the
-      single hottest path in the engine — worth measuring, not
-      assuming, before committing to it; (2) a smarter `Threads` default
-      than the current hard-coded 1 — e.g.
-      `std::thread::hardware_concurrency()`-based, still capped and
-      still overridable via `setoption` — deliberately not done in
-      Session 56 to keep the default behavior-preserving. A third,
-      fresh option is now also reasonable: the opening book (D-94/D-98)
-      is still exact-prefix-match only, no transposition awareness —
-      explicitly flagged future scope in both D-94 and D-98, still not
-      started. Needs an actual decision at the start of next session.
+- [x] **NEXT UP (Session 57) resolved (Session 58, see D-99):** picked
+      option (1), accurate per-thread node counts — the most
+      substantive of the three carried-over options, and the direct
+      completion of what D-96 called "worth measuring, not assuming."
+      `NODE_COUNT` grew from `uint64[1]` to `uint64[64]` in engine.py, a
+      `thread_id: int32` parameter threaded through
+      `find_best_move()`/`alpha_beta()`/`quiescence()` and every one of
+      their recursive call sites, so each thread now writes only its
+      own slot and `nodes_get()` sums an exact total instead of D-96's
+      accepted racy approximation. Measured, not assumed: A/B benchmark
+      on a fixed tactical FEN at `Threads=1` showed node counts
+      bit-for-bit identical between the pre- and post-`thread_id`
+      binaries in every run (confirms search-behavior-neutral) and no
+      measurable nps cost (differences within ordinary run-to-run
+      noise) — the concern D-96 flagged turned out not to materialize.
+      Also found and worked around a real FastPy dialect constraint
+      along the way: array sizes must be literal integers, not named
+      `Final[int32]` constants (`uint64[MAX_SMP_THREADS]` was rejected
+      by the type checker) — used the literal `64` directly, matching
+      the existing `TT_HASH`/etc. convention. Zero test file changes
+      needed (confirmed no test calls the three functions directly —
+      they're compile-only, pytest uses `run.py`'s separate `_xxx_py()`
+      mirrors). Full suites unaffected: `fastpy` 386/386, `fastpy-engine`
+      276/276. Option (2) (a smarter `Threads` default) reconsidered and
+      deliberately still not done — Threads=1 is the standard UCI/GUI
+      convention (Stockfish defaults to it too), not clearly worth
+      changing on reflection, not just deferred for lack of time.
+- [ ] **NEXT UP (Session 58):** one option carried over from Session 56,
+      still untouched: a smarter `Threads` default than the current
+      hard-coded 1 (see above — reconsidered twice now, still an open
+      question whether it's even a good idea, not just unstarted work).
+      Two fresh options are also reasonable at this point: opening-book
+      transposition-awareness (D-94/D-98, still exact-prefix-match only,
+      explicitly flagged future scope in both entries, still not
+      started); or something outside the Lazy SMP/opening-book orbit
+      entirely — three sessions in a row (56, 57, 58) have now stayed
+      within that same area of the engine. Needs an actual decision at
+      the start of next session.
 
 ---
 

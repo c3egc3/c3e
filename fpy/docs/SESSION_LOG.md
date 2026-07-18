@@ -2,6 +2,91 @@
 
 Append-only. One entry per session. Most recent at top.
 
+## Session 58 — Accurate per-thread node counts (D-99): `NODE_COUNT` grown to one slot per thread, `thread_id` threaded through the search, cost measured (not assumed) to be nothing
+**Status:** COMPLETE ✅ — `fastpy-engine/engine.py`,
+`fastpy-engine/run.py`, `fastpy-engine/native/uci_main.cpp` changed.
+Docs updated: `docs/DECISIONS.md` (D-99), `docs/ROADMAP.md`, this entry.
+
+**Baseline (Go-trigger PROCESS check, D-61/D-65):** re-verified against
+freshly-pulled `main` in both repos before any change. `fastpy`
+386/386, `fastpy-engine` 276/276, `run.py` parses clean, `fastpy check
+engine.py` zero errors, `OPENING_BOOK` confirmed at 46 entries —
+matched Session 57's claimed end state exactly.
+
+**Decision made:** handed the choice of which Session 56 follow-up to
+pick up (accurate per-thread node counts, a smarter `Threads` default,
+or opening-book transposition-awareness). Picked per-thread node
+counts — the most substantive of the three, and the direct completion
+of D-96's own explicitly-flagged "worth measuring, not assuming, before
+committing to it." See D-99 for the full writeup.
+
+**What shipped:** `NODE_COUNT` grew from `uint64[1]` to `uint64[64]` in
+`engine.py` — one private slot per possible Lazy SMP search thread. A
+`thread_id: int32` parameter is now threaded through
+`find_best_move()`/`alpha_beta()`/`quiescence()` and all nine of their
+recursive call sites (null-move verification, singular-extension
+verification, both LMR calls, the main move-loop call, the depth==0
+quiescence handoff, quiescence's own recursive capture search, plus the
+two docstring examples updated for accuracy). Every call passes the
+same `thread_id` straight through — purely a counting value, zero
+effect on search behavior or the returned score. `nodes_get()` now sums
+all 64 slots for an exact total (only called once per depth for `info
+nodes`/`nps`, never on the hot path); `nodes_reset()` clears all 64
+slots, not just `[0]`. `node_budget_exceeded()` deliberately kept
+reading `NODE_COUNT[0]` only — it runs on every single search node via
+`search_aborted()`, and `NODE_BUDGET` is inactive legacy infrastructure
+in every driver today anyway (D-93). `native/uci_main.cpp`: `go()`'s
+three `find_best_move()` calls now pass `thread_id=0` (the main
+thread's slot); `smp_helper_worker()` gained its own `thread_id`
+parameter, and the spawn loop passes each helper's own unique `t`.
+`run.py`'s `NODE_COUNT` monkey-patch resized `[0]` → `[0] * 64`,
+matching the established sizing convention every other FastPy `[]`
+array already gets there — required because `nodes_get()`/
+`nodes_reset()`/`node_budget_exceeded()` are genuinely imported and
+called from Python-mode (unlike the three search functions themselves,
+which have separate `_xxx_py()` mirrors, untouched by this session).
+
+**A real dialect constraint found along the way:** `uint64[MAX_SMP_THREADS]`
+(a named `Final[int32]` constant in the array-size position) was
+rejected outright by `fastpy check` — `global array ... has invalid
+size` — FastPy requires a literal integer there (Core Rule 5: the
+emitter does zero analysis, nothing substitutes a constant's value in
+before the size check runs). Used the literal `64` directly, matching
+the existing `TT_HASH: uint64[1048576]` convention; `MAX_SMP_THREADS`
+still exists as an ordinary runtime `int32` for the loop bounds in
+`nodes_reset()`/`nodes_get()`, which don't have this restriction.
+
+**Verification — the actual point of this session:** A/B benchmark on a
+fixed tactical FEN, `Threads=1`, comparing the binary before and after
+`thread_id` threading: depth 7 (7 runs each) — 1,463,428 nps before vs.
+1,490,586 nps after; depth 8 (10 runs each) — 1,494,233 nps before vs.
+1,511,463 nps after. Node counts were bit-for-bit identical across
+every single run on both binaries (444,694 at depth 7; 2,215,311 at
+depth 8) — confirms the change is search-behavior-neutral. The ~1-2%
+timing spread is within ordinary run-to-run noise (individual runs
+within each binary's own set varied by a similar amount) — no
+measurable performance cost. `Threads=1` UCI output reconfirmed
+identical to pre-session baseline at every depth 1-6. `Threads=4`/
+`Threads=64` reconfirmed to produce real, now-exact aggregate node
+counts and still always return a legal move (D-97's fix reconfirmed:
+10/10 clean at `Threads=64`/`movetime 100`); 12 rapid `go infinite`/
+`stop` cycles under `Threads=4` completed cleanly, no hangs. Full
+suites: `fastpy` 386/386, `fastpy-engine` 276/276 — zero test file
+changes needed (confirmed via grep that no test calls
+`alpha_beta()`/`quiescence()`/`find_best_move()` directly; those are
+compile-only functions with `uint64[218]` stack arrays, unreachable
+from pytest — see `test_node_budget.py`'s own docstring, unchanged).
+`fastpy check engine.py` zero errors.
+
+**What's still open:** a smarter `Threads` default (Session 56's other
+follow-up) remains untouched — deliberately; Threads=1 is the standard
+UCI/GUI convention (Stockfish defaults to it too), reconsidered again
+this session and still not clearly worth changing, not just deferred
+for lack of time. Opening-book transposition-awareness (D-94/D-98)
+remains untouched. Flagged in ROADMAP: three sessions in a row (56, 57,
+58) have now stayed within the Lazy SMP/opening-book area of the
+engine — worth considering something outside that orbit next.
+
 ## Session 57 — Opening book expanded 11 → 46 entries (D-98), every new entry validated against the engine's own legal-move generator
 **Status:** COMPLETE ✅ — `fastpy-engine/run.py`,
 `fastpy-engine/native/uci_main.cpp` changed (mirrored exactly, same
