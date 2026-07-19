@@ -2092,3 +2092,170 @@ freshly-pulled pristine source confirming only the intended lines
 changed, not an actual `cargo test` run. **Next session's first action
 should be confirming these changes build and pass CI before relying on
 anything else about them.**
+
+## D61 — NNUE Shelved for the Future (Session 82)
+
+Gokul's call: shelve NNUE work entirely for the foreseeable future,
+rather than continuing to work the data-volume problem (D53/D55/D57/
+D58). Pet Dragon ships and runs on Texel-tuned HCE (`NNUEWeight`
+already defaults to 0%, per D55/D58 — this decision doesn't change
+runtime behavior, it changes what future sessions should spend time
+on). Consequence: 23.5 (NNUE architecture upgrade — king-relative
+bucketed features) is moot as scoped, since it's specifically an NNUE
+change; see ROADMAP.md's 23.5 entry, left in place but marked HELD
+rather than deleted so D55/D57/D58's data-volume analysis isn't lost
+if this is revisited. If NNUE work resumes later, start from D58's
+three reopening options (better inference reuse of NORU's already-
+correct i16 quantized path, a training-infra swap off NORU's CPU
+trainer, or Stockfish-distillation data augmentation) — those were
+already identified as the real levers, not a quick retry of what's
+already been tried.
+
+## D62 — Variant Opening Statistics (23.4) Held Pending Design Decision (Session 82)
+
+Investigated implementing 23.4 this session (per the original ROADMAP
+scoping, "Ease: Medium, data-aggregation script over existing
+`selfplay.rs` output") and found the scoping was wrong on two counts,
+surfaced by actually reading `selfplay.rs` before writing anything
+(mandatory read-before-write rule doing its job here):
+
+1. **No data to aggregate yet.** `selfplay.rs`'s output format is
+   NNUE training rows only — `stm_features | nstm_features |
+   search_eval_cp | game_result` — and records neither the starting
+   seed, the position's identity, nor which move was played at the
+   root. There's currently no file anywhere with a "starting position
+   → root move → result" record. 23.4 isn't an aggregation script over
+   existing output; `selfplay.rs` would need a new output stream
+   first.
+
+2. **Coverage problem, more fundamental.** `Position::generate_with_
+   seed` draws from 2.16M distinct starting positions. Self-play games
+   run on sequentially incrementing seeds (`seed_start + game_idx`),
+   so unless job runs deliberately overlap seed ranges, essentially
+   every self-play game visits a starting position that's never
+   repeated anywhere else. An exact-position-keyed opening book built
+   from that data would have a near-zero hit rate against any real
+   game — the same starved-coverage shape as NNUE's problem (D53),
+   just in a different keyspace (positions instead of training rows).
+
+Presented Gokul two real design paths — exact-position book (simple,
+but hit rate only grows as self-play volume grows, slowly, against a
+2.16M-position denominator) vs. bucketing by structural features
+(pawn shape / piece pattern) so similar-but-not-identical positions
+can share statistics, generalizing instead of requiring an exact
+match — and Gokul chose to hold the whole item rather than pick a
+path yet. Recorded here rather than half-designed, so a future session
+doesn't restart from the original (incorrect) "Ease: Medium" framing
+in ROADMAP.md. Resume by re-reading ROADMAP.md's 23.4 entry and this
+decision, then actually picking exact-vs-bucketed before writing any
+code — the two investigation findings above stand regardless of which
+path gets picked.
+
+## D63 — HCE Term-Gap Audit: Three Candidates Identified, None Implemented (Session 82)
+
+Gokul asked whether the two eval improvements discussed so far were
+"the best the engine can be tuned" — audited all six `eval/` submodules
+fresh (not from memory of ENGINE_ARCHITECTURE.md's summary) against the
+standard classical-engine term list to give a grounded answer rather
+than a guess.
+
+Confirmed already present and correct: material with bishop-pair bonus
+(`material.rs`), four pawn-structure terms — isolated/doubled/backward/
+passed with rank-scaling (`pawns.rs`), four king-safety terms —
+attacker-count danger/pawn shield/open-and-semi-open-file penalties
+(`king_safety.rs`), rook-specific terms — open file/7th rank/batteries/
+connected rooks (`open_lines.rs`), mobility (`mobility.rs`), tempo, and
+phase tapering threaded through every term via `eval/mod.rs`'s
+`evaluate()`. Most of the well-established HCE term list is already
+checked off and Texel-tuned (D35).
+
+Three real, confirmed-by-source gaps found, ranked by expected value:
+
+1. **Passed-pawn king distance** — `pawns.rs`'s passed-pawn bonus
+   (`PASSED_PAWN_BONUS`, rank-indexed) never checks either king's
+   distance to the pawn. This is one of the highest-value terms in any
+   strong classical engine (the "square of the pawn" concept) and is
+   completely absent. Ranked highest.
+2. **Pawn storm** — `king_safety.rs` scores the defensive shield
+   (`PAWN_SHIELD_BONUS`) but nothing scores advancing pawns toward the
+   *enemy* king as an attacking resource. Confirmed via grep across
+   `pawns.rs`/`mobility.rs`/`open_lines.rs` that no king-relative logic
+   exists anywhere outside `king_safety.rs`.
+3. **King-relative PST bucketing** — `tables.rs`'s `pst_value()` takes
+   only `(kind, sq, color)`; no term anywhere makes a piece's
+   positional value depend on where either king is. Ranked lowest/most
+   speculative — would need new Texel-tunable parameters, and needs to
+   stay *coarse* (a handful of buckets: same-side/center/opposite-side
+   or similar) rather than full per-square king-relative buckets in the
+   NNUE-HalfKP sense. A full NNUE-scale king-bucket PST (~64× the
+   current flat-PST parameter count) would hit the exact same
+   parameter-count-vs-training-data wall NNUE already has at 896 inputs
+   with ~2.5M rows (D53/D55) — HCE has far less training data available
+   than NNUE does (Texel tuning's 147,283-sample runs, not NNUE's
+   millions), so a coarse handful of buckets is the ceiling for this
+   term, not a design choice to revisit later for something bigger.
+
+None of the three are scheduled or sized into a roadmap item — this is
+a documented, ranked candidate list for whenever Gokul wants to pick
+one up, not a commitment. Explicitly told Gokul the honest ceiling:
+HCE has a structural cap no amount of hand-crafted terms closes (that's
+the entire reason NNUE exists as a category), term-count has
+diminishing returns past this point (more free parameters need more
+Texel-tuning data, the same constraint already shaping what's
+tunable), and search is already close to state-of-the-art per the
+Session 82 competitive analysis (D59/D60 already captured the two
+concrete gaps found there) — so what's realistically on the table here
+is a handful of incremental items, not a large untapped territory. The
+actual large remaining ceiling is the NNUE data-volume problem, which
+D61 shelves.
+
+## D64 — Alternative Evaluation Paradigms Surveyed, None Adopted (Session 82)
+
+Gokul asked, beyond HCE and NNUE, what else exists as an evaluation
+approach. Answered from general chess-engine-architecture knowledge
+(cross-checked via web search, since the field moves) rather than
+assuming Pet-Dragon-specific applicability without saying so. Recorded
+here so this doesn't get re-investigated from scratch in a future
+session — the landscape survey stands even if circumstances (compute,
+data) change later, though the applicability conclusion should be
+re-checked if so.
+
+- **MCTS + policy/value network** (AlphaZero, Leela Chess Zero) — not
+  an eval swap, a different *search* paradigm: Monte Carlo Tree Search
+  guided by a network outputting both an evaluation and a move-
+  probability distribution, replacing alpha-beta entirely. Needs
+  GPU-scale parallel compute for both training and inference to be
+  competitive. Adopting this would mean discarding Pet Dragon's entire
+  search stack — the part already confirmed near state-of-the-art in
+  the Session 82 competitive analysis — not augmenting it. Ruled out:
+  wrong deployment target (WASM/browser + CPU-only CI), and would
+  discard rather than build on existing, working search work.
+- **Searchless transformer evaluation** (DeepMind's "Grandmaster-Level
+  Chess Without Search," Ruoss et al.) — a large transformer trained
+  via supervised learning on Stockfish-annotated positions, single
+  forward pass at inference, no tree search at all. Conceptually the
+  opposite end of the spectrum from NNUE (replaces the search loop
+  rather than living inside it). Ruled out: needs even more training
+  data than NNUE already lacks, since there's no search to lean on for
+  signal — inherits and worsens the exact problem D61 just shelved.
+- **GPU-sized NNUE variants** — some newer engines use larger nets
+  requiring GPU rather than staying in NNUE's original CPU-quantized-
+  int8 lane. Ruled out: breaks the CPU/WASM-friendly efficiency that
+  was the actual reason NNUE was chosen as Pet Dragon's neural option
+  in the first place (D10/D11).
+- **Policy-guided move ordering** — a smaller-scale hybrid: keep
+  classical alpha-beta and eval (HCE or NNUE), add a small network
+  just to improve move ordering at high-value nodes. The only option
+  here actually compatible with Pet Dragon's existing architecture
+  without a rewrite. Not ruled out on architectural grounds, but it's a
+  search technique needing training data, not an eval technique — same
+  data-volume dependency NNUE has, so it inherits D61's shelving logic
+  rather than being a way around it. Noted as the one item on this
+  list that could be revisited independently of NNUE's status, if ever
+  training data stops being the constraint.
+
+Conclusion given to Gokul: none of these are a practical third path
+alongside HCE/NNUE for Pet Dragon right now — each either needs an
+architecture Pet Dragon doesn't have (GPU, MCTS) or training data it
+doesn't have (all the neural options), consistent with and not
+contradicting D61's NNUE-shelving decision.

@@ -1196,24 +1196,40 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              Stockfish-distillation data augmentation for the
              converged-toward-standard-chess phase of a game) are all
              real structural investments now, not quick tries.
-- [ ] 23.4 — Variant-specific opening statistics. No aggregation of
-             self-play results into a root-level move-preference table
-             exists. No curated opening theory can substitute — 2.16M
-             starting positions means nothing exists anywhere to
-             reference, for anyone; this is the one genuinely novel
-             item on the list. Sequence after 23.3 has produced a
-             healthy volume of self-play data to draw on. Ease: Medium
-             (data-aggregation script over existing `selfplay.rs`
-             output, small root lookup). Size: Small–Medium, high
-             strategic-novelty value.
-- [ ] 23.5 — NNUE architecture upgrade: king-relative bucketed
-             features, replacing the current flat 768+128=896 input
-             set. Sequence LAST — only worth the effort once 23.3
-             confirms the data-volume theory was actually correct; a
-             better-shaped network trained on the same starved dataset
-             won't outperform a smaller one. Ease: Large (new feature
-             indexing, retraining pipeline, quantization changes).
-             Size: Large.
+- [~] 23.4 — HELD for the future (D62, Session 82). Variant-specific
+             opening statistics. Originally scoped as "Ease: Medium,
+             data-aggregation script over existing `selfplay.rs`
+             output" — that estimate turned out wrong on actual
+             inspection of the source (Session 82): `selfplay.rs`'s
+             output is NNUE training rows only (`stm_features |
+             nstm_features | search_eval_cp | game_result`) and
+             records neither the starting seed, the position identity,
+             nor which move was played at the root — the aggregation
+             script would have nothing to aggregate. Bigger issue
+             underneath that: `Position::generate_with_seed` draws
+             from 2.16M distinct starting positions, and self-play
+             games run on sequentially incrementing seeds, so almost
+             every self-play game visits a starting position that's
+             never repeated — an exact-position-keyed book would have
+             a near-zero hit rate against real games, the same
+             starved-coverage problem NNUE has (D53/D58/23.3), just
+             for a different keyspace. Needs a real design decision
+             (exact-position book vs. bucketing by structural features
+             so similar-not-identical positions share statistics)
+             before any code gets written, not a should-be-quick
+             aggregation script. Explicitly deferred rather than
+             designed on the spot — resume by re-reading this note and
+             picking a design, don't restart from the original ROADMAP
+             framing above.
+- [~] 23.5 — HELD for the future (D61, Session 82). NNUE architecture
+             upgrade: king-relative bucketed features, replacing the
+             current flat 768+128=896 input set. Shelving NNUE
+             entirely (D61) makes this item moot as written — it's
+             specifically an NNUE upgrade, so there's nothing to do
+             here while NNUE itself is parked. Left in the roadmap
+             rather than deleted so the full technical rationale
+             (D55/D57/D58's data-volume analysis) isn't lost if NNUE
+             work resumes later.
 - [x] 23.6 — Singular extension family: multi-cut pruning + negative
              extensions (D59, Session 82). Extends Phase 13.3's base
              singular extension with two Stockfish-family siblings that
@@ -1250,6 +1266,47 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              untaken change (see D60 for the full rationale). ⚠️ Elo
              impact not yet measured, same as 23.6.
 
+**Phase 23 status as of Session 82: no active items.** 23.1–23.3 and
+23.6–23.7 are done; 23.4 and 23.5 are both explicitly HELD (D61, D62)
+rather than in progress. Don't auto-resume either without a fresh
+scoping decision — 23.5 needs NNUE work un-shelved first, 23.4 needs
+the exact-vs-bucketed design question answered first. If no other
+instruction is given at the start of a session, ask what to work on
+rather than defaulting into either.
+
+---
+
+## Phase 24 — HCE Term-Gap Candidates (documented, unscheduled — D63, Session 82)
+
+Not a committed phase — a ranked candidate list from Session 82's HCE
+audit (DECISIONS.md D63), kept here so a future session can pick one
+up without re-auditing `eval/` from scratch. None of these have a
+checkbox because none are scheduled; pick one explicitly before
+starting, don't default into the list top-down without asking.
+
+1. **Passed-pawn king distance** — `pawns.rs`'s passed-pawn bonus is
+   rank-only; add king-distance scaling (the "square of the pawn"
+   idea). Highest-ranked: well-established, high classical-engine
+   value, currently fully absent. Needs new Texel-tunable parameters,
+   small in count.
+2. **Pawn storm** — `king_safety.rs` scores the defensive pawn shield
+   only; add a mirrored term scoring advanced pawns on files near the
+   *enemy* king as an attacking resource.
+3. **King-relative PST bucketing** — `tables.rs`'s `pst_value()` is
+   pure absolute-square; add a small, coarse correction (same-side/
+   center/opposite-side buckets, NOT full per-square NNUE-style
+   buckets — see D63 for why full buckets would hit the same
+   parameter-count-vs-data wall NNUE already has). Lowest-ranked/most
+   speculative of the three.
+
+Also on record for context, not actionable: D64 surveyed evaluation
+paradigms beyond HCE/NNUE (MCTS+policy/value net, searchless
+transformer, GPU-sized NNUE, policy-guided move ordering) and ruled
+all of them out given Pet Dragon's CPU/WASM deployment target and
+current training-data constraints — don't re-investigate this without
+new information changing one of those constraints.
+
+---
 
 **Confirmed via Session 71's real CI `cargo test` log (rustc 1.97.0,
 Actions run) — this is a full, current, authoritative count, not an
@@ -1267,17 +1324,22 @@ priority, not blocking anything.
 | src/bin/uci_match_runner.rs | 12  | ✅     |
 | src/bin/match_runner.rs   | 6     | ✅     |
 | src/bin/eval_diag.rs, texel_diag.rs, texel_gen.rs, texel_tune.rs, train_nnue.rs, selfplay.rs | 0 each (no #[test] fns yet) | — |
-| **TOTAL** | **521 run, 521 passed, 0 failed, 5 ignored** (Session 71) | ✅ |
+| **TOTAL** | **545 run, 540 passed, 0 failed, 5 ignored** (Session 82, CI-confirmed) | ✅ |
 
-⚠️ **Session 82 added 9 new unit tests** (8 in `pruning.rs` for
-`lmp_threshold`/`should_apply_lmp`, 1 in `alpha_beta.rs` exercising the
-depth-7 singular-extension path) — expected new total 530, but this is
-**not yet CI-confirmed**: no local Rust toolchain was reachable in that
-session's sandbox (rustup's domain isn't in the network allowlist), so
-changes were verified by careful manual review, brace/paren balance
-check, and diff-against-source rather than an actual `cargo test` run.
-Confirm the real number from the next CI run on `main` before treating
-530 as authoritative.
+✅ **Session 82's D59/D60 changes are now fully CI-confirmed.** Gokul
+supplied the `Test` job's logs (`logs_80383979241.zip`) for commit
+`4429ec0` (confirmed via checkout SHA — same commit as the earlier
+Deploy-log check). `pet_dragon_lib`'s test binary — which is where both
+new `#[cfg(test)]` modules live — ran 412 tests, 412 passed, 0 failed.
+All 9 new tests confirmed passing **by name** in the log:
+`test_search_at_singular_extension_depth_no_panic` and the 8
+`test_lmp_*` tests in `search::pruning::tests`. Across every test
+binary in the job (lib, `match_runner`, `uci_match_runner`,
+`node_count`, `make_unmake`, `perft`, `setup`) the total is 540 passed,
+5 ignored, **0 failed** — no compile errors anywhere in the job. This
+supersedes the earlier "not yet CI-confirmed" note from the Deploy-log
+check; both the wasm32 production build and the native `cargo test`
+run are now verified green for this commit.
 
 ---
 

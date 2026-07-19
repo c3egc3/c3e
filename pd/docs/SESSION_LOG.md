@@ -79,15 +79,99 @@ cases that didn't exist before, multi-cut and negative extension).
 **Decisions made:** D59 (singular-extension family: multi-cut +
 negative extensions), D60 (Late Move Pruning). Both in `DECISIONS.md`.
 
-**Next session start point:** ⚠️ First priority: **confirm this
-session's changes actually build and pass `cargo test` in CI** — push
-to a branch/PR and check the `build`/`regression-gate` workflow output
-before trusting anything else about this session's code. If green: Elo
-impact of D59/D60 isn't measured yet (same open item as 23.2's
-thread-differentiated Lazy SMP) — a real `uci_match_runner.yml` run
-would quantify it. If NNUE work resumes instead, start from D58's three
-remaining options. Otherwise ROADMAP.md's 23.4 (variant opening
-statistics) is still the next unblocked *new* item.
+**Post-session addendum (same day):** Gokul supplied the `Deploy`
+workflow's logs (`logs_80383979254.zip`) for commit `4429ec0` —
+confirmed via the checkout step's SHA that this is the commit
+containing D59/D60. `Build WASM & Web`'s `wasm-pack build --release
+--features wasm` step compiled `pet_dragon v0.1.0` clean, zero errors,
+"Finished `release` profile [optimized] target(s) in 16.37s", and
+`Deploy to GitHub Pages` reported success. This is real confirmation
+the D59/D60 code is syntactically and type correct and compiles clean
+for the wasm32 target.
+
+⚠️ **This does NOT confirm `cargo test` passes.** The `Deploy` workflow
+only runs `wasm-pack build`, which compiles production code and never
+touches `#[cfg(test)]` modules — so the 9 new unit tests added this
+session (8 in `pruning.rs`, 1 in `alpha_beta.rs`) are still unverified.
+Need the separate `Build`/`regression-gate` workflow's logs (the one
+that runs `cargo test`) for commit `4429ec0` specifically, not this
+Deploy run, to close out the real open item from this session.
+
+**Second post-session addendum (same day):** Gokul supplied the actual
+`Test` job's logs (`logs_80383979241.zip`), also for commit `4429ec0`
+(re-confirmed via checkout SHA). ✅ **Fully closes out the open item
+above.** `pet_dragon_lib`'s test binary — where both D59's and D60's
+`#[cfg(test)]` modules live — ran 412 tests, 412 passed, 0 failed. All
+9 new tests confirmed passing individually by name in the log:
+`test_search_at_singular_extension_depth_no_panic` and the 8
+`test_lmp_*` tests under `search::pruning::tests`. Across every test
+binary in the job (lib, `match_runner`, `uci_match_runner`,
+`node_count`, `make_unmake`, `perft`, `setup`) the real total is 545
+run / 540 passed / 5 ignored / **0 failed** — no compile errors
+anywhere in the job (the 530 estimate from earlier in this session was
+close but not exact; 545/540/5 is the confirmed real number, now
+recorded in `ROADMAP.md`'s test-count table). D59/D60 are genuinely
+done: compiles clean on both wasm32 (Deploy) and native (Test)
+targets, all tests green.
+
+**Next session start point:** D59/D60 are fully shipped and verified —
+no follow-up action needed on them. Elo impact still isn't measured
+(same open item as 23.2's thread-differentiated Lazy SMP) — a real
+`uci_match_runner.yml` run would quantify it, worth doing before
+stacking more search changes on top blind. If NNUE work resumes
+instead, start from D58's three remaining options. Otherwise
+ROADMAP.md's 23.4 (variant opening statistics) is still the next
+unblocked *new* item.
+
+---
+
+**Third post-session addendum (same day):** Gokul decided to shelve
+NNUE entirely for the future (D61) and asked whether 23.5 should be
+done now instead — flagged that this is self-contradictory (23.5 *is*
+the NNUE upgrade) and confirmed HCE is already Texel-tuned and solid
+(Phase 14, ~39 measured Elo gain), not an empty bucket needing generic
+"solidification." Gokul chose to move to 23.4 instead. Investigated
+23.4 before writing code (read `selfplay.rs` in full) and found the
+ROADMAP's original scoping was wrong: `selfplay.rs`'s output has no
+seed/position/root-move data to aggregate, and — the bigger issue —
+2.16M distinct starting positions vs. sequentially-seeded self-play
+games means an exact-position book would almost never hit a real game,
+the same starved-coverage shape as NNUE's own problem. Presented the
+two real design paths (exact-position vs. structural-feature
+bucketing); Gokul chose to hold 23.4 too rather than pick one now.
+Both decisions recorded in full in `DECISIONS.md` D61/D62 — resume
+either only by re-reading those, not by restarting from ROADMAP's
+original (now-corrected) framing.
+
+**Session ends with Phase 23 having no active items** — 23.1–23.3 and
+23.6–23.7 done, 23.4 and 23.5 both explicitly held. Next session:
+don't auto-resume either — ask what to work on.
+
+---
+
+**Fourth post-session addendum (same day):** Gokul asked whether the
+engine's search/eval had more headroom generally. Read all six
+`eval/` submodules fresh (`material.rs`, `tables.rs`, `mobility.rs`,
+`pawns.rs`, `king_safety.rs`, `open_lines.rs`) to answer with actual
+source rather than guessing. Confirmed most standard HCE terms already
+present and Texel-tuned; found three real, unimplemented gaps —
+passed-pawn king distance (highest value), pawn storm, king-relative
+PST bucketing (lowest/most speculative) — recorded as a ranked,
+unscheduled candidate list in `DECISIONS.md` D63 and `ROADMAP.md`'s
+new Phase 24 section. Also surveyed evaluation paradigms beyond HCE/
+NNUE on request (MCTS+policy/value net, searchless transformer,
+GPU-sized NNUE, policy-guided move ordering) and ruled all out for
+Pet Dragon's actual deployment constraints — recorded in `DECISIONS.md`
+D64 so it isn't re-investigated from scratch later.
+
+**`ENGINE_ARCHITECTURE.md` updated this session** (first update since
+Session 73) to fix three real staleness issues found while doing this:
+its Lazy SMP row still said "not parameter-differentiated" despite
+D49 shipping that fix in Session 76; it didn't mention D59/D60 at all;
+and its evaluation section didn't reflect D61's NNUE-shelving decision
+or D63/D64's new findings. All four now corrected in the doc, not just
+in `DECISIONS.md`/`ROADMAP.md`, matching the "repo is the memory,
+don't let docs silently diverge from source" rule.
 
 ---
 
