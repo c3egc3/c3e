@@ -7,6 +7,68 @@ Most recent session at TOP.
 
 ---
 
+## Session 81 — 2026-07-19 (23.3c: pawn-feature redesign scoped-not-shipped, phase-balance oversampling tried, re-parked — D56/D57/D58)
+
+**Built/done, in order:**
+
+1. **Deep-dived D11's pawn-start feature mechanism** on request — each of
+   16 pawns has its own feature, permanently off after that pawn's first
+   move, active only a few plies out of a game's up-to-300-ply length.
+2. **Scoped a redesign (D56)**: 5-bucket one-hot over
+   (own unmoved pawns - opponent unmoved pawns), replacing D11's 128
+   per-square flags. Wrote it in full (`features.rs` rewrite, 8 tests
+   updated, `NUM_FEATURES` 896->773) but **did not ship it** — it's
+   schema-breaking (old checkpoint becomes incompatible, forced retrain,
+   red CI in between), and the person doing the committing explicitly
+   said they didn't want more unreliable/risky changes after this
+   session's earlier smoothing-sweep surprises.
+3. **Shipped the cheaper alternative instead (D57)**: phase-balanced
+   training-row oversampling — no feature/schema change, purely
+   reweights which rows get seen more during training via integer
+   duplication in the per-epoch order. `phase_balance_cap` CLI/workflow
+   param, default 4, `1` disables.
+4. **Tested D57 at `phase_balance_cap=4`, `label_smoothing=0.10`.**
+   Result: zero effect — no row was duplicated, `val_loss` identical
+   to the un-oversampled baseline. The actual activation-count
+   histogram (logged by the run) was far flatter than the imbalance
+   hypothesis assumed; that hypothesis is not well supported by the
+   real data. No further tuning of this lever recommended.
+5. **Also discussed, not built**: confidence/in-distribution gating
+   (route to NNUE only in well-covered training-data regions) and
+   Stockfish-distillation data augmentation for the phase of a game
+   where D10's design has converged close enough to standard chess to
+   trust it — and a sequencing recommendation for all three remaining
+   options (D56's redesign -> training-pipeline swap off NORU's CPU
+   trainer -> distillation) if any get picked up later.
+6. **Re-parked (D58)**, superseding D55's reopening list. Current best
+   remains the `label_smoothing=0.10` checkpoint from Session 80: 17W-2L-1D,
+   87.5%, +338 Elo for HCE. Unchanged by this session.
+
+**Files changed this session:**
+- `src/bin/train_nnue.rs` — `phase_balance_cap` param (D57)
+- `.github/workflows/train_nnue.yml` — `phase_balance_cap` workflow input
+- No change to `src/nnue/features.rs` or the committed network — D56 was
+  scoped but explicitly not shipped; the D57 test run reproduced the
+  existing `0.10` checkpoint's numbers exactly, so nothing needed
+  re-committing.
+
+**Bugs fixed:** none (this session was investigation/negative-result,
+not a bug fix).
+
+**Decisions made:** D56, D57, D58 (all in DECISIONS.md). D58
+supersedes D55's reopening-lever list — read D58, not D55, if NNUE
+work resumes.
+
+**Next session start point:** NNUE is re-parked, no action needed
+unless picking it up again deliberately. If so, start from D58's three
+remaining options (feature redesign / pipeline swap / distillation) —
+all are real investments now, not quick tries, so get explicit buy-in
+on scope before starting rather than assuming a small change will do.
+Otherwise, ROADMAP.md's 23.4 (variant opening statistics) is the next
+unblocked item.
+
+---
+
 ## Session 80 — 2026-07-19 (23.3b: NNUE saturation bug fixed, swept, re-parked — D53/D54/D55)
 
 **Built/done, roughly in order:**

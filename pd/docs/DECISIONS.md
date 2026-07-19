@@ -1913,3 +1913,93 @@ than the training objective) is the remaining bottleneck; (3) 23.5's
 king-relative bucketed-feature architecture upgrade, explicitly
 sequenced last since it's the largest effort and depends on the
 smaller levers being exhausted first.
+
+## D56 — Pawn-Flexibility Feature Redesign: Scoped, Not Shipped (Session 81)
+
+While discussing why D53-D55's calibration issues persisted, walked
+through D11's actual mechanism in detail: each of the 16 pawns has its
+own feature, active only until that specific pawn's first move, then
+permanently off for the rest of that game's length (up to 300 plies,
+every ply recorded as a row). This raised a real design question —
+whether 128 independent per-square flags is the right shape for this
+signal at all, separate from any imbalance in how often it's active.
+
+Proposed replacement: a single one-hot bucket per perspective over
+(own unmoved pawns - opponent unmoved pawns), 5 buckets
+(`<=-3 / -2..-1 / 0 / 1..2 / >=3`) instead of 128 per-square flags —
+`NUM_FEATURES` 896->773. Full implementation was written (`features.rs`
+rewrite, all 8 tests updated, `train_nnue.rs` comment fix) and is
+available if this gets picked up again, but was **not shipped**: it's
+a schema-breaking change (old checkpoints become permanently
+incompatible, forced retrain, a real window where `main`'s tests are
+red until that retrain lands) which the person doing the committing
+explicitly did not want given how many rounds this session already
+took. Superseded by D57's cheaper, non-breaking approach — see D58 for
+current status. If NNUE work resumes and a real investment is
+approved, this design is ready to implement rather than needing to be
+re-derived from scratch.
+
+## D57 — Phase-Balanced Oversampling: Implemented, Empirically Negative Result (Session 81)
+
+Cheaper, non-breaking alternative to D56: instead of changing what any
+feature means, oversample training rows with a rare pawn-start-feature
+activation count (D11) in the per-epoch training order —
+inverse-sqrt-frequency weight expressed as integer row duplication,
+`phase_balance_cap` (default 4, `1` disables). `features.rs` untouched,
+no schema change, currently-committed network stays loadable
+throughout.
+
+Tested at `phase_balance_cap=4` on the same 2.48M-row dataset,
+`label_smoothing=0.10`. Result: **the fix had zero effect.** The
+balanced row count exactly equalled the original row count (no row
+was duplicated), and `val_loss=0.57740` was bit-for-bit identical to
+the un-oversampled `0.10` baseline run.
+
+Why: the actual activation-count histogram logged by this run is far
+flatter than the hypothesis assumed — every bucket (0 through 16
+active features) fell within a ~90K-163K range, under 2x apart, not
+the sharp early-game-only spike the theory predicted. Notably, bucket
+16 (all 16 pawns still on their start square — literally the position
+before any move) had *more* rows (128,394) than several of the
+supposedly-common decayed-state buckets, the opposite of what the
+"near-game-start rows are rare" theory predicted. With imbalance this
+mild, inverse-sqrt weighting produces normalized weights too close to
+1.0 to survive integer rounding.
+
+**Conclusion: the row-imbalance hypothesis from D53-D55's diagnostic
+work is not well supported by the actual data.** Not worth pursuing
+further by tuning the weighting more aggressively — that would be
+fixing a problem the data says isn't really there. No repo change
+needed as a result (currently-committed `0.10` network already
+reflects what this run produced). `phase_balance_cap` stays in
+`train_nnue.rs`/`train_nnue.yml` as an available, defaults-to-4,
+proven-inert-at-current-data knob — cheap to leave in, not worth
+removing.
+
+## D58 — NNUE Re-Parked Again: Cheap Levers Exhausted (Session 81)
+
+Following up on D55's parking, this session tried the two cheapest,
+lowest-risk remaining levers before considering bigger investments:
+D56 (pawn-feature redesign, scoped but not shipped — schema-breaking)
+and D57 (phase-balanced oversampling, shipped, empirically negative).
+Also discussed but not started: confidence/in-distribution gating
+(route to NNUE only where training data is dense, HCE elsewhere) and
+distillation from Stockfish's public eval for the phase of a Pet
+Dragon game that's converged close enough to standard chess to trust
+it (D10's phase-out design is meant to reach that point) — both real,
+scoped ideas, neither attempted this session.
+
+**Current best remains the `label_smoothing=0.10` checkpoint from
+D55**: 17W-2L-1D, 87.5%, +338 Elo for HCE. Unchanged by this session's
+work. `NNUEWeight` stays at its 0% default.
+
+**Status: re-parked.** Every remaining lever with a plausible path to
+closing real ground on HCE — D56's feature redesign, swapping the
+training pipeline off NORU's pure-Rust CPU trainer onto a
+GPU-accelerated PyTorch/Colab pipeline (keeping NORU for its already-
+correct i16 quantized inference), or Stockfish-distillation data
+augmentation — is a genuine structural investment (new training
+infrastructure, a schema-breaking retrain, or a new data pipeline),
+not a quick, low-risk try. D55's original reopening-lever list is
+superseded by this one; treat this entry as the current status instead
+of D55's for anyone resuming NNUE work.

@@ -1174,6 +1174,28 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              default (unchanged since D25) — network available as a UCI
              option for anyone who wants to enable it, not the default
              search path. Re-parked; see D55 for reopening conditions.
+
+- [x] 23.3c — Cheap-lever follow-up on 23.3b (D56/D57/D58, Session 81).
+             DONE, re-parked again. Scoped a pawn-flexibility feature
+             redesign (D56, 5-bucket diff encoding replacing D11's 128
+             per-square flags) but did not ship it — schema-breaking,
+             forces a retrain window with red CI, judged not worth it
+             given the person doing the committing explicitly wanted
+             low-risk changes only. Shipped a cheaper alternative
+             instead (D57, phase-balanced training-row oversampling,
+             no schema change) and tested it — empirically negative:
+             the row-imbalance hypothesis this whole line of work was
+             based on turned out not to hold up against the actual
+             training-data histogram, which was far flatter than
+             assumed. No further tuning of that lever recommended.
+             `label_smoothing=0.10` (D55) remains the best/committed
+             checkpoint, unchanged by this round. See D58, not D55,
+             for current reopening conditions — D58 supersedes D55's
+             lever list. Remaining options (D56's redesign, a
+             training-pipeline swap off NORU's CPU trainer, or
+             Stockfish-distillation data augmentation for the
+             converged-toward-standard-chess phase of a game) are all
+             real structural investments now, not quick tries.
 - [ ] 23.4 — Variant-specific opening statistics. No aggregation of
              self-play results into a root-level move-preference table
              exists. No curated opening theory can substitute — 2.16M
