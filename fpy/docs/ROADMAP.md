@@ -813,36 +813,46 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       deliberately still not done — Threads=1 is the standard UCI/GUI
       convention (Stockfish defaults to it too), not clearly worth
       changing on reflection, not just deferred for lack of time.
-- [x] **NEXT UP (Session 58) resolved (Session 59, see D-100):** handed
-      the choice of direction and deliberately picked something outside
-      the Lazy SMP/opening-book orbit — three sessions running (56, 57,
-      58) had stayed within it, flagged below as worth reconsidering.
-      Found and fixed a real, previously-undiscovered correctness gap:
-      `halfmove_clock` only ever incremented, never reset on a pawn
-      move or capture, so the fifty-move rule was silently untracked
-      everywhere (confirmed via grep — nothing read the field before
-      this session). Fixed in `make_move()` (reset logic, computed
-      before the function's existing capture-clearing mutations run —
-      order matters here) and wired into `alpha_beta()`/`quiescence()`
-      (both compiled and `run.py`'s Python-mode mirrors) as a draw-score
-      short-circuit, checked before the TT probe specifically because
-      `board.hash` doesn't encode `halfmove_clock`. 9 new tests
-      (`TestFiftyMoveRule` in `test_move_gen.py`). `fastpy` 386/386,
-      `fastpy-engine` 285/285 (276 + 9 new). `fastpy check engine.py`
-      zero errors, compiles clean. Both carried-over Session 56 options
-      (smarter `Threads` default, opening-book transposition-awareness)
-      remain untouched, still open. See D-100.
-- [ ] **NEXT UP (Session 59):** two items now open — within-search
-      repetition detection (checking a position against the current
-      search path's own history) and game-level threefold-repetition
-      detection (checking against the actual game's played-move
-      history, structurally similar to the opening book's
-      `move_history` tracking at the UCI-driver level per D-94) —
-      both flagged by D-100 as real, related gaps to this session's
-      fifty-move-rule fix, neither addressed yet. Also still open from
-      Session 56: a smarter `Threads` default, and opening-book
-      transposition-awareness (D-94/D-98). Needs an actual decision at
-      the start of next session — four candidates now on the table.
+- [x] **NEXT UP (Session 59) resolved (Session 60, see D-101):** picked
+      up one of the two related gaps D-100 flagged — threefold-
+      repetition detection — deliberately scoped to ROOT-ONLY (checking
+      candidate root moves against the actual game's played-position
+      history via a new `repetition_count()` helper and new
+      `game_history`/`game_history_len` params on `find_best_move()`).
+      Full in-search-path repetition detection (an ancestor-hash stack
+      threaded through `alpha_beta()`/`quiescence()`, pushed/popped
+      around every early-return point) was deliberately deferred as
+      too high-risk for a single careful session — see D-101's full
+      reasoning. Three files changed: `engine.py` (root-loop override),
+      `run.py` (full Python-mode mirror, `_apply_position()` now also
+      returns `position_history`), `native/uci_main.cpp` (hand-written
+      driver — `go()` gained a `position_history` param, all 3 of its
+      `find_best_move()` call sites updated, `smp_helper_worker()`
+      deliberately passes an empty history with documented reasoning).
+      A real build-time fix needed along the way: `go()`'s parameter
+      couldn't be `const std::vector<uint64_t>&` since
+      `find_best_move()`'s `game_history` param is non-const
+      `uint64_t*` (FastPy's array-parameter emission convention).
+      5 new tests (`TestThreefoldRepetition` in `test_move_gen.py`),
+      chosen at the function level after a UCI-level smoke test turned
+      out to be timing-sensitive/hard to verify precisely. Full
+      `training/build_uci_engine.py` build succeeds; live UCI smoke
+      test against the compiled binary confirmed sane behavior. `fastpy`
+      386/386, `fastpy-engine` 290/290 (285 + 5 new). `fastpy check
+      engine.py` zero errors.
+- [ ] **NEXT UP (Session 61):** growing list, needs an actual decision
+      at the start of next session rather than continued deferral:
+      (1) within-search-path repetition detection — deferred twice now
+      in spirit (D-100 flagged it, D-101 explicitly declined it this
+      session with detailed risk reasoning); (2) this session's own
+      acknowledged limitation — an already-3-times-repeated ROOT
+      position (before any candidate move) isn't recognized as an
+      immediate draw, only a candidate CONTINUATION that would create
+      the 3rd occurrence; (3) a smarter `Threads` default (open since
+      Session 56); (4) opening-book transposition-awareness (D-94/D-98,
+      open since Session 55). Four candidates now open across two
+      sessions' worth of flagging — this needs to actually get decided
+      and picked, not deferred a fifth time.
 
 ---
 

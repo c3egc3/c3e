@@ -2,6 +2,99 @@
 
 Append-only. One entry per session. Most recent at top.
 
+## Session 60 — Threefold-repetition detection, root-only (D-101): find_best_move() checks candidate moves against the game's played-position history; full in-search-path detection deliberately deferred as too risky for one session
+**Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
+`fastpy-engine/native/uci_main.cpp`, `fastpy-engine/tests/test_move_gen.py`
+changed. Docs updated: `docs/DECISIONS.md` (D-101), `docs/ROADMAP.md`,
+this entry.
+
+**Continuing from Session 59:** D-100 flagged two related, undone gaps
+— within-search repetition detection and game-level threefold-
+repetition detection. Handed the choice with "you decide," picked the
+more architecturally contained of the two to start.
+
+**Scoping decision, made explicit before writing any code:** true
+in-search-path repetition detection would need a `ply`-indexed
+ancestor-hash stack pushed onto entry and popped on every return path
+of `alpha_beta()`/`quiescence()` — both have several early returns from
+pruning cutoffs, and a single mismatched pop would silently corrupt the
+stack for every later sibling call at that ply. That failure mode
+doesn't crash or fail a type check — it just quietly makes the engine
+play worse chess in a way that's hard to notice from search output
+alone. Judged not safely completable to this project's own standard
+(build-and-test-before-presenting, full suites green, `fastpy check`
+clean) within one careful session. Deferred, not abandoned — see
+D-101 for the full reasoning and ROADMAP for where it's tracked.
+
+Scoped instead to root-only: `find_best_move()`'s root loop checks
+whether a candidate move's resulting position would be its 3rd
+occurrence across (the actual game's played-position history + this
+move) and forces that move's score to 0 if so. This is a single,
+once-per-`go`-command function — not the hot recursive search path —
+so an 8KB `uint64[1024]` parameter costs nothing worth measuring,
+categorically different from D-99's NODE_COUNT sizing question.
+
+**What shipped, three files (mirroring D-94's opening-book precedent
+for where UCI-driver-level, game-history-dependent logic belongs):**
+1. `engine.py` — new `MAX_GAME_HISTORY` constant, new
+   `repetition_count()` helper, `find_best_move()` gains
+   `game_history`/`game_history_len` params and the root-loop override.
+2. `run.py` — full mirror: `_repetition_count_py()`,
+   `_find_best_move_py(..., game_history=None)`,
+   `_iterative_deepening_py(..., game_history=None)`,
+   `_apply_position()` now also returns `position_history` (built
+   UNCONDITIONALLY, unlike `move_history` — a FEN-started game can
+   still repeat positions even though the opening book, D-94, is
+   standard-start-only), and the `go`-handler's state threaded through
+   the same way `move_history`/`is_standard_start` already are.
+3. `native/uci_main.cpp` — new `kMaxGameHistory` constant, `go()` gains
+   a `position_history` parameter (NOT const — `find_best_move()`'s
+   `game_history` param is a non-const `uint64_t*` per FastPy's
+   array-parameter emission convention; the compiler caught this
+   directly when `const` was tried first, fixed by dropping it rather
+   than reaching for `const_cast` at 3 call sites), `main()`'s command
+   loop builds `position_history` the same way it already builds
+   `move_history`, all 3 `find_best_move()` call sites in `go()`'s
+   depth/aspiration loop updated, `smp_helper_worker()` deliberately
+   passes an empty history (documented why that's within the TT's
+   already-accepted-race design, not a new risk).
+
+**Verification:** `fastpy check engine.py` zero errors, first attempt.
+Full `training/build_uci_engine.py` build (emit → strip stub → concat
+`uci_main.cpp` → compile) succeeds after the const-mismatch fix. Live
+UCI smoke test: fed a real 8-move knight-shuffle sequence returning to
+the start position 3 times, gave the search a genuine 3-second budget,
+got sane depth-by-depth scores and a sensible move — not a crash. (An
+earlier quick test that raced an immediate `quit` against the search
+produced an alarming-looking `score cp 32767`/`nodes 2` result; traced
+this to the existing, pre-D-101 D-85/D-92 "always trust move 0"
+abort-fallback behavior firing on a search that had barely started — a
+test-harness timing artifact, not a regression, and NOT how the actual
+verification tests below work.) 5 new deterministic unit tests in a new
+`TestThreefoldRepetition` class (`test_move_gen.py`) — chosen at the
+function level specifically because the UCI-level smoke test above
+turned out to be timing-sensitive and hard to verify precisely:
+`_repetition_count_py()` against `None`/empty/multi-occurrence
+histories; a white-up-a-queen-and-more position where every legal root
+move's resulting hash is fabricated into the history twice, proving
+`find_best_move()` still returns a real move but scores it exactly 0
+despite overwhelming material; the inverse (irrelevant history is a
+complete no-op); and a compiled-vs-Python-mode parity check between
+`engine.py`'s `repetition_count()` and `run.py`'s
+`_repetition_count_py()`. Full suites: `fastpy` 386/386 (unchanged —
+no `fastpy`-repo file touched), `fastpy-engine` 290/290 (285 prior + 5
+new).
+
+**What's still open:** within-search-path repetition detection
+(deferred this session, with reasoning); this session's own
+acknowledged limitation (an already-3-times-repeated ROOT position,
+before any candidate move, isn't itself recognized as an immediate
+draw — only a candidate continuation that would CREATE the 3rd
+occurrence); a smarter `Threads` default (open since Session 56);
+opening-book transposition-awareness (D-94/D-98, open since Session
+55). Four candidates now open. ROADMAP flags this needs an actual
+decision next session, not a sixth session of deferral.
+
 ## Session 59 — Fifty-move rule was silently untracked (D-100): `halfmove_clock` only ever incremented, never reset; fixed in `make_move()` and wired into `alpha_beta()`/`quiescence()`
 **Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
 `fastpy-engine/tests/test_move_gen.py` changed. Docs updated:

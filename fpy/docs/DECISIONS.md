@@ -3614,3 +3614,195 @@ history, structurally similar to how the opening book already tracks
 gaps, not addressed this session. Flagging both as candidates for a
 future session, the same way D-94 flagged opening-book
 transposition-awareness.
+
+## D-101: threefold-repetition detection — root-only, checking candidate moves against the actual game's played-position history; full in-search-path detection deliberately deferred
+
+**Session 60 — continuation of D-100's flagged follow-up.** D-100
+explicitly flagged two related, undone gaps: within-search repetition
+detection and game-level threefold-repetition detection. Handed the
+choice with no further guidance ("you decide"), picked up the more
+architecturally contained of the two first.
+
+**Why root-only, not full in-search-path detection:** true in-search
+repetition detection (catching a line that cycles back to a position
+visited earlier in the SAME search tree, never actually played in the
+real game) needs a `ply`-indexed ancestor-hash stack pushed onto entry
+and popped on every return path of `alpha_beta()`/`quiescence()`. Both
+functions have several early returns from pruning cutoffs (TT cutoffs,
+null-move, LMR re-searches, singular extensions, stand-pat in
+quiescence — the same shape of call-site count D-99 catalogued for
+`thread_id`, but that change only needed to ADD a parameter and pass it
+straight through; this would need a matched push/pop pair around each
+of those return points, correctly ordered, in code that's already
+deeply nested). A single mismatched pop would silently corrupt the
+stack for every subsequent sibling call at that ply, producing wrong
+repetition detections (false positives forcing incorrect draws, or
+false negatives missing real ones) that would be extremely hard to
+notice from search output alone — this class of bug doesn't crash, it
+just quietly plays worse chess. Given that risk profile, this was
+judged not safely completable to a standard this project holds itself
+to (build-and-test-before-presenting, `fastpy check` clean, full
+suites green) within a single session's careful, verifiable scope.
+Deferred, not abandoned — flagged below as Session 61+ candidate,
+same as D-94 deferred opening-book transposition-awareness.
+
+**What root-only means concretely:** `find_best_move()`'s root
+move loop is the only place this session's change alters. For each
+candidate root move, the position it would produce is checked against
+the actual game's played-position history (not the search tree's own,
+still-being-explored lines below the root). If that position would be
+its 3rd occurrence, the move's score is overridden to 0 (a claimable
+draw) before comparison against the current best. This has one honest,
+explicitly-acknowledged limitation of its own: it does NOT recognize
+"the position sitting at the root, right now, before any move, has
+already occurred 3 times" as itself an immediate draw — only whether a
+CANDIDATE CONTINUATION would create the 3rd occurrence. In practice
+this is the more valuable half of the feature: it stops the engine from
+voluntarily walking into an avoidable draw when a better alternative
+exists, and correctly falls back to a genuine 0 score when every
+available continuation repeats (verified directly — see Verification
+below). The "already sitting on move 3" case is narrower — reaching it
+without either side having had a fold-avoiding alternative on the
+immediately preceding move is a materially rarer path than "about to
+create it," though not impossible; flagged as a known limitation, not
+silently assumed away.
+
+**Implementation, three files, mirroring D-94's opening-book precedent
+for where UCI-driver-level, game-history-dependent logic lives:**
+
+1. **`engine.py`** — new `MAX_GAME_HISTORY: Final[int32] = 1024`
+   constant (documentation only — per D-99's finding, the array TYPE
+   ANNOTATION itself must use the literal `1024`, not this symbol). New
+   `repetition_count(history: uint64[1024], history_len: int32, target:
+   uint64) -> int32` helper — a straightforward linear scan, counting
+   occurrences. `find_best_move()` gains two new required parameters,
+   `game_history: uint64[1024]` and `game_history_len: int32`, appended
+   after the existing `thread_id` (Session 58/D-99) — in the root loop,
+   immediately after each candidate move's `score` is computed via
+   `alpha_beta()`, `repetition_count(game_history, game_history_len,
+   new_board.hash) >= 2` triggers `score = 0` before that score is
+   compared against `best_score`. A caller with no real game history
+   (e.g. the `bench` timing harness) passes `game_history_len=0`, making
+   the override an unconditional no-op — safe, and required nothing
+   further changed at any `bench` call site.
+
+   This is a ROOT-only change, called exactly once per `go` command
+   (not once per node), so passing a value-copied `uint64[1024]`
+   parameter (8KB) costs nothing that matters — categorically different
+   from D-99's NODE_COUNT sizing decision, which was about a value read
+   on literally every single search node. No performance measurement
+   was needed here the way D-99 insisted on for NODE_COUNT, precisely
+   because this doesn't touch the hot path at all.
+
+2. **`run.py`** — mirrored fully: `_repetition_count_py(history,
+   target_hash)` (a plain-list `.count()` call — Python mode has no
+   fixed-array-size constraint, so this is simpler than the compiled
+   side, same relationship every other `_xxx_py()`/dialect-function pair
+   in this project already has). `_find_best_move_py()` gains a
+   `game_history=None` keyword parameter (backward-compatible default —
+   every existing test call site across `test_node_budget.py`,
+   `test_phase4.py`, `test_phase5.py`, `test_phase6.py` continues to
+   work unmodified). `_iterative_deepening_py()` gains the same
+   parameter, threaded straight through to every `_find_best_move_py()`
+   call it makes (every depth, every aspiration retry — the actual game
+   history doesn't change within one search, only depth/window do).
+   `_apply_position()` now also returns `position_history` — every
+   position's hash reached so far in the game, INCLUDING the starting
+   position — built UNCONDITIONALLY, unlike `move_history`: a
+   FEN-started game can still repeat positions, whereas the opening
+   book (D-94) is deliberately standard-start-only. The `go`-command
+   handler's state (`ucinewgame` reset, `position` command, the
+   `_iterative_deepening_py` call) threads `position_history` through
+   the same way it already threads `move_history`/`is_standard_start`
+   for the opening book.
+
+3. **`native/uci_main.cpp`** — new `kMaxGameHistory = 1024` constant
+   (manual-sync partner to `MAX_GAME_HISTORY`, same caveat as
+   `kMaxSmpThreads`/`MAX_SMP_THREADS`). `go()` gained a
+   `std::vector<uint64_t>& position_history` parameter — NOT const:
+   `find_best_move()`'s `game_history` param is a non-const `uint64_t*`
+   (FastPy's array-parameter emission convention, confirmed directly
+   against the emitted C++: `uint64[N]`-typed parameters emit as bare
+   pointers, e.g. `sort_moves(uint64_t* moves, ...)`,
+   `find_best_move(..., uint64_t* game_history, int32_t
+   game_history_len)` — same shape `score_out: int32[1]` already used
+   for `int32_t* score_out`), even though nothing in this codepath ever
+   writes through it. `main()`'s command loop declares
+   `position_history`, seeded with the starting position's hash, right
+   alongside its existing `move_history`/`is_standard_start`; the
+   `position` command handler rebuilds it UNCONDITIONALLY (mirroring
+   `run.py`'s `_apply_position()` reasoning above) by pushing
+   `board.hash` after the starting position and after every
+   `make_move()` call. All 3 `find_best_move()` call sites inside
+   `go()`'s depth/aspiration loop pass `position_history.data()` and a
+   length capped to `kMaxGameHistory` (computed once before the depth
+   loop starts, not per-call — the history doesn't change mid-search).
+   `smp_helper_worker()`'s own `find_best_move()` call deliberately
+   passes `nullptr, 0` instead — helper threads never choose the game's
+   actual `bestmove` (only the main thread's calls in `go()` do that),
+   so a helper's root-position TT entry not reflecting the repetition
+   override falls within the SAME accepted-race category already
+   documented for the shared TT in general (any thread's entry can be
+   superseded by another's — see the big Lazy SMP comment block above
+   `kMaxSmpThreads`).
+
+   A real build-time correction along the way, found by the compiler,
+   not by inspection: `go()` was initially given a `const
+   std::vector<uint64_t>&` parameter, which failed to compile —
+   `find_best_move()`'s `game_history` parameter is non-const
+   `uint64_t*` (per the array-parameter convention above), so
+   `position_history.data()` returning `const uint64_t*` from a const
+   reference doesn't convert. Fixed by dropping `const`; documented
+   inline why that's fine (never written through) rather than reaching
+   for `const_cast` at each of the 3 call sites.
+
+**Verification:**
+- `fastpy check engine.py` — zero errors, first attempt (matches D-100:
+  nothing needed here was outside the dialect's existing support —
+  `uint64[1024]`-typed parameters and locals work the same way
+  `uint64[218]` already does throughout this file).
+- Full `training/build_uci_engine.py` run (emit → strip stub → concat
+  `native/uci_main.cpp` → compile) succeeds after the const-mismatch fix
+  above; produces a working standalone UCI binary.
+- Live UCI smoke test against the compiled binary: fed a genuine
+  8-move knight-shuffle sequence returning to the starting position 3
+  times (`g1f3 g8f6 f3g1 f6g8` × 2), gave the search a real 3-second
+  budget (not an instant `quit` — an early quick test that raced `quit`
+  against the search produced a `score cp 32767`/`nodes 2` result that
+  looked alarming at first glance but is fully explained by the
+  existing, pre-D-101 D-85/D-92 "always trust move 0" abort-fallback
+  behavior firing on a search that had barely started — a test-harness
+  timing artifact, not a regression), and the engine returned sane,
+  steadily-improving depth-by-depth scores and a sensible developing
+  move, not a crash or an obviously-wrong result.
+- 5 new deterministic unit tests added to `tests/test_move_gen.py`'s
+  new `TestThreefoldRepetition` class (chosen over UCI-level
+  behavioral inference specifically because UCI-level testing of this
+  mechanism turned out, above, to be noisy/timing-sensitive — a
+  function-level test isolates the mechanism precisely):
+  `_repetition_count_py()` against `None`/empty/multi-occurrence
+  histories; a decisive white-up-a-queen-and-more test where EVERY
+  legal root move's resulting hash is fabricated into the history
+  twice, proving `find_best_move()` still returns a real move but with
+  score forced to exactly 0 despite overwhelming material (mirrors
+  D-100's boundary-test contrast pattern); the inverse — an irrelevant,
+  non-matching history must be a complete no-op, real score
+  (`> VAL_QUEEN`) unaffected; and a direct compiled-vs-Python-mode
+  parity check confirming `engine.py`'s `repetition_count()` and
+  `run.py`'s `_repetition_count_py()` agree exactly given equivalent
+  inputs (a plain Python list satisfies FastPy's `uint64[1024]`
+  parameter type when the dialect code runs in Python mode — annotations
+  aren't runtime-enforced, the same reason `engine.py` runs correctly
+  as plain Python at all, per Core Rule 2 — confirmed directly, not
+  assumed). Full suites: `fastpy` 386/386 (unchanged — no `fastpy`-repo
+  file touched this session), `fastpy-engine` 290/290 (285 prior + 5
+  new).
+
+**What's still open:** within-search-path repetition detection
+(deferred above, with the specific risk reasoning for why) and this
+session's own acknowledged root-only-detection limitation (doesn't
+recognize an already-3-times-repeated ROOT position, prior to any
+candidate move, as itself an immediate draw) are both real, flagged
+gaps. The two Session 56 carry-overs — a smarter `Threads` default,
+opening-book transposition-awareness (D-94/D-98) — also remain
+untouched, still open, now four sessions running without attention.
