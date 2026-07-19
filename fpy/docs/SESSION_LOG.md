@@ -2,6 +2,52 @@
 
 Append-only. One entry per session. Most recent at top.
 
+## Session 62 — `Threads` default finalized at 1, closing a six-session-open item (D-104): comment-only change, no behavior difference
+**Status:** COMPLETE ✅ — `fastpy-engine/native/uci_main.cpp` changed
+(comment only). Docs updated: `docs/DECISIONS.md` (D-104),
+`docs/ROADMAP.md`, this entry.
+
+**Baseline check first (per the D-61/D-65 PROCESS rule):** pulled fresh
+`main` for both repos before trusting any prior session's claims.
+`fastpy` 386/386, `fastpy-engine` 292/292 — both match Session 61's
+logged counts exactly. `fastpy check engine.py` — zero errors.
+
+**Task:** D-103's sequencing item 1 — a smarter `Threads` default,
+open since Session 56 (six sessions: 56-61) without resolution,
+explicitly scoped as a DECISION task, not necessarily an implementation
+one.
+
+**Decision: keep the default at 1.** Closed explicitly, not deferred
+again. Full reasoning in D-104; short version — (1) matches standard
+UCI/GUI convention (Stockfish and others default to 1, opt-in via
+`setoption`), and (2), the deciding factor, this project's whole
+session history of byte-for-byte-reproducible node-count/NPS
+benchmarks (D-49, D-96, D-99) depends on a stable default; an
+auto-detected `hardware_concurrency()` default would make every future
+benchmark silently machine-dependent, for no real gain since
+`setoption name Threads value N` is already a one-line opt-in for
+anyone who wants SMP. Nothing in the six sessions this sat open
+surfaced an actual problem with the default being 1 — every mention
+was "worth reconsidering," never "broken."
+
+**What changed:** a comment block added next to `g_smp_threads` in
+`native/uci_main.cpp` recording this reasoning, so the question doesn't
+silently reopen next session without new information forcing it.
+
+**Verification:** rebuilt via `training/build_uci_engine.py` — succeeds
+clean. Live UCI smoke test (`uci` / `isready` / `position startpos` /
+`go depth 4` / `quit`) against the rebuilt binary — output byte-for-
+byte identical to pre-session (`option name Threads type spin default 1
+min 1 max 64`, `bestmove e2e4` at depth 4), confirming this was
+genuinely comment-only with zero behavior change. `engine.py` and
+`run.py` both untouched. Full suites unaffected: `fastpy` 386/386,
+`fastpy-engine` 292/292.
+
+**What's still open:** two candidates remain per D-103 — opening-book
+transposition-awareness (D-94/D-98, next up, Session 63) and
+in-search-path repetition detection (Session 64, deliberately last
+given D-101's risk profile).
+
 ## Session 61 — Root-already-repeated positions now recognized as an immediate draw (D-102): closes the gap D-101 explicitly left open, `native/uci_main.cpp` needed zero changes
 **Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
 `fastpy-engine/tests/test_move_gen.py` changed. `native/uci_main.cpp`

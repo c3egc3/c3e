@@ -865,40 +865,44 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       real move. `fastpy` 386/386, `fastpy-engine` 292/292 (290 + 2
       new). `fastpy check engine.py` zero errors, full UCI binary build
       succeeds.
-- [ ] **NEXT UP (Session 62):** three candidates open, DOWN from four —
-      the first net reduction in several sessions rather than continued
-      accumulation. **Decision made: doing all three, one by one,
-      across the next three sessions** — not picking one and leaving
-      the others open again. Sequencing, easiest/most-resolvable first:
-      1. **Session 62 — a smarter `Threads` default.** Open since
-         Session 56, six sessions without action. This is scoped as a
-         DECISION task, not necessarily an implementation one: either
-         land on a concrete better default and change it, or determine
-         the current default (1) genuinely is fine and close this out
-         explicitly as "considered, not changing" — either outcome
-         resolves the six-session stall, which the stall itself
-         suggests may be the real blocker (repeated "reconsidered,
-         inconclusive" passes without a decision either way).
-      2. **Session 63 — opening-book transposition-awareness**
+- [x] **Session 62 — a smarter `Threads` default: resolved, see D-104.**
+      Open since Session 56, six sessions without action. Scoped as a
+      DECISION task, not necessarily an implementation one — landed on
+      **keeping the current default (1)**, closed explicitly as
+      "considered, not changing" rather than deferred again. Reasoning
+      recorded in D-104 and in a new comment block in
+      `native/uci_main.cpp` next to `g_smp_threads`: matches standard
+      UCI/GUI convention (every other UCI engine defaults to 1, opt-in
+      via `setoption`), and — the stronger reason — an auto-detected
+      `hardware_concurrency()` default would make this project's whole
+      history of byte-for-byte-reproducible node-count/NPS benchmarks
+      (D-49, D-96, etc.) silently machine-dependent, for no real benefit
+      since `setoption name Threads value N` is already one line for any
+      GUI/harness that wants SMP. Verified: full rebuild via
+      `training/build_uci_engine.py` succeeds, live UCI smoke test
+      (`uci`/`isready`/`go depth 4`) byte-for-byte unchanged from
+      pre-session output — this was a comment-only change, no behavior
+      difference expected or found. `fastpy` 386/386, `fastpy-engine`
+      292/292 (both reconfirmed against fresh `main` before starting,
+      per the D-61/D-65 PROCESS rule).
+- [ ] **NEXT UP (Session 63):** two candidates remain, per D-103's
+      sequencing:
+      1. **Session 63 — opening-book transposition-awareness**
          (D-94/D-98). Still exact-prefix-match only, open since Session
          55. Medium scope: extending `OPENING_BOOK` lookup to match by
          position (transposition) rather than only by exact played-move
          prefix.
-      3. **Session 64 — in-search-path repetition detection.** The
-         hardest and highest-risk of the three (D-101's detailed risk
+      2. **Session 64 — in-search-path repetition detection.** The
+         hardest and highest-risk of the two (D-101's detailed risk
          reasoning still applies: a `ply`-indexed ancestor-hash stack
          pushed/popped around every early-return point in
          `alpha_beta()`/`quiescence()`, where a single mismatched pop
          silently corrupts results rather than crashing). Deliberately
-         sequenced LAST — after two sessions' worth of momentum on the
-         other two, and ideally with the fullest possible session
-         budget available, given the correctness stakes D-101 already
-         laid out.
-      This ordering can be revisited if a session's own findings change
-      the picture (e.g. Session 62 turns up something that reprioritizes
-      63/64) — but the default, absent new information, is to work
-      through all three in this order rather than re-relitigating the
-      choice each session.
+         sequenced LAST, with the fullest possible session budget
+         available, given the correctness stakes D-101 already laid out.
+      This ordering can be revisited if Session 63's own findings change
+      the picture — but the default, absent new information, is to do
+      Session 63 next.
 
 ---
 

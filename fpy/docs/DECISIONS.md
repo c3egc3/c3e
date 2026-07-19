@@ -3971,3 +3971,55 @@ question from scratch each time. Recorded here (not just in ROADMAP)
 because it's a real scoping/process decision with its own rationale,
 matching how this project already logs decisions like D-61's
 re-verification process, not only code-level ones.
+
+## D-104: `Threads` default finalized at 1 — closing the six-session-open item (Session 62)
+
+Picked up D-103's sequencing item 1, scoped explicitly as a decision
+task rather than an implementation one. **Verdict: keep the current
+default of 1.** Not a re-deferral — a final answer, recorded so the
+item stops resurfacing every few sessions.
+
+**Why 1, not an auto-detected default:**
+
+1. **Convention.** Every mainstream UCI engine (Stockfish included)
+   defaults `Threads` to 1 and requires the GUI/harness to opt in via
+   `setoption name Threads value N`. A FastPy-Engine that silently
+   spawned `hardware_concurrency()` threads by default would surprise
+   anyone testing it the standard way, for no compensating benefit —
+   the opt-in is one line for whoever actually wants SMP.
+
+2. **Reproducibility (the deciding factor).** This project's session
+   history leans heavily on byte-for-byte-reproducible search behavior
+   as a verification tool — D-49's LMR/null-move/aspiration/futility
+   node-count ablations, D-96's explicit "Threads=1 reconfirmed
+   byte-identical to pre-session output" check, D-99's per-thread node
+   counting validation, all depend on the SAME machine producing the
+   SAME node counts and moves by default. Lazy SMP is deliberately
+   unsynchronized (D-96) — that's fine when it's opt-in, but an
+   auto-detected default would make every *future* benchmark silently
+   depend on how many cores the machine running it happens to have,
+   undermining exactly the kind of before/after comparison this
+   project's whole log is built on.
+
+3. **No real use case forced this.** Nothing in the six sessions this
+   sat open (56-61) surfaced an actual problem caused by the default
+   being 1 — every mention was "worth reconsidering," not "broken."
+   Absent a concrete downside, changing a default that matches
+   established convention and preserves reproducibility isn't
+   justified.
+
+**What changed:** a comment-only addition in `native/uci_main.cpp`
+next to `g_smp_threads`, recording this reasoning for future sessions
+so the question doesn't reopen without new information. No behavior
+change — verified via a full rebuild (`training/build_uci_engine.py`)
+and a live UCI smoke test (`uci`/`isready`/`go depth 4`) producing
+byte-for-byte identical output to pre-session. `engine.py` and `run.py`
+both untouched. `fastpy` 386/386, `fastpy-engine` 292/292, both
+reconfirmed against a freshly-pulled `main` before this session's work
+started (per the D-61/D-65 PROCESS rule), matching Session 61's logged
+counts exactly.
+
+**What's still open:** two candidates remain per D-103's sequencing —
+opening-book transposition-awareness (D-94/D-98, next up, Session 63)
+and in-search-path repetition detection (Session 64, deliberately last
+given D-101's risk profile).
