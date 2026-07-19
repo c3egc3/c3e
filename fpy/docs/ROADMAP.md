@@ -840,19 +840,65 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       test against the compiled binary confirmed sane behavior. `fastpy`
       386/386, `fastpy-engine` 290/290 (285 + 5 new). `fastpy check
       engine.py` zero errors.
-- [ ] **NEXT UP (Session 61):** growing list, needs an actual decision
-      at the start of next session rather than continued deferral:
-      (1) within-search-path repetition detection — deferred twice now
-      in spirit (D-100 flagged it, D-101 explicitly declined it this
-      session with detailed risk reasoning); (2) this session's own
-      acknowledged limitation — an already-3-times-repeated ROOT
-      position (before any candidate move) isn't recognized as an
-      immediate draw, only a candidate CONTINUATION that would create
-      the 3rd occurrence; (3) a smarter `Threads` default (open since
-      Session 56); (4) opening-book transposition-awareness (D-94/D-98,
-      open since Session 55). Four candidates now open across two
-      sessions' worth of flagging — this needs to actually get decided
-      and picked, not deferred a fifth time.
+- [x] **NEXT UP (Session 61):** ~~growing list, needs an actual decision~~
+      **resolved (Session 61, see D-102):** of the four candidates,
+      deliberately picked the low-risk one — a direct, small
+      continuation of D-101's own work, closing the exact gap that
+      session had already identified and documented, rather than
+      opening a new large front (in-search-path repetition detection,
+      explicitly flagged high-risk in D-101) or picking up an item
+      stalled for 5-6 sessions without a clear path (`Threads` default,
+      opening-book transposition-awareness). Fixed: the ROOT position
+      itself already having occurred 3 times in the game's history is
+      now recognized as an immediate draw (score forced to 0), not just
+      a candidate move that would CREATE the 3rd occurrence (D-101's
+      original scope). `find_best_move()` gained one new check placed
+      AFTER its existing `tt_store()` call, deliberately — the TT entry
+      stays the position's genuine, context-independent score, only the
+      returned `score_out` gets the game-specific override.
+      `native/uci_main.cpp` needed ZERO changes — confirms D-101's
+      architecture (mechanism entirely inside `find_best_move()`) was
+      the right call. 2 new tests (`TestRootAlreadyRepeated`). Decisive
+      before/after live UCI smoke test on the identical D-101
+      manufactured position: varying nonzero scores per depth before
+      this fix, `score cp 0` at every depth after, `bestmove` still a
+      real move. `fastpy` 386/386, `fastpy-engine` 292/292 (290 + 2
+      new). `fastpy check engine.py` zero errors, full UCI binary build
+      succeeds.
+- [ ] **NEXT UP (Session 62):** three candidates open, DOWN from four —
+      the first net reduction in several sessions rather than continued
+      accumulation. **Decision made: doing all three, one by one,
+      across the next three sessions** — not picking one and leaving
+      the others open again. Sequencing, easiest/most-resolvable first:
+      1. **Session 62 — a smarter `Threads` default.** Open since
+         Session 56, six sessions without action. This is scoped as a
+         DECISION task, not necessarily an implementation one: either
+         land on a concrete better default and change it, or determine
+         the current default (1) genuinely is fine and close this out
+         explicitly as "considered, not changing" — either outcome
+         resolves the six-session stall, which the stall itself
+         suggests may be the real blocker (repeated "reconsidered,
+         inconclusive" passes without a decision either way).
+      2. **Session 63 — opening-book transposition-awareness**
+         (D-94/D-98). Still exact-prefix-match only, open since Session
+         55. Medium scope: extending `OPENING_BOOK` lookup to match by
+         position (transposition) rather than only by exact played-move
+         prefix.
+      3. **Session 64 — in-search-path repetition detection.** The
+         hardest and highest-risk of the three (D-101's detailed risk
+         reasoning still applies: a `ply`-indexed ancestor-hash stack
+         pushed/popped around every early-return point in
+         `alpha_beta()`/`quiescence()`, where a single mismatched pop
+         silently corrupts results rather than crashing). Deliberately
+         sequenced LAST — after two sessions' worth of momentum on the
+         other two, and ideally with the fullest possible session
+         budget available, given the correctness stakes D-101 already
+         laid out.
+      This ordering can be revisited if a session's own findings change
+      the picture (e.g. Session 62 turns up something that reprioritizes
+      63/64) — but the default, absent new information, is to work
+      through all three in this order rather than re-relitigating the
+      choice each session.
 
 ---
 

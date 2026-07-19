@@ -2,6 +2,82 @@
 
 Append-only. One entry per session. Most recent at top.
 
+## Session 61 — Root-already-repeated positions now recognized as an immediate draw (D-102): closes the gap D-101 explicitly left open, `native/uci_main.cpp` needed zero changes
+**Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
+`fastpy-engine/tests/test_move_gen.py` changed. `native/uci_main.cpp`
+NOT touched this session (confirmed unnecessary — see below). Docs
+updated: `docs/DECISIONS.md` (D-102), `docs/ROADMAP.md`, this entry.
+
+**Decision made:** four candidates were open after Session 60. Picked
+the low-risk one deliberately — a small, direct continuation of D-101's
+own work, closing a gap that session had already precisely identified,
+rather than starting a new large front (in-search-path repetition
+detection, explicitly flagged high-risk in D-101) or picking up an item
+stalled for 5-6 sessions without a clear path forward (`Threads`
+default, opening-book transposition-awareness).
+
+**The gap:** D-101's mechanism only checked whether a CANDIDATE move
+would create a position's 3rd occurrence. It never checked whether the
+ROOT position — before any candidate move is even considered — had
+already reached its 3rd occurrence, which can happen without the
+engine's own root loop ever having had a chance to "choose against" it
+(e.g. if the opponent's move produced the repeat).
+
+**The fix:** one new check in `find_best_move()`, placed AFTER the
+existing `tt_store()` call — deliberately after, not before.
+`repetition_count(game_history, game_history_len, board.hash) >= 3`
+(game_history always includes the current position as its own last
+entry, so `>= 3` correctly means "including right now," matching the
+real FIDE rule) overrides only `score_out`, never the TT entry: a
+different game reaching the identical position via a different route
+would have a legitimate non-drawn score, and `tt_store()` already
+recorded exactly that value before this new check runs. Mirrors D-100's
+`board.hash`/`halfmove_clock` TT-ordering reasoning, applied here in
+the opposite temporal direction (check placed AFTER the write it must
+not corrupt, rather than before a read it must not be corrupted by).
+
+**`native/uci_main.cpp` needed no changes at all** — it already passes
+`position_history` into every real `find_best_move()` call (D-101), and
+`smp_helper_worker()`'s deliberate empty-history call safely no-ops
+against the new check exactly the way it already no-ops against
+D-101's per-move check. A clean confirmation that D-101's choice to put
+the whole mechanism inside `find_best_move()` itself, rather than
+partially in the driver, was the right call — a genuinely new
+capability slotted in as a single-function change plus its `run.py`
+mirror.
+
+**Verification:** `fastpy check engine.py` zero errors. Full
+`training/build_uci_engine.py` build succeeds untouched on the driver
+side. Decisive before/after live UCI smoke test on the EXACT SAME
+manufactured position as D-101's own smoke test (8-move knight-shuffle
+back to startpos): pre-D-102, scores varied per depth (`cp 48`, `16`,
+`35`, `12`, `28`, `23`...); post-D-102, every single depth (1 through
+9) reports `score cp 0`, while `bestmove` remains a real, sensible move
+(`d2d3`) rather than degenerating — about as direct a confirmation as a
+live integration test can give. 2 new deterministic unit tests
+(`TestRootAlreadyRepeated` in `test_move_gen.py`), same
+white-up-a-queen contrast pattern as D-100/D-101: forced-0 at 3
+occurrences, real score preserved at only 2 (exact boundary test). A
+third planned test — an engine.py-vs-run.py direct parity check, same
+shape as D-101's `repetition_count()` parity test — turned out invalid
+for this function and was removed rather than forced: `find_best_move()`
+declares `moves: uint64[218]` as a bare annotation with no assignment,
+which only allocates a real array when compiled, not when run directly
+as plain Python (`UnboundLocalError`) — a pre-existing dialect
+characteristic, not something this session introduced, and exactly why
+`run.py` keeps `_find_best_move_py()` as a genuinely separate
+implementation. Full suites: `fastpy` 386/386 (unchanged), `fastpy-engine`
+292/292 (290 prior + 2 new).
+
+**What's still open:** the threefold-repetition feature (D-101 + D-102
+together) is now reasonably complete at the root level. Three
+candidates remain — down from four, the first net reduction in several
+sessions: in-search-path repetition detection (still the same D-101
+risk reasoning, still unstarted), a smarter `Threads` default (open six
+sessions now, worth asking next session whether to actually pursue it
+or formally close it as "not pursuing"), and opening-book
+transposition-awareness (D-94/D-98, open since Session 55).
+
 ## Session 60 — Threefold-repetition detection, root-only (D-101): find_best_move() checks candidate moves against the game's played-position history; full in-search-path detection deliberately deferred as too risky for one session
 **Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
 `fastpy-engine/native/uci_main.cpp`, `fastpy-engine/tests/test_move_gen.py`

@@ -3806,3 +3806,168 @@ candidate move, as itself an immediate draw) are both real, flagged
 gaps. The two Session 56 carry-overs — a smarter `Threads` default,
 opening-book transposition-awareness (D-94/D-98) — also remain
 untouched, still open, now four sessions running without attention.
+
+## D-102: threefold repetition — the root position itself already having repeated 3 times is now recognized as an immediate draw, closing the gap D-101 explicitly left open
+
+**Session 61.** ROADMAP after Session 60 listed four open candidates
+and was explicit that this needed an actual decision, not a further
+deferral. Of the four — in-search-path repetition detection (flagged
+high-risk in D-101), this session's pick, a smarter `Threads` default
+(open, inconclusive, since Session 56), and opening-book
+transposition-awareness (open since Session 55) — this one was chosen
+deliberately as the low-risk, well-scoped option: a direct, small
+continuation of D-101's own work, closing a gap that session had
+already precisely identified and documented, rather than opening a new
+large front or picking up an item that's stalled for several sessions
+running without a clear path forward.
+
+**The gap:** D-101's root-loop mechanism checked whether a CANDIDATE
+move's resulting position would create a 3rd occurrence. It never
+checked whether the ROOT position — the position sitting there before
+any candidate move is even considered — had ALREADY reached its 3rd
+occurrence. A position can reach that state without any single move
+along the way being "the one that created the 3rd occurrence and had a
+better alternative": e.g. if the opponent, not the engine, made the
+move that produced the repeat, the engine's own root loop in the
+PREVIOUS search (the one before this last opponent move) never got to
+evaluate this exact resulting position as a candidate at all. Left
+unaddressed, the engine would search and report a real, potentially
+large score for an already-drawn position.
+
+**The fix:** in `find_best_move()`, after computing `best_move`/
+`best_score` via the (unmodified) root loop and after storing that
+result to the TT, a new check —
+`repetition_count(game_history, game_history_len, board.hash) >= 3` —
+determines whether the ROOT's own hash has already reached 3 total
+occurrences (the game_history passed in always includes the current
+position as its own last-seeded entry, per D-101's `_apply_position()`/
+`uci_main.cpp` position-handler design, so ">= 3" here means "including
+right now," matching the real FIDE threefold-repetition rule exactly,
+not off-by-one). If true, only `score_out` is overridden to 0;
+`best_move` is left exactly as the real search chose it (a sensible
+legal move is still always returned — UCI needs one regardless of
+whether the position is already drawn).
+
+**Why the TT store is deliberately left untouched:** the same reasoning
+as D-100's `board.hash`/`halfmove_clock` TT-ordering concern applies
+here in a mirrored form. `board.hash` alone doesn't encode "this
+particular game's history has reached this position for the 3rd time"
+— a different game reaching the identical position via a different
+route might have it as only its 1st or 2nd occurrence, a completely
+legitimate non-drawn position with a genuine best_score. The
+`tt_store()` call happens BEFORE this new check and stores the real,
+context-independent `best_score` — exactly the value a future probe
+from a different game context should see. Only the value reported back
+to THIS call's caller (`score_out`) — which is inherently specific to
+THIS game's history — gets the draw override.
+
+**`native/uci_main.cpp` needed zero changes.** The hand-written C++
+driver already passes `position_history.data()` and a correctly-capped
+length into every real `find_best_move()` call (established by D-101),
+and `smp_helper_worker()`'s deliberate empty-history call
+(`nullptr, 0`) safely no-ops against the new check the same way it
+already no-ops against D-101's per-move check
+(`repetition_count(nullptr, 0, anything)` always returns 0, the loop
+body in `repetition_count()` never executes when `history_len == 0`).
+This is a clean confirmation that D-101's architecture — putting the
+mechanism entirely inside `find_best_move()` rather than partially in
+the driver — was the right call: a genuinely new capability slotted in
+with a single-file, single-function change plus its `run.py` mirror.
+
+**`run.py`'s `_find_best_move_py()`** mirrors the identical check and
+identical TT-preservation reasoning, in the same relative position
+(after `tt_store()`, before `return`).
+
+**Verification:**
+- `fastpy check engine.py` — zero errors.
+- Full `training/build_uci_engine.py` build succeeds; `native/uci_main.cpp`
+  needed no edits at all and still links correctly against the changed
+  `find_best_move()` signature (unchanged this session — only its body
+  changed).
+- Decisive live UCI smoke test, before/after comparison on the exact
+  same manufactured position (the 8-move knight-shuffle back to
+  startpos, from D-101's own smoke test): the pre-D-102 binary reported
+  varying non-zero scores per depth (`cp 48`, `16`, `35`, `12`, `28`,
+  `23`...) for this already-3-times-repeated root position; the
+  post-D-102 binary reports `score cp 0` at every single depth (1
+  through 9), while `bestmove` remains a real, sensible move
+  (`d2d3`) rather than degenerating. This is about as direct a
+  confirmation as a live integration test can give for this specific
+  fix.
+- 2 new deterministic unit tests in a new `TestRootAlreadyRepeated`
+  class (`test_move_gen.py`), same white-up-a-queen-and-more contrast
+  pattern as D-100/D-101's boundary tests: `game_history` seeded with
+  the root's own hash 3 times forces `score == 0` despite overwhelming
+  material; seeded with it only 2 times does NOT force the override
+  (the `>= 3` threshold, not `>= 2`, is exact and tested at the
+  boundary). A third planned test — calling `engine.py`'s
+  `find_best_move()` directly in Python mode to check it against
+  `run.py`'s mirror, the same parity-test shape D-101 used for
+  `repetition_count()` — turned out not to be a valid pattern for this
+  particular function and was removed rather than worked around:
+  `find_best_move()` declares `moves: uint64[218]` as a bare
+  annotation with no assignment, which `fastpy check`/compilation
+  understands as a real stack-array declaration but which allocates
+  nothing when the function is called directly as plain Python
+  (`UnboundLocalError` on the very next line that indexes it). This is
+  a pre-existing dialect characteristic — not something this session
+  introduced — and is exactly why `run.py` maintains
+  `_find_best_move_py()` as a genuinely separate Python-mode
+  implementation rather than a thin wrapper, unlike simpler
+  parameter-only functions such as `repetition_count()` where a direct
+  parity call works fine. The compiled side's correctness is instead
+  established by the live UCI smoke test above. Full suites: `fastpy`
+  386/386 (unchanged — no `fastpy`-repo file touched), `fastpy-engine`
+  292/292 (290 prior + 2 new).
+
+**What's still open:** the threefold-repetition feature (D-101 + D-102
+together) is now reasonably complete at the root level. What remains
+unaddressed: in-search-path repetition detection (deferred in D-101
+with detailed risk reasoning — still the same reasoning, still
+unstarted); a smarter `Threads` default (open since Session 56, now
+six sessions without action — genuinely worth asking next session
+whether this is actually a good idea at all, or whether the repeated
+deferral itself is the answer); opening-book transposition-awareness
+(D-94/D-98, open since Session 55). Three candidates now open, down
+from four — the first genuine reduction in the open-items list in
+several sessions rather than a net addition.
+
+## D-103: committing to all three remaining candidates, sequenced across the next three sessions, rather than re-relitigating the choice each session
+
+After Session 61 (D-102) reduced the open-candidates list to three —
+in-search-path repetition detection, a smarter `Threads` default,
+opening-book transposition-awareness — the explicit decision was made
+to do all three, one by one, rather than continuing the pattern of
+picking one per session and leaving the others perpetually open (the
+`Threads` default in particular had already gone six sessions,
+55 through 61, without resolution one way or the other).
+
+**Sequencing, easiest/most-resolvable first:**
+1. **Session 62 — `Threads` default.** Scoped explicitly as a decision
+   task, not necessarily an implementation one: land on a genuinely
+   better default and change it, OR determine the current default is
+   fine and close the item out as "considered, not changing." The
+   six-session stall pattern itself — repeated "reconsidered,
+   inconclusive" passes — suggests the real blocker may be treating
+   this as requiring a code change when it may just need a decision
+   either way.
+2. **Session 63 — opening-book transposition-awareness** (D-94/D-98).
+   Medium scope: extend `OPENING_BOOK` lookup to match by resulting
+   position rather than only by exact played-move prefix.
+3. **Session 64 — in-search-path repetition detection.** Deliberately
+   last: the hardest and highest-risk of the three, per D-101's already-
+   documented reasoning (an ancestor-hash stack pushed/popped around
+   every early-return point in `alpha_beta()`/`quiescence()`, where a
+   single mismatched pop corrupts results silently rather than
+   crashing). Sequenced after two sessions of momentum on the other two,
+   with the intent of giving it the fullest available session budget
+   given the correctness stakes already laid out.
+
+This ordering isn't locked rigidly — a session's own findings can
+reprioritize the ones after it — but the default, absent new
+information surfacing mid-arc, is to work through all three in this
+order rather than re-opening the "what should this session tackle"
+question from scratch each time. Recorded here (not just in ROADMAP)
+because it's a real scoping/process decision with its own rationale,
+matching how this project already logs decisions like D-61's
+re-verification process, not only code-level ones.
