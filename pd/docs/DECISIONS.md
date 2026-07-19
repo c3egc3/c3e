@@ -1826,3 +1826,90 @@ effort — the loss-metric improvement from 5x the data was real. It's
 evidence that the *training configuration* (specifically the
 result-blend mechanism) needs attention before more data or a bigger
 network can be fairly evaluated again.
+
+## D53 — Logit-Saturation Root Cause Fixed: Label Smoothing on the BCE Target (Session 80)
+
+D52's saturation wasn't a data-volume problem — it was the training
+objective itself. BCE against a hard 0/1/0.5 game-result label has no
+finite minimizer; the loss keeps falling as the pre-sigmoid logit is
+pushed toward +/-infinity, and `weight_decay`/`grad_clip_norm`
+(D30/D33) only damp the resulting large gradients, they don't remove
+the incentive. Added `label_smoothing` to `train_nnue.rs` and
+`train_nnue.yml` (default `0.03`, CLI/workflow-configurable, `0`
+reproduces exact pre-fix behavior): maps the blended `[0,1]` target
+into `[label_smoothing, 1-label_smoothing]` before BCE, so the
+objective's own minimizer corresponds to a finite logit instead of an
+unbounded one. Math check: at `label_smoothing=0.03` the theoretical
+best-case target for a decisive row is ~1390cp — barely below the
+1500cp hard clamp in `inference.rs` — which is why `0.03` alone barely
+moved the `eval_diag.yml` reading even though the fix was real (see
+D55 for the full sweep this motivated).
+
+## D54 — `eval_diag.yml` Does Not Reliably Predict Match Strength (Session 80)
+
+Discovered while sweeping `label_smoothing`: the network with the
+*best-looking* static calibration (`0.30`, 0/8 test positions
+saturated, magnitudes close to HCE) produced the *worst* actual match
+result (18-0-2 vs HCE, +511.5 Elo) of the whole sweep — worse than
+`0.03`'s 5/8-saturated network. `eval_diag.yml` checks 8 isolated
+positions' absolute magnitude against HCE; it says nothing about how
+well the network discriminates between two similar positions a move
+apart, which is what actually drives move ordering and search quality
+during real play. Leading theory: heavier label smoothing compresses
+the target range further, which may flatten the network's sensitivity
+to small positional differences even as it looks more "reasonable" on
+a handful of cherry-picked static positions.
+**Consequence**: `eval_diag.yml` stays useful as a cheap pre-filter for
+gross failures (sign errors, full clamp saturation) before spending a
+20-game match run, but it must never again be used alone to rank or
+select between checkpoints that already pass the sanity check — only
+`uci_match_runner.yml` results decide that. Every checkpoint in D55's
+sweep was match-tested for exactly this reason once D54 was found.
+
+## D55 — NNUE Re-Parked at `label_smoothing=0.10`, NNUEWeight Stays 0% Default (Session 80)
+
+Full sweep of `label_smoothing` post-D53-fix, all six values trained
+on the same 2.48M-row 23.3 dataset (`lambda=0.7`, `hidden_size=32`,
+10 epochs, seed=42 fixed throughout — single-variable test), and — per
+D54 — every value validated with a real 20-game `uci_match_runner.yml`
+HCE(0%)-vs-NNUE(100%) match, not just `eval_diag.yml`:
+
+| label_smoothing | eval_diag saturated | Match (HCE score / Elo) |
+|---|---|---|
+| 0.03 | 5/8 | not match-tested |
+| 0.05 | 3/8 | 95.0% / +511.5 |
+| 0.08 | 3/8 | 92.5% / +436.4 |
+| **0.10** | **3/8** | **87.5% / +338.0 ← best** |
+| 0.15 | 6/8 (bad checkpoint) | not match-tested |
+| 0.30 | 0/8 | 95.0% / +511.5 |
+
+`0.10` is a clean, well-bracketed local optimum — monotonic
+improvement `0.05→0.08→0.10`, then a cliff at `0.30`, not a single
+lucky sample. Notably, `0.10`'s result (17W-2L-1D, 87.5%, +338 Elo) is
+numerically identical to the very first NNUE blend test ever run on
+this project (17.4/D25, a 25%-blend test against the old pre-fix
+network) — after fixing the saturation bug and sweeping six values,
+NNUE is back to roughly its original-ever performance level relative
+to HCE, not ahead of it. Real progress from the pre-fix 20-0 shutout
+(sign-correct now, non-degenerate, genuine but limited magnitude
+discrimination), but not competitive.
+
+**Decision**: ship as-is rather than continue chasing parity.
+`nnue_pet_dragon_quantized.bin` committed at the `label_smoothing=0.10`
+checkpoint. `NNUEWeight` stays at its 0% default (unchanged since D25)
+— the network is available as a UCI option for anyone who wants to
+enable it, but is not on the default search path. Re-parked.
+
+**Reopening conditions**, if NNUE is revisited again: the `label_smoothing`
+axis is exhausted (bracketed local optimum found, further sweeping this
+one knob is unlikely to help). Next levers, in order of expected
+leverage-to-effort: (1) the material-bucket confidence-gating idea
+(use NNUE only in board-material buckets well-represented in training
+data, HCE elsewhere — cheap, reuses the existing tapered-eval phase
+signal, no new ML infra) discussed but not built this session; (2)
+`hidden_size` increase (32→64+) or a genuinely larger dataset, both
+higher-effort with no strong signal yet that capacity/data (rather
+than the training objective) is the remaining bottleneck; (3) 23.5's
+king-relative bucketed-feature architecture upgrade, explicitly
+sequenced last since it's the largest effort and depends on the
+smaller levers being exhausted first.

@@ -7,6 +7,64 @@ Most recent session at TOP.
 
 ---
 
+## Session 80 — 2026-07-19 (23.3b: NNUE saturation bug fixed, swept, re-parked — D53/D54/D55)
+
+**Built/done, roughly in order:**
+
+1. **Root-caused and fixed D52's logit saturation** (D53): BCE against
+   the hard 0/1/0.5 game-result label has no finite minimizer, not a
+   data-volume or weight_decay/grad_clip_norm-strength problem as
+   D52 speculated. Added `label_smoothing` param to `train_nnue.rs`
+   and `train_nnue.yml` (workflow input, default `0.03`), bounding the
+   BCE target into `[label_smoothing, 1-label_smoothing]`.
+2. **Swept 6 label_smoothing values** against the existing 2.48M-row
+   23.3 dataset (0.03/0.05/0.08/0.10/0.15/0.30), each match-tested with
+   a real 20-game `uci_match_runner.yml` run, not just `eval_diag.yml`.
+3. **Found and documented D54**: `eval_diag.yml`'s static 8-position
+   calibration check does not reliably predict match strength — the
+   best-looking diagnostic (`0.30`, 0/8 saturated) produced the worst
+   match result of the sweep. Discovered by chasing the diagnostic
+   number for two rounds before checking match results caught the
+   mismatch; `eval_diag.yml` is now treated as a pre-filter only, never
+   a ranking signal, going forward.
+4. **`label_smoothing=0.10` confirmed as a clean local optimum**
+   (D55) — monotonic 0.05→0.08→0.10 improvement, cliff at 0.30.
+   Result: 17W-2L-1D, 87.5%, +338 Elo for HCE — real progress from
+   the pre-fix 20-0 shutout (sign-correct, non-degenerate now), but
+   not competitive with HCE, and numerically identical to the very
+   first NNUE blend test this project ever ran (17.4/D25).
+5. **Decision (D55): ship as-is, re-park.** `label_smoothing=0.10`
+   checkpoint committed to `src/nnue/weights/nnue_pet_dragon_quantized.bin`.
+   `NNUEWeight` stays 0% default (unchanged since D25) — network
+   available as a UCI option, not on the default search path.
+6. **Discussed but did not build**: material-bucket confidence-gating
+   (route to NNUE only in board-material buckets well-represented in
+   training data, HCE elsewhere) — logged as the top reopening lever
+   in D55, not started.
+
+**Files changed this session:**
+- `src/bin/train_nnue.rs` — `label_smoothing` param (D53)
+- `.github/workflows/train_nnue.yml` — `label_smoothing` workflow input
+- `src/nnue/weights/nnue_pet_dragon_quantized.bin` — `label_smoothing=0.10`
+  checkpoint (confirm this is the version actually committed — several
+  networks were swapped in/out during the sweep; the last one sent was
+  the `0.10` checkpoint and should be the one that stuck)
+
+**Bugs fixed:** D52's logit saturation (root cause, not just symptom
+— see D53).
+
+**Decisions made:** D53, D54, D55 (all in DECISIONS.md).
+
+**Next session start point:** 23.3b is DONE/re-parked. Read
+ROADMAP.md's 23.4 (variant opening statistics) as the next unblocked
+item, or pick up the material-bucket gating idea from D55's reopening
+list if NNUE work continues instead. Before either: confirm with Gokul
+that `nnue_pet_dragon_quantized.bin` on `main` is in fact the
+`label_smoothing=0.10` checkpoint (verify via match_runner one more
+time if any doubt — several swaps happened this session).
+
+---
+
 ## Session 79 — 2026-07-18 (Phase 23.3 compute done, NNUE retrained and re-parked — D52)
 
 **Built/done, roughly in order:**

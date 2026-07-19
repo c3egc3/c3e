@@ -1149,22 +1149,31 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              settle the data-volume question one way or another) are
              now unblocked to proceed independently of whether 23.3b
              resolves NNUE, since they don't depend on NNUE specifically.
-- [ ] 23.3b — NNUE logit-saturation fix (D52, Session 79). Leading
-             hypothesis: `train_nnue.rs`'s `lambda=0.7` blend leaves 30%
-             loss weight on the raw game-result (hard 0/1/0.5) label for
-             self-play rows; BCE-on-logits against a hard target has no
-             natural ceiling, so that component rewards the network
-             pushing its raw output toward extreme, saturated logits.
-             `weight_decay=0.01`/`grad_clip_norm=1.0` (D30/D33) apparently
-             aren't enough to counter this at 5x the old data volume.
-             Proposed first experiment: retrain with `lambda` raised
-             toward 0.9-1.0 (less/no hard-label pull), same data, same
-             architecture — a clean single-variable test. Whether to
-             adjust `weight_decay`/`grad_clip_norm` too, or in place of
-             lambda, is an open call for the next session, not decided
-             yet. Ease: Small (hyperparameter-only retrain, same
-             infrastructure). Size: unknown until tested — could fully
-             resolve NNUE's practical viability, or reveal a deeper issue.
+- [x] 23.3b — NNUE logit-saturation fix (D52 → D53/D54/D55, Session 80).
+             DONE — fixed and re-parked, not left broken. Root cause
+             confirmed (D53): BCE against the hard 0/1/0.5 game-result
+             label has no finite minimizer, so `train_nnue.rs` rewarded
+             pushing raw output toward the ±1500cp clamp regardless of
+             true position value. Fix: `label_smoothing` param added to
+             `train_nnue.rs` and `train_nnue.yml`, mapping the blended
+             `[0,1]` target into `[label_smoothing, 1-label_smoothing]`
+             before BCE — bounds the objective's own minimizer instead of
+             only reacting to it via `weight_decay`/`grad_clip_norm`.
+             Swept 6 values (`0.03/0.05/0.08/0.10/0.15/0.30`) against the
+             2.48M-row 23.3 dataset, each validated with a real 20-game
+             `uci_match_runner.yml` HCE-vs-NNUE match, not just
+             `eval_diag.yml` — D54 found the two disagree, sometimes
+             sharply (the best-looking diagnostic, 0.30, produced the
+             *worst* match result). `label_smoothing=0.10` is a clean,
+             well-bracketed local optimum (17W-2L-1D, 87.5%, +338 Elo for
+             HCE) — real progress from the pre-fix 20-0 shutout, network
+             is now sign-correct and non-degenerate, but still not
+             competitive with HCE. Decision (D55): ship as-is.
+             `nnue_pet_dragon_quantized.bin` committed at the
+             `label_smoothing=0.10` checkpoint; `NNUEWeight` stays at 0%
+             default (unchanged since D25) — network available as a UCI
+             option for anyone who wants to enable it, not the default
+             search path. Re-parked; see D55 for reopening conditions.
 - [ ] 23.4 — Variant-specific opening statistics. No aggregation of
              self-play results into a root-level move-preference table
              exists. No curated opening theory can substitute — 2.16M
