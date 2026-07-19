@@ -4023,3 +4023,83 @@ counts exactly.
 opening-book transposition-awareness (D-94/D-98, next up, Session 63)
 and in-search-path repetition detection (Session 64, deliberately last
 given D-101's risk profile).
+
+## D-106: Opening-book transposition-awareness via a position-hash fallback layer, table stays exact-prefix data (Session 63)
+
+Closed D-103's second sequencing item. Scope, decided before writing any
+code: extend the LOOKUP, not the TABLE. `OPENING_BOOK` (`run.py`) and
+`kOpeningBook` (`native/uci_main.cpp`) stay exactly what they were —
+hand-authored, exact-move-sequence-prefix data, validated at authoring
+time (D-98). What changed is what happens when an exact-prefix lookup
+misses: a new position-hash index, built once from the same table, is
+consulted as a fallback before giving up and falling through to a real
+search.
+
+**Why a fallback layer instead of restructuring the table itself:** the
+table's exact-prefix keys are still useful as the PRIMARY lookup — they
+'re guaranteed correct by construction (D-98 already validated every
+prefix's legality) and cheaper to check for the common case (a game
+that's actually playing through a book line move-for-move). Rebuilding
+the whole table to be hash-keyed from the start would throw that away
+for no benefit, since the hash index can simply be derived from the
+existing table automatically.
+
+**Mechanism:** `OPENING_BOOK_BY_HASH` (`run.py`, built at import time)
+and `opening_book_by_hash()` (`native/uci_main.cpp`, built lazily on
+first use via a function-local static) both replay every table entry's
+prefix from `startpos()`, using the exact same `make_move()`/
+`find_legal_move()` (or `_parse_uci_move()` in Python) the real UCI loop
+itself uses to apply moves, and record the resulting position's Zobrist
+hash. `_book_lookup()`/`book_lookup()` try the original exact-prefix
+match first — unchanged, so every existing straight-line book game keeps
+byte-for-byte pre-session behavior — and only consult the hash index on
+a miss.
+
+**Safety net:** a hash-based hit is re-checked for legality in the
+current position (via the legal move generator) before being trusted.
+This isn't defending against a design flaw — Zobrist hashing already
+encodes exactly what "same position" needs to mean (pieces, side to
+move, castling rights, en passant availability), so two different move
+orders reaching a genuinely identical position collide to the same key
+by construction. The check is specifically insurance against the residual,
+vanishingly unlikely case of a real 64-bit hash collision between two
+UNRELATED positions — cheap (one linear scan of an already-generated
+legal move list) and worth having for a public-facing UCI response that
+could otherwise hand back an illegal move on a one-in-billions coincidence.
+
+**A real subtlety found and worked around during verification, not
+introduced by this session:** this engine's `make_move()` sets the
+en-passant-square field on ANY pawn double push, regardless of whether
+an enemy pawn is actually positioned to capture it — a broader flag than
+strict FIDE "same position" semantics, which only count en passant when
+a capture is genuinely possible. This means two move orders that are
+"the same position" by piece placement alone can still hash differently
+if their respective LAST moves differ in whether they were a pawn double
+push (e.g. `1.Nf3 d5 2.d4` vs `1.d4 d5 2.Nf3` — same pieces, but the
+first ends on a pawn double push with a "live" ep flag, the second on a
+knight move with none). This is a pre-existing characteristic of this
+engine's hash computation (relevant to D-100's threefold-repetition work
+too, not something D-105/D-106 introduced), not a bug in the
+transposition mechanism itself — it just means not EVERY intuitive
+transposition hashes identically here. The verification test picked for
+this session (`1.e4 c5 2.Nf3 d6` vs `1.Nf3 c5 2.e4 d6`) was deliberately
+chosen to end on a single pawn push in both orders, sidestepping this
+subtlety rather than being accidentally invalidated by it.
+
+**Verified:** function-level (`TestOpeningBookTransposition` in
+`test_move_gen.py`, 5 new tests: no accidental hash collisions among the
+existing 46 entries, a genuine transposition hashes identically, the
+fallback fires and returns the right reply, the exact-prefix match still
+wins when both would apply, an off-book position correctly returns
+`None`, the no-`board`-argument case stays backward compatible) and
+subprocess/binary-level (`test_book_transposition_hit_over_real_uci_
+subprocess` in `test_uci.py`, plus a live smoke test against the rebuilt
+native binary — transposed order returns `bestmove d2d4` in ~17ms, no
+search log lines, matching the exact-order line's own response). Full
+suite: `fastpy-engine` 299/299 (292 + 7 new). `engine.py` untouched —
+this is driver-level UCI logic per Core Rule 4, the same scoping D-94
+already established for the book itself.
+
+**What's still open:** one candidate remains per D-103 — in-search-path
+repetition detection (Session 64, deliberately last given D-101's risk
+profile). With that done, D-103's three-item arc closes.

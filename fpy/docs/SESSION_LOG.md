@@ -2,6 +2,62 @@
 
 Append-only. One entry per session. Most recent at top.
 
+## Session 63 — Opening-book transposition-awareness (D-106): position-hash fallback layer added on top of the existing exact-prefix table, table itself untouched
+**Status:** COMPLETE ✅ — `fastpy-engine/run.py`,
+`fastpy-engine/native/uci_main.cpp`, `fastpy-engine/tests/test_move_gen.py`,
+`fastpy-engine/tests/test_uci.py` changed. Docs updated:
+`docs/DECISIONS.md` (D-106), `docs/ROADMAP.md`, this entry.
+
+**Baseline check first (per the D-61/D-65 PROCESS rule):** pulled fresh
+`main` for both repos. `fastpy` 386/386, `fastpy-engine` 292/292 —
+matches Session 62's logged counts.
+
+**Task:** D-103's sequencing item 2 — extend `OPENING_BOOK`
+(D-94/D-98) lookup to match by resulting position, not only by exact
+played-move prefix, open since Session 55.
+
+**Scope decided before writing code:** extend the LOOKUP, not the
+TABLE. `OPENING_BOOK`/`kOpeningBook` stay exactly the hand-authored,
+exact-prefix data they were. A new position-hash index
+(`OPENING_BOOK_BY_HASH` in `run.py`, `opening_book_by_hash()` in
+`native/uci_main.cpp`) is derived from that same table — built once by
+replaying every entry's prefix from `startpos()` and recording the
+resulting `board.hash` — and consulted only as a FALLBACK when the
+original exact-prefix lookup misses, so every existing straight-line
+book game keeps byte-for-byte pre-session behavior. A hash-based hit is
+re-checked for legality before being trusted, cheap insurance against a
+genuine 64-bit hash collision.
+
+**A real subtlety surfaced during verification, not introduced this
+session (see D-106 for the full writeup):** this engine's en-passant
+flag is set on any pawn double push regardless of whether it's actually
+capturable, so not every intuitive transposition hashes identically —
+e.g. `1.Nf3 d5 2.d4` vs `1.d4 d5 2.Nf3` differ (one ends on a pawn
+double push with a live ep flag, the other doesn't). The verification
+transposition used instead — `1.e4 c5 2.Nf3 d6` vs `1.Nf3 c5 2.e4 d6` —
+was chosen to end on a single pawn push in both orders, sidestepping
+this pre-existing characteristic rather than being tripped up by it.
+
+**Verification:** 5 new function-level tests
+(`TestOpeningBookTransposition` in `test_move_gen.py` — no accidental
+collisions among the 46 existing entries, a genuine transposition
+hashes identically, the fallback returns the right reply, exact-prefix
+still wins when both would match, off-book returns `None`, no-`board`
+argument stays backward compatible) plus 1 new subprocess-level test
+(`test_uci.py`) confirming the transposed line gets an instant
+`bestmove d2d4` with zero search. Native binary rebuilt via
+`training/build_uci_engine.py`, live-smoke-tested: exact-order hit,
+transposed-order hit (~17ms, matches the exact order's reply), off-book
+fallthrough still searches correctly, depth-1/perft baseline
+unaffected. Full suite: `fastpy-engine` 299/299 (292 + 7 new).
+`engine.py` untouched — driver-level logic per Core Rule 4, same
+scoping D-94 already used for the book itself.
+
+**What's still open:** the last of D-103's three candidates —
+in-search-path repetition detection (Session 64, deliberately last
+given D-101's risk profile). With that done, D-103's arc closes and the
+session after should pick a genuinely fresh area.
+
 ## Session 62 — `Threads` default finalized at 1, closing a six-session-open item (D-104): comment-only change, no behavior difference
 **Status:** COMPLETE ✅ — `fastpy-engine/native/uci_main.cpp` changed
 (comment only). Docs updated: `docs/DECISIONS.md` (D-104),

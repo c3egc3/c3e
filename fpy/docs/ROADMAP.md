@@ -885,24 +885,46 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       difference expected or found. `fastpy` 386/386, `fastpy-engine`
       292/292 (both reconfirmed against fresh `main` before starting,
       per the D-61/D-65 PROCESS rule).
-- [ ] **NEXT UP (Session 63):** two candidates remain, per D-103's
-      sequencing:
-      1. **Session 63 — opening-book transposition-awareness**
-         (D-94/D-98). Still exact-prefix-match only, open since Session
-         55. Medium scope: extending `OPENING_BOOK` lookup to match by
-         position (transposition) rather than only by exact played-move
-         prefix.
-      2. **Session 64 — in-search-path repetition detection.** The
-         hardest and highest-risk of the two (D-101's detailed risk
-         reasoning still applies: a `ply`-indexed ancestor-hash stack
-         pushed/popped around every early-return point in
-         `alpha_beta()`/`quiescence()`, where a single mismatched pop
-         silently corrupts results rather than crashing). Deliberately
-         sequenced LAST, with the fullest possible session budget
-         available, given the correctness stakes D-101 already laid out.
-      This ordering can be revisited if Session 63's own findings change
-      the picture — but the default, absent new information, is to do
-      Session 63 next.
+- [x] **Session 63 — opening-book transposition-awareness: resolved,
+      see D-106.** Open since Session 55, closed via a lookup-layer
+      addition, not a table redesign: `OPENING_BOOK`/`kOpeningBook`
+      themselves stay exact-prefix, hand-authored data exactly as
+      before; a new position-hash index (`OPENING_BOOK_BY_HASH` in
+      `run.py`, `opening_book_by_hash()` in `native/uci_main.cpp`) is
+      built once (import time / lazily on first use respectively) by
+      replaying every entry's prefix from startpos and recording the
+      resulting `board.hash`. `_book_lookup()`/`book_lookup()` try the
+      original exact-prefix match FIRST (unchanged priority, so every
+      existing straight-line book game keeps byte-for-byte pre-Session-63
+      behavior) and only fall back to the hash index on a miss — and a
+      hash-based hit is re-checked for legality in the current position
+      before being trusted, cheap insurance against a genuine 64-bit
+      Zobrist collision. Verified with a real, naturally-occurring
+      transposition (not a synthetic table edit): `1.e4 c5 2.Nf3 d6`
+      (an existing book entry, reply `d2d4`) and `1.Nf3 c5 2.e4 d6`
+      (White's two independent developing moves swapped) reach the
+      byte-for-byte identical position — confirmed directly, both at the
+      function level and over a real UCI subprocess/compiled binary —
+      and the transposed order gets the same instant `d2d4` reply with
+      no search run. 7 new tests (`TestOpeningBookTransposition` in
+      `test_move_gen.py`, one new subprocess-level test in `test_uci.py`).
+      `fastpy-engine` 299/299 (292 + 7 new). Native binary rebuilt via
+      `training/build_uci_engine.py` and smoke-tested (exact-order hit,
+      transposed-order hit at ~17ms, off-book fallthrough still searches
+      correctly, perft/depth-1 baseline unaffected). `engine.py`
+      untouched — this is driver-level logic per Core Rule 4/D-94's
+      original scoping, not FastPy dialect.
+- [ ] **NEXT UP (Session 64):** the last of D-103's three candidates —
+      in-search-path repetition detection. The hardest and highest-risk
+      of the three (D-101's detailed risk reasoning still applies: a
+      `ply`-indexed ancestor-hash stack pushed/popped around every
+      early-return point in `alpha_beta()`/`quiescence()`, where a single
+      mismatched pop silently corrupts results rather than crashing).
+      Sequenced last per D-103, with the fullest possible session budget
+      available, given the correctness stakes D-101 already laid out.
+      With this done, D-103's three-item arc is complete — the session
+      after should pick a genuinely fresh area rather than defaulting to
+      more repetition/book work.
 
 ---
 
