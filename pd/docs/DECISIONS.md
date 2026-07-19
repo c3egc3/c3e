@@ -2003,3 +2003,92 @@ infrastructure, a schema-breaking retrain, or a new data pipeline),
 not a quick, low-risk try. D55's original reopening-lever list is
 superseded by this one; treat this entry as the current status instead
 of D55's for anyone resuming NNUE work.
+
+## D59 — Singular Extension Family: Multi-Cut Pruning + Negative Extensions (Session 82)
+
+Extended Phase 13.3's base singular extension with two Stockfish-family
+siblings, both reusing the existing verification search's result rather
+than doing any extra search work. Multi-cut: if the reduced-depth
+search that excludes the TT move still reaches `singular_beta`, at
+least one *other* move also refutes at that margin — the position is
+being cut multiple different ways, so the whole node is pruned right
+there (`return singular_beta`), before move generation. This is the
+same "early return, skip TT store" shape probcut and razoring already
+use elsewhere in `alpha_beta.rs` — not a new pattern introduced for
+this. Negative extension: if verification did *not* confirm
+singularity, but the TT move's own recorded score already meets beta,
+the TT entry is telling us this is very likely a cutoff regardless —
+reduce (not extend) the TT move's own search rather than spend extra
+depth re-confirming what the TT already suggests. Reduces by 1 ply more
+in non-PV nodes than PV nodes (`-1` PV / `-2` non-PV), matching
+Stockfish's `-2 - !PvNode` shape.
+
+Implementation: `alpha_beta.rs`'s singular block generalized from a
+boolean `singular_extension` flag (always `+1` or `0`) to a signed
+`tt_move_extension` (`+1` / `-1` / `-2` / `0`), applied only to the TT
+move via `move_ext` (renamed from `singular_ext` at all 4 PVS-block use
+sites — `depth - 1 + move_ext`, unchanged arithmetic shape, just a
+wider range of values now). A negative `move_ext` can push
+`depth - 1 + move_ext` below zero for the TT move's own recursive call;
+this is safe and already handled — `alpha_beta_with_excluded`'s
+`depth <= 0` branch drops straight to `quiescence()`, same path any
+other depth-exhausted node takes.
+
+No existing test exercised this logic before (confirmed via grep — no
+`singular` test in `alpha_beta.rs` or `pruning.rs`), so this carried no
+risk of silently changing a previously-tested behavior. One new test
+added (`test_search_at_singular_extension_depth_no_panic`, depth 7,
+5 seeds) checks the search stays bounded and legal at a depth where
+this code path is live; it does not assert which of the three branches
+(extend/multi-cut/negative-extend) fires for any given seed, since
+that's position- and TT-state-dependent and not meaningful to pin down
+per-seed.
+
+⚠️ Not yet Elo-measured — same open item as D49/23.2's thread-
+differentiated Lazy SMP. A real `uci_match_runner.yml` run (not just
+`cargo test` passing) is the way to quantify this, not done this
+session.
+
+⚠️ Not yet CI-confirmed to compile/pass at all — see D60's note, same
+caveat applies to both of this session's changes together.
+
+## D60 — Late Move Pruning (LMP) (Session 82)
+
+New technique, distinct from LMR: LMR still searches a late quiet move,
+just at reduced depth, so a re-search can recover a buried tactic. LMP
+instead skips the move outright once enough quiet moves have already
+been tried at this node without raising alpha — Stockfish/Ethereal-
+family technique, accepting that moves ordered this late at this
+shallow a depth essentially never turn out to matter.
+
+New `MAX_DEPTH_LMP = 8` constant (`mod.rs`) and
+`pruning::lmp_threshold()` / `should_apply_lmp()`, wired into
+`alpha_beta.rs`'s move loop immediately after the existing futility-
+pruning block (same guard shape: non-PV only, never in check or on a
+checking move, never near mate-range alpha/beta scores). Threshold
+table: `[0, 3, 4, 6, 9, 12, 16, 20, 25]` indexed by depth 0-8.
+
+Stockfish and Ethereal both differentiate this threshold by an
+"improving" flag (is static eval better than it was two plies ago for
+this side) — a higher threshold when improving, lower when not. Pet
+Dragon's `alpha_beta` doesn't track an improving flag anywhere
+currently; adding one is a real, separate change (needs a per-ply
+static-eval history thread through the search) with its own risk
+surface, not something to bundle silently into this session. This
+implementation uses the single, more conservative ("non-improving")
+threshold uniformly at every node instead — it can only prune *fewer*
+quiet moves than an improving-aware version would, never more, so it's
+a safe default pending that follow-up. If revisited: add an
+`improving: bool` parameter alongside the existing `pv_node`/`in_check`
+signature pattern already used throughout `alpha_beta.rs`, and give
+`lmp_threshold` a second (higher) table for the improving case.
+
+⚠️ Same two caveats as D59: not yet Elo-measured, and not yet
+CI-confirmed. This session's sandbox had no reachable Rust toolchain
+(rustup's domain isn't in the network allowlist, and cargo/rustc
+weren't pre-installed) — verification was full manual review of both
+changed files, a brace/paren/bracket balance check, and a diff against
+freshly-pulled pristine source confirming only the intended lines
+changed, not an actual `cargo test` run. **Next session's first action
+should be confirming these changes build and pass CI before relying on
+anything else about them.**

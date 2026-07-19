@@ -7,6 +7,90 @@ Most recent session at TOP.
 
 ---
 
+## Session 82 — 2026-07-19 (23.6/23.7: singular-extension multi-cut + negative extensions, Late Move Pruning — D59/D60)
+
+**Built/done, in order:**
+
+1. **Ran a competitive-analysis pass on request** (not a Phase 23 item
+   itself — a fresh ad-hoc comparison against current-gen top engines,
+   Stockfish 18/SFNNv10 specifically, via web search). Conclusion:
+   search is essentially state-of-the-art (Pet Dragon's pruning/
+   extension suite matches what top engines converged on), eval is the
+   real gap (flat 896-input NNUE, ~2.5M training rows vs. tens of
+   billions, still loses to HCE) — consistent with and not
+   contradicting the Session 74 analysis already embedded as Phase 23.
+   Found two small, real search deltas not yet in Phase 23: Stockfish's
+   singular extension now includes multi-cut/negative-extension
+   siblings (Pet Dragon had the base technique only), and no explicit
+   Late Move Pruning distinct from LMR.
+2. **Read `alpha_beta.rs`, `pruning.rs`, `mod.rs`, `ordering.rs` in
+   full** (fresh via `raw.githubusercontent.com`, not assumed from
+   ENGINE_ARCHITECTURE.md's summary) before writing anything, per the
+   mandatory read-before-write rule.
+3. **Implemented D59 — multi-cut pruning + negative extensions**,
+   extending Phase 13.3's base singular extension. `alpha_beta.rs`'s
+   singular block generalized from a boolean `singular_extension` flag
+   to a signed `tt_move_extension` (+1 singular / -1 PV / -2 non-PV
+   negative-extension / 0 default). Multi-cut returns early
+   (`return singular_beta`) before move generation, same shape as the
+   existing probcut/razoring early returns — not a new pattern in this
+   codebase. Renamed `singular_ext` → `move_ext` at all 4 use sites in
+   the PVS block (still applied only to the TT move).
+4. **Implemented D60 — Late Move Pruning (LMP)**, distinct from LMR:
+   skips late quiet moves outright (not just reduced) once a
+   depth-indexed quiet-move-count threshold is passed. New
+   `MAX_DEPTH_LMP` constant (`mod.rs`), new `lmp_threshold()` /
+   `should_apply_lmp()` (`pruning.rs`), wired into `alpha_beta.rs`'s
+   move loop right after the existing futility-pruning block. Uses a
+   single conservative ("non-improving") threshold table rather than
+   the improving-flag-differentiated version Stockfish/Ethereal use —
+   Pet Dragon's `alpha_beta` doesn't track an "improving" flag at all
+   currently, and adding one is a separate, real change with its own
+   risk surface, not bundled into this session.
+5. **Added 9 new unit tests**: 8 for `lmp_threshold`/`should_apply_lmp`
+   in `pruning.rs` (monotonicity, out-of-range clamping, each guard
+   condition individually, threshold boundary), 1 in `alpha_beta.rs`
+   at depth 7 (>= `MIN_DEPTH_SINGULAR`) across 5 seeded positions,
+   asserting the search stays bounded and returns a legal move — this
+   exercises D59's new branches without asserting which one fires
+   (position/TT-state dependent, not deterministic).
+6. **Could not run `cargo test` this session** — no local Rust
+   toolchain reachable (rustup's domain isn't in the sandbox's network
+   allowlist, and no cargo/rustc was pre-installed). Verified instead
+   by: full manual review of both changed files, a brace/paren/bracket
+   balance check, and a diff against the freshly-pulled pristine source
+   confirming only the intended lines changed. **Flagged explicitly as
+   a real test risk** — the next CI run on `main` is the first actual
+   confirmation these compile and pass.
+
+**Files changed this session:**
+- `src/search/alpha_beta.rs` — D59 (multi-cut/negative extension),
+  D60 (LMP call site), 1 new test
+- `src/search/pruning.rs` — D60 (`lmp_threshold`, `should_apply_lmp`),
+  8 new tests
+- `src/search/mod.rs` — `MAX_DEPTH_LMP` constant
+
+**Bugs fixed:** None — new capability on top of existing, working
+search code; no prior behavior touched except the rename of
+`singular_ext` to `move_ext` (mechanical, same value in the one case
+that already existed — `+1` — behavior only changes in the two new
+cases that didn't exist before, multi-cut and negative extension).
+
+**Decisions made:** D59 (singular-extension family: multi-cut +
+negative extensions), D60 (Late Move Pruning). Both in `DECISIONS.md`.
+
+**Next session start point:** ⚠️ First priority: **confirm this
+session's changes actually build and pass `cargo test` in CI** — push
+to a branch/PR and check the `build`/`regression-gate` workflow output
+before trusting anything else about this session's code. If green: Elo
+impact of D59/D60 isn't measured yet (same open item as 23.2's
+thread-differentiated Lazy SMP) — a real `uci_match_runner.yml` run
+would quantify it. If NNUE work resumes instead, start from D58's three
+remaining options. Otherwise ROADMAP.md's 23.4 (variant opening
+statistics) is still the next unblocked *new* item.
+
+---
+
 ## Session 81 — 2026-07-19 (23.3c: pawn-feature redesign scoped-not-shipped, phase-balance oversampling tried, re-parked — D56/D57/D58)
 
 **Built/done, in order:**

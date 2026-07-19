@@ -1214,6 +1214,41 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              won't outperform a smaller one. Ease: Large (new feature
              indexing, retraining pipeline, quantization changes).
              Size: Large.
+- [x] 23.6 — Singular extension family: multi-cut pruning + negative
+             extensions (D59, Session 82). Extends Phase 13.3's base
+             singular extension with two Stockfish-family siblings that
+             reuse the same verification search result: multi-cut
+             (verification still reaches singular_beta ⇒ at least one
+             other move also refutes ⇒ prune the whole node early, same
+             shape as probcut's early return) and negative extension
+             (verification didn't confirm singularity but the TT move's
+             own score already meets beta ⇒ reduce rather than extend
+             the TT move, -1 in PV nodes / -2 in non-PV). `alpha_beta.rs`
+             singular block generalized from a boolean `singular_extension`
+             flag to a signed `tt_move_extension` (was always +1 or 0,
+             now +1 / -1 / -2 / 0), applied only to the TT move via
+             `move_ext` (renamed from `singular_ext`). Not gated behind
+             ⚠️ — new unit tests added, no existing test touched this
+             logic before (verified via grep), full rationale in
+             `DECISIONS.md` D59. ⚠️ Elo impact not yet measured — same
+             caveat as 23.2, needs a real `uci_match_runner.yml` run to
+             quantify, not yet done.
+- [x] 23.7 — Late Move Pruning (LMP) (D60, Session 82). New technique,
+             distinct from LMR: skips late quiet moves outright at
+             shallow depth (`MAX_DEPTH_LMP = 8`) once the quiet-move
+             count for this node passes a depth-indexed threshold,
+             instead of just reducing them. Non-PV only, never in
+             check/giving check, never near mate-range alpha/beta —
+             same guard shape as the existing futility-pruning block.
+             `pruning::lmp_threshold()` / `should_apply_lmp()` (new,
+             with unit tests), wired into `alpha_beta.rs`'s move loop
+             right after futility pruning. Uses a single conservative
+             ("non-improving") threshold table rather than the
+             improving-flag-differentiated version Stockfish/Ethereal
+             use, since Pet Dragon's `alpha_beta` doesn't track an
+             "improving" flag at all yet — adding that is a separate,
+             untaken change (see D60 for the full rationale). ⚠️ Elo
+             impact not yet measured, same as 23.6.
 
 
 **Confirmed via Session 71's real CI `cargo test` log (rustc 1.97.0,
@@ -1232,7 +1267,17 @@ priority, not blocking anything.
 | src/bin/uci_match_runner.rs | 12  | ✅     |
 | src/bin/match_runner.rs   | 6     | ✅     |
 | src/bin/eval_diag.rs, texel_diag.rs, texel_gen.rs, texel_tune.rs, train_nnue.rs, selfplay.rs | 0 each (no #[test] fns yet) | — |
-| **TOTAL** | **521 run, 521 passed, 0 failed, 5 ignored** | ✅ |
+| **TOTAL** | **521 run, 521 passed, 0 failed, 5 ignored** (Session 71) | ✅ |
+
+⚠️ **Session 82 added 9 new unit tests** (8 in `pruning.rs` for
+`lmp_threshold`/`should_apply_lmp`, 1 in `alpha_beta.rs` exercising the
+depth-7 singular-extension path) — expected new total 530, but this is
+**not yet CI-confirmed**: no local Rust toolchain was reachable in that
+session's sandbox (rustup's domain isn't in the network allowlist), so
+changes were verified by careful manual review, brace/paren balance
+check, and diff-against-source rather than an actual `cargo test` run.
+Confirm the real number from the next CI run on `main` before treating
+530 as authoritative.
 
 ---
 
