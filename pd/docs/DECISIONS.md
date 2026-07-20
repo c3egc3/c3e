@@ -2259,3 +2259,53 @@ alongside HCE/NNUE for Pet Dragon right now — each either needs an
 architecture Pet Dragon doesn't have (GPU, MCTS) or training data it
 doesn't have (all the neural options), consistent with and not
 contradicting D61's NNUE-shelving decision.
+
+## D65 — King-Relative Term Design: Minor-Piece Shelter Over Full PST Buckets (Session 83)
+
+**Context:** D63's item 3 candidate ("King-relative PST bucketing")
+was deliberately left as the lowest-confidence entry on that list,
+flagged as needing design thought before implementation rather than a
+straightforward pick-up. Gokul asked to discuss the design before
+implementing.
+
+**The actual gap, once examined closely:** it isn't that `eval/` lacks
+any king-relative piece scoring — `king_safety.rs`'s `attacker_weight`
+already scores enemy pieces attacking near a king (tropism, from the
+attacking side). The real gap is narrower: nothing scores the mirror
+case, our own minor pieces staying close to our own king as defenders
+(clustering, from the defensive side).
+
+**Three options were weighed:**
+- **Option A** — flat MG-only bonus per own knight/bishop sitting in
+  the same king-file-third zone (queenside/center/kingside, 3 zones)
+  as our own king. ~2 new parameters. Cheapest, easiest to hand-verify
+  against pre-existing tests, most clearly non-overlapping with any
+  existing term.
+- **Option B** — a fuller 3-zone table scored across more piece kinds
+  (knights/bishops/rooks/queen), ~10-15 parameters. Richer, but rooks/
+  queen wanting the zone opposite our own king already overlaps with
+  `open_lines.rs`'s rook-activity terms — risk of two terms both
+  nudging the same underlying effect, hard to disentangle without
+  actual tuning-data validation.
+- **Option C** — mirror of A but scoring proximity to the *enemy*
+  king's zone (attacking side) for rooks/queen/knights. Highest
+  double-counting risk of the three: this is the closest in spirit to
+  what `attacker_weight` already measures (piece activity near the
+  enemy king), just from static square proximity instead of actual
+  attack-square coverage.
+
+**Decision: Option A.** Smallest parameter count, most defensible as a
+genuinely non-overlapping effect, cheapest to Texel-tune, and the
+easiest to hand-verify wasn't accidentally double-scoring something
+`king_safety.rs` or `open_lines.rs` already captures. B and C are not
+ruled out permanently — they're deferred pending real tuning-data
+evidence that A alone under-fits, which isn't available from static
+analysis alone.
+
+**Implementation:** `KNIGHT_NEAR_OWN_KING_BONUS`/
+`BISHOP_NEAR_OWN_KING_BONUS` in `eval/king_safety.rs` (values `8`/`6`,
+hand-picked, not yet Texel-tuned), full Texel-chain wiring in the same
+submission, CI-confirmed green on the first submission
+(`logs_80664145490.zip`). See `ROADMAP.md`'s Phase 24 item 3 entry and
+`SESSION_LOG.md`'s Session 83 entry for the full implementation
+summary.

@@ -7,7 +7,7 @@ Most recent session at TOP.
 
 ---
 
-## Session 83 — 2026-07-20 (Phase 24 items 1 & 2: passed-pawn king distance + pawn storm — D63)
+## Session 83 — 2026-07-20 (Phase 24 items 1, 2 & 3: passed-pawn king distance + pawn storm + minor-piece shelter — D63, now fully closed out)
 
 **Built/done, in order:**
 
@@ -93,16 +93,53 @@ a tuning-value note, not a decision.
 **Decisions made (item 2):** none new for `DECISIONS.md`, same
 reasoning as item 1.
 
-**Next session start point:** Phase 24 items 1 and 2 are both fully
-shipped and CI-confirmed — the whole Phase 24 candidate list from
-D63 is now down to item 3 (King-relative PST bucketing), which is
-explicitly the lowest-confidence/most speculative item and was flagged
-as needing more thought before implementing, not a straightforward
-"pick it up and go." Don't default into it without discussing the
-design first — unlike items 1-2, item 3 doesn't have a clear
-mirrored-existing-pattern shape to copy. If Gokul wants to keep
-working the Phase 24 list, start there; otherwise ROADMAP.md's other
-phases are unblocked too.
+**Phase 24 item 3 (King-relative PST bucketing), same session, after
+items 1-2 shipped — design discussed before implementing, per Gokul's
+own explicit request:**
+
+1. **Design discussion.** Presented the real gap precisely:
+   `king_safety.rs`'s `attacker_weight` already scores enemy pieces
+   attacking near a king (tropism, attacking side); nothing scored our
+   own minor pieces staying close to our own king (clustering,
+   defensive side). Weighed 3 options: A (flat bonus for knights/
+   bishops in the same king-file-third zone as own king, ~2 params),
+   B (full 3-zone table across more piece kinds, ~10-15 params, risks
+   double-counting `open_lines.rs`'s rook-activity terms), C
+   (attacking-side mirror, risks double-counting `attacker_weight`
+   itself). Recommended A as smallest/cheapest/most-verifiable; Gokul
+   picked A via the options tool.
+2. **Implemented option A** — `KNIGHT_NEAR_OWN_KING_BONUS`/
+   `BISHOP_NEAR_OWN_KING_BONUS` in `eval/king_safety.rs` (`8`/`6`,
+   hand-picked), `minor_piece_shelter_bonus()`/`king_file_zone()`
+   helpers, wired into `king_safety_score`. 5 new tests.
+3. **Full Texel-chain wiring done in the same submission** as the
+   eval change (all 5 texel files + both `TunableWeights` construction
+   sites), plus a fresh full-repo grep confirming no other
+   `TunableWeights`/`TexelFeatures` construction site existed —
+   applying items 1-2's lessons rather than re-discovering them.
+4. **Hand-checked every pre-existing `king_safety.rs` test FEN**
+   against the new term before submitting — none have knights/bishops
+   at all, so the new term is 0 everywhere those tests check.
+5. **CI round-trip (`logs_80664145490.zip`) — green on the first
+   submission.** 427 lib tests passed, 0 failed.
+
+**Bugs fixed (item 3):** none — first submission was green.
+
+**Decisions made (item 3):** the option-A-vs-B-vs-C design choice
+itself is worth a permanent record since it rules out B and C for
+future reference (both risk double-counting an existing term) — added
+as a new entry in `DECISIONS.md` this session (see that file).
+
+**Phase 24 / D63 is now fully closed out** — all three candidates
+implemented, CI-confirmed green, documented.
+
+**Next session start point:** No specific Phase 24 follow-up is
+queued. Check `ROADMAP.md`'s other phases for the next task — nothing
+about this session's work blocks anything else. If a future session
+wants to revisit any of D63's three terms with real Texel-tuned
+weights (all three currently ship hand-picked constants, same status
+Phase 8's original terms had pre-Phase-14), that would need a full
+tuning-data run via `texel_tune.rs`, not a quick edit.
 
 ---
 

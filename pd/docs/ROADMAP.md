@@ -1330,12 +1330,39 @@ starting, don't default into the list top-down without asking.
    enemy pawns still on their home rank), so the new term contributes
    exactly 0 everywhere those tests check — no repeat of item 1's
    sign-flip surprise.
-3. **King-relative PST bucketing** — `tables.rs`'s `pst_value()` is
-   pure absolute-square; add a small, coarse correction (same-side/
-   center/opposite-side buckets, NOT full per-square NNUE-style
-   buckets — see D63 for why full buckets would hit the same
-   parameter-count-vs-data wall NNUE already has). Lowest-ranked/most
-   speculative of the three. Not started.
+3. [x] **King-relative PST bucketing** — DONE (Session 83, CI-confirmed
+   green first try, 427 lib tests passing, 0 failed). Design discussed
+   before implementing (per this item's own "needs more thought"
+   flag): the real non-overlapping gap wasn't a general per-square
+   king-relative PST, it was that `king_safety.rs`'s `attacker_weight`
+   already scores enemy pieces near *our* king (tropism, attacking
+   side) but nothing scored our own minor pieces staying close to our
+   own king (clustering, defensive side). Three design options were
+   weighed (A: flat bonus for knights/bishops in the same king-file-
+   third zone as our king; B: full 3-zone table across more piece
+   kinds; C: attacking-side mirror) — went with **option A**, since B
+   and C both risked double-counting effects `open_lines.rs`/
+   `king_safety.rs`'s existing terms already partially capture, and A
+   is the smallest, cheapest-to-tune, easiest-to-hand-verify option.
+   Implemented as `KNIGHT_NEAR_OWN_KING_BONUS`/
+   `BISHOP_NEAR_OWN_KING_BONUS` in `eval/king_safety.rs` (values `8`/
+   `6`, hand-picked, not yet Texel-tuned) — 3 file-third zones
+   (queenside a-c / center d-e / kingside f-h), flat MG-only bonus per
+   own knight/bishop in the same zone as our own king. Wired fully
+   into the Texel chain in the same submission as the eval change
+   (features/predict/weights/weights_f64/predict_f64/texel_diag/
+   texel_tune — full pattern from items 1-2, applied without any
+   discovery-via-failed-CI this time), and hand-verified every
+   pre-existing `king_safety.rs` test FEN has no knights/bishops at
+   all, so the new term is 0 everywhere those tests check.
+
+**Phase 24 / D63 is now fully closed out** — all three candidates
+implemented, CI-confirmed green, and documented. Items 2 and 3 each
+went green on the first CI submission by applying item 1's lessons
+(full Texel-chain wiring in the same submission as the eval change,
+full-repo grep for `TunableWeights`/`TexelFeatures` construction sites,
+hand-checking every pre-existing test FEN against the new term before
+submitting).
 
 Also on record for context, not actionable: D64 surveyed evaluation
 paradigms beyond HCE/NNUE (MCTS+policy/value net, searchless
@@ -1347,14 +1374,14 @@ new information changing one of those constraints.
 ---
 
 **Confirmed via Session 83's real CI `cargo test` log (Actions run,
-`logs_80500379634.zip`) — lib test count updated to 422 (was 396 at
+`logs_80664145490.zip`) — lib test count updated to 427 (was 396 at
 Session 71's count; +22 from Session 82's D59/D60 work landing, +4
-from Phase 24 item 1's tests, +4 from Phase 24 item 2's tests).**
-Per-module breakdown below is still not recomputed — low priority,
-not blocking anything.
+from Phase 24 item 1's tests, +4 from Phase 24 item 2's tests, +5 from
+Phase 24 item 3's tests).** Per-module breakdown below is still not
+recomputed — low priority, not blocking anything.
 | Test Crate/Binary        | Count | Status |
 |---------------------------|-------|--------|
-| lib (all of src/, unit tests) | 422 | ✅ |
+| lib (all of src/, unit tests) | 427 | ✅ |
 | tests/make_unmake.rs      | 19    | ✅     |
 | tests/perft.rs            | 18    | ✅     |
 | tests/setup.rs            | 21    | ✅     |
@@ -1363,14 +1390,15 @@ not blocking anything.
 | src/bin/uci_match_runner.rs | 12  | ✅     |
 | src/bin/match_runner.rs   | 6     | ✅     |
 | src/bin/eval_diag.rs, texel_diag.rs, texel_gen.rs, texel_tune.rs, train_nnue.rs, selfplay.rs | 0 each (no #[test] fns yet) | — |
-| **TOTAL** | **571 run, 566 passed, 0 failed, 5 ignored** (Session 83, CI-confirmed) | ✅ |
+| **TOTAL** | **576 run, 571 passed, 0 failed, 5 ignored** (Session 83, CI-confirmed) | ✅ |
 
-✅ **Session 83's Phase 24 item 1 (D63) is fully CI-confirmed** (see
-below) and **item 2 (D63) is also now fully CI-confirmed, green on the
-first CI submission** — Gokul supplied the `Test` job's logs
-(`logs_80500379634.zip`). Applying item 1's lessons up front (full
-Texel-chain wiring done in the same submission as the eval change, and
-every pre-existing test FEN hand-checked against the new term before
+✅ **All three Phase 24 / D63 items are now fully CI-confirmed.** Item
+1 took 3 CI round-trips (see history below); items 2 and 3 both went
+green on the first CI submission — Gokul supplied the `Test` job's
+logs (`logs_80500379634.zip` for item 2, `logs_80664145490.zip` for
+item 3). Applying item 1's lessons up front (full Texel-chain wiring
+done in the same submission as the eval change, and every pre-existing
+test FEN hand-checked against the new term before
 submitting) avoided repeating any of item 1's 3 round-trips.
 
 **Item 1's CI history, for reference** — Gokul supplied the `Test`
