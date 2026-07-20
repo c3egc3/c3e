@@ -2,6 +2,85 @@
 
 Append-only. One entry per session. Most recent at top.
 
+## Session 64 — In-search-path repetition detection (D-107): the last of D-103's three-item arc, closed with a design safer than originally assumed
+**Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
+`fastpy-engine/tests/test_move_gen.py` changed. `native/uci_main.cpp`
+UNCHANGED (see below for why). Docs updated: `docs/DECISIONS.md`
+(D-107), `docs/ROADMAP.md`, this entry.
+
+**Baseline check first (per the D-61/D-65 PROCESS rule):** pulled fresh
+`main` for both repos. `fastpy` 386/386, `fastpy-engine` 299/299 —
+matches Session 63's logged counts.
+
+**Task:** D-103's third and final sequencing item — in-search-path
+repetition detection, D-101's original highest-risk candidate (a line
+that cycles back to a position visited earlier in the SAME search,
+never actually played in the real game — distinct from D-101/D-102's
+game_history mechanism, which only catches real played-move repeats at
+the root).
+
+**What shipped:** `ancestor_hashes: uint64[256]` + `ply: int32` threaded
+through `alpha_beta()`'s own recursion, declared as a LOCAL array inside
+`find_best_move()` (never a global). Full design reasoning, the "no
+push/pop needed" finding, the singular-extension `ply`-vs-`ply+1` bug
+caught during design, and why `quiescence()`/`native/uci_main.cpp`
+needed zero changes are all written up in D-107 — worth reading in full
+rather than duplicating here.
+
+**The headline result:** this turned out safer than D-101's original
+assessment predicted. D-101 pictured a stack requiring careful
+push/pop bookkeeping around every early-return point, where a single
+mismatch would silently corrupt results. The design that actually
+shipped needs no pop at all — each recursive call just writes its own
+`ply` slot on entry, and reads only ever look at indices strictly below
+the current call's own `ply`, which in a depth-first traversal are
+exactly its real ancestors. Nothing is ever "removed," so there's
+nothing to get wrong on a return path.
+
+**A real bug was caught during design, before writing any tests to find
+it:** the singular-extension verification search re-examines the SAME
+board (not a child), so it needed `ply` — not `ply + 1`, unlike every
+other recursive call in the function — or it would have immediately
+matched its own just-written ancestor slot and silently disabled
+singular extensions for the rest of the search.
+
+**Verification:** 6 new tests (`TestInSearchPathRepetition` in
+`test_move_gen.py`) — fabricated-ancestor and unrelated-ancestor direct
+checks, an `ancestor_hashes=None` backward-compatibility check, a real
+legally-played 4-ply knight-shuffle proven to return to the exact same
+Zobrist hash, that shuffle detected as a draw end-to-end, and an
+engine.py-vs-run.py cross-check on the same real scenario. Full suite:
+`fastpy-engine` 305/305 (299 + 6 new). `fastpy check` clean. Native
+binary rebuilt via `training/build_uci_engine.py`, smoke-tested across
+several off-book positions — no crashes, opening book and perft both
+still correct.
+
+**A same-session correction, not a shipped finding:** initial
+verification runs seemed to show `go depth 1` on the same position,
+run twice, occasionally aborting after only 2 nodes with a nonsensical
+`score cp 32767` (the `INF` sentinel) and an effectively arbitrary
+`bestmove`. Investigated immediately rather than written up as a
+pre-existing bug and left for later — the actual cause was the TEST
+HARNESS: piping `quit` in the same stdin stream immediately after `go`
+races the search's own completion against the D-92/D-93 watcher
+thread's already-documented behavior of noticing a buffered `quit` and
+correctly aborting early ("CAN be interrupted by an explicit stop/quit
+genuinely mid-node either way" — intentional, not a defect). A real UCI
+GUI always waits for `bestmove` before sending anything else, so this
+never happens in actual use. Confirmed by re-running with `quit` sent
+only after a short delay: byte-identical results across 5+ repeated
+runs, on both this session's binary and a freshly-built baseline. No
+engine change needed — corrected here rather than shipped as a false
+Session 65 lead.
+
+**D-103's arc is now complete:** `Threads` default (D-104, Session 62)
+→ opening-book transposition-awareness (D-106, Session 63) →
+in-search-path repetition detection (D-107, this session). No specific
+candidate is queued for Session 65 — the false lead above turned out not
+to be a real issue, so the next session should pick a genuinely fresh
+area from ROADMAP.md's other open items rather than defaulting to more
+repetition/book/search-timing work out of momentum.
+
 ## Session 63 — Opening-book transposition-awareness (D-106): position-hash fallback layer added on top of the existing exact-prefix table, table itself untouched
 **Status:** COMPLETE ✅ — `fastpy-engine/run.py`,
 `fastpy-engine/native/uci_main.cpp`, `fastpy-engine/tests/test_move_gen.py`,

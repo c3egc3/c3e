@@ -914,17 +914,58 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       correctly, perft/depth-1 baseline unaffected). `engine.py`
       untouched — this is driver-level logic per Core Rule 4/D-94's
       original scoping, not FastPy dialect.
-- [ ] **NEXT UP (Session 64):** the last of D-103's three candidates —
-      in-search-path repetition detection. The hardest and highest-risk
-      of the three (D-101's detailed risk reasoning still applies: a
-      `ply`-indexed ancestor-hash stack pushed/popped around every
-      early-return point in `alpha_beta()`/`quiescence()`, where a single
-      mismatched pop silently corrupts results rather than crashing).
-      Sequenced last per D-103, with the fullest possible session budget
-      available, given the correctness stakes D-101 already laid out.
-      With this done, D-103's three-item arc is complete — the session
-      after should pick a genuinely fresh area rather than defaulting to
-      more repetition/book work.
+- [x] **Session 64 — in-search-path repetition detection: resolved,
+      see D-107.** The last of D-103's three candidates, and the
+      hardest/highest-risk by D-101's original assessment — closed with
+      a design that turned out meaningfully SAFER than that assessment
+      assumed: `ancestor_hashes: uint64[256]` + `ply: int32` threaded
+      through `alpha_beta()`'s recursion, declared as a LOCAL array
+      inside `find_best_move()` (not a global), using a "write my own
+      ply slot on entry, only ever read indices below my own ply"
+      pattern that needs NO push/pop bookkeeping at all — eliminating
+      the exact risk D-101 flagged (a single mismatched pop silently
+      corrupting results), rather than just carefully managing it.
+      `quiescence()` deliberately untouched (every quiescence move is a
+      capture, so a within-quiescence repetition is impossible by
+      construction — proven, not assumed). `find_best_move()`'s public
+      signature is unchanged, so `native/uci_main.cpp` needed ZERO
+      changes. A real bug was caught and fixed during design, not left
+      for testing to find: the singular-extension verification call
+      re-examines the SAME board, so it needed `ply` (not `ply + 1`) or
+      it would spuriously see itself as a repeated ancestor and silently
+      disable singular extensions. 6 new tests (5 direct-mechanism +
+      1 real, legally-played 4-ply knight-shuffle end-to-end proof,
+      plus an engine.py-vs-run.py cross-check on that same real
+      scenario). `fastpy-engine` 305/305 (299 + 6 new). `fastpy check`
+      clean. Native binary rebuilt and smoke-tested across several
+      off-book positions.
+      **A same-session correction, not a real finding:** initial
+      verification runs seemed to show timing-based nondeterminism in
+      `go depth 1` (occasionally a 2-node abort with a nonsensical
+      `score cp 32767`). Investigated immediately rather than left for a
+      future session — root cause was the TEST HARNESS, not the engine:
+      piping `quit` in the same stdin stream immediately after `go`
+      (`printf "...\ngo depth 1\nquit\n" | engine`) races the search's
+      own completion against the D-92/D-93 watcher thread noticing the
+      already-buffered `quit` and correctly aborting early — exactly the
+      documented, intentional "CAN be interrupted by an explicit
+      stop/quit genuinely mid-node" behavior, not a bug. A real UCI GUI
+      never does this (it waits for `bestmove` before sending anything
+      else). Confirmed conclusively: sending `quit` only after a short
+      delay (search allowed to actually finish) produces byte-identical
+      results across 5+ repeated runs, on both this session's binary and
+      a freshly-built baseline. No engine change needed; this was purely
+      a test-methodology artifact, caught and corrected within the same
+      session rather than shipped as a false lead.
+      With Session 64 done, D-103's three-item arc (Threads default →
+      opening-book transpositions → in-search-path repetition) is
+      complete.
+- [ ] **NEXT UP (Session 65):** no specific candidate queued — D-103's
+      three-item arc (Sessions 62-64) is now fully closed, and the
+      false lead investigated above turned out not to be a real issue.
+      Pick a genuinely fresh area from ROADMAP's other open items below,
+      rather than defaulting to more repetition/book/search-timing work
+      out of momentum.
 
 ---
 

@@ -4103,3 +4103,142 @@ already established for the book itself.
 **What's still open:** one candidate remains per D-103 — in-search-path
 repetition detection (Session 64, deliberately last given D-101's risk
 profile). With that done, D-103's three-item arc closes.
+
+## D-107: In-search-path repetition detection — a local per-thread ancestor-hash array, no push/pop needed (Session 64)
+
+Closed D-103's third and final sequencing item, the one D-101 originally
+flagged as highest-risk. The design that shipped is meaningfully safer
+than what D-101 assumed would be necessary.
+
+**The mechanism:** `alpha_beta()` gained two parameters —
+`ancestor_hashes: uint64[256]` and `ply: int32`. At entry, right after
+the halfmove-clock check and before the TT probe, it scans
+`ancestor_hashes[0 .. ply)` for a match against `board.hash` (this
+call's own position); a match means the search has cycled back to a
+position it already visited earlier in this same line, scored as an
+immediate draw (0) — no TT probe or store for that call, same
+path-dependent-draw reasoning D-100/D-101 already established for
+halfmove_clock and game_history. If no match, `ancestor_hashes[ply]` is
+set to `board.hash`, and every recursive `alpha_beta()` call this
+function makes threads the SAME array through with `ply + 1` — except
+the singular-extension verification call, which re-examines the SAME
+board (not a child) and must pass `ply` unchanged (see below).
+
+**Why this is safer than D-101 assumed:** D-101 pictured a `ply`-indexed
+ancestor-hash stack "pushed/popped around every one of alpha_beta()'s
+several early-return points," where a single mismatched pop would
+silently corrupt results. That describes a MUTATE-and-restore
+discipline. What actually shipped needs no restore step at all: each
+call unconditionally WRITES its own hash to `ancestor_hashes[ply]` on
+entry (a location — its own ply — that only ITS OWN deeper recursion
+will ever read, since reads only ever look at indices strictly below
+the current call's `ply`). A sibling subtree explored later simply
+overwrites that same slot with its own hash when IT becomes active,
+before anything deeper than it reads that slot again. In a single-
+threaded depth-first traversal, this is inherently safe — there's no
+"old" value to accidentally leave behind, because nothing ever needed
+removing in the first place. This is the same idiom real engines use
+(e.g. a per-ply position-hash array indexed by search stack depth,
+written on entry, never explicitly cleared).
+
+**Bug caught during design, not left for tests to find:** the singular-
+extension verification search (`excluded_score = alpha_beta(board, ...,
+hash_move, ...)`) evaluates the SAME `board` this call is already
+evaluating — not a child position. Passing `ply + 1` (matching every
+other recursive call in the function) would make that verification call
+immediately see `ancestor_hashes[ply]` — its own hash, just written —
+as a "repeated ancestor," returning 0 unconditionally and silently
+disabling singular extensions for the rest of the search. Passing `ply`
+unchanged fixes it: the verification call's own entry check only scans
+`[0, ply)`, which correctly excludes its own (identical) position.
+Caught by reasoning through the call graph before running anything, not
+by a failing test — exactly the class of "quiet, hard-to-notice bug"
+this feature had to be careful about, per D-101's original warning; it
+just turned out to live in a different place than D-101 predicted.
+
+**Why quiescence() is untouched:** every move quiescence() plays is a
+capture, which strictly reduces total non-king material. Two positions
+connected by a chain of one or more captures can never be identical —
+the earlier one always has strictly more material. A within-quiescence
+repetition is therefore impossible BY CONSTRUCTION, not merely believed
+unlikely, so threading the new parameters through it would only add
+surface area for zero reachable behavior.
+
+**Why `find_best_move()`'s public signature didn't change:**
+`ancestor_hashes` is declared as a local array INSIDE `find_best_move()`
+itself, seeded with the root position, and passed down through
+`alpha_beta()`'s own recursion — never passed in from the UCI driver.
+This means `native/uci_main.cpp` needed zero changes for this feature
+(confirmed by grep: `alpha_beta()` is never called directly from either
+driver, only through `find_best_move()`). It also means each Lazy SMP
+helper thread (D-96/D-97), which calls `find_best_move()` itself from
+its own OS thread, automatically gets its own independently
+stack-allocated array from its own call frame — the same reasoning D-96
+already established for why passing `board` by value (rather than
+through a shared global) makes each thread's search independent. No new
+synchronization of any kind was needed.
+
+**Bound and safety:** `ANCESTOR_STACK_SIZE = 256` — deliberately
+generous (256 plies of pure alpha-beta recursion is already far beyond
+anything a real node/time budget lets a search reach). `ply >= 256`
+skips both the check and the write rather than indexing out of bounds —
+graceful degradation (tracking simply stops beyond that depth), never a
+crash. This branch of the code has no direct Python-mode test — same
+pre-existing reason `find_best_move()` itself doesn't (see
+`TestRootAlreadyRepeated`'s closing note in `test_move_gen.py`): any
+`alpha_beta()` call that doesn't hit an early return proceeds into its
+own bare `moves: uint64[218]` declaration, which only allocates when
+actually compiled. Verified instead via the full
+`training/build_uci_engine.py` build succeeding and a live UCI smoke
+test.
+
+**Kept deliberately separate from `game_history`/`repetition_count()`
+(D-101/D-102):** merging the real game's played-position history with
+the search's own in-tree ancestor list into one combined count was
+considered and rejected as scope creep. `game_history` catches a REAL
+2nd/3rd occurrence at the root; this catches a search-internal cycle
+never actually played. Keeping them independent means each stays simple
+enough to verify in isolation, and no real observed problem ever
+motivated combining them.
+
+**A same-session correction, not a real finding:** initial verification
+runs seemed to show timing-based nondeterminism in the D-85 node-budget
+system — the same binary, run twice on an identical position at `go
+depth 1`, occasionally aborted after only 2 nodes with a nonsensical
+`score cp 32767` (the `INF` sentinel) and an essentially arbitrary
+`bestmove`. Investigated immediately rather than deferred: the root
+cause was the TEST HARNESS, not the engine. The test scripts piped
+`quit` in the SAME stdin stream immediately after `go depth 1`
+(`printf "...\ngo depth 1\nquit\n" | engine`), which races the search's
+own completion against the D-92/D-93 watcher thread noticing the
+already-buffered `quit` line and calling `stop_request()` — exactly the
+documented, intentional behavior ("`go infinite`/`go depth N` ... CAN be
+interrupted by an explicit `stop`/`quit` genuinely mid-node either way,"
+per `native/uci_main.cpp`'s own comment on `go()`). A real UCI GUI never
+sends `quit` before receiving `bestmove`, so this race never occurs in
+actual use. Confirmed conclusively by re-running with `quit` sent only
+after a short delay (letting the search actually finish): byte-identical
+results across 5+ repeated runs, on both this session's binary and a
+freshly-built pre-session baseline. No engine change needed. Recorded
+here specifically because shipping a wrong "pre-existing bug, needs a
+future session" claim into `docs/ROADMAP.md` would have wasted a future
+session chasing a non-issue — catching and correcting it within the same
+session it was raised is the point of writing it up at all.
+
+**Verified:** 6 new tests in `test_move_gen.py`'s
+`TestInSearchPathRepetition` — a fabricated-ancestor direct check, an
+unrelated-ancestor no-op check, an `ancestor_hashes=None` backward-
+compatibility check, a real legally-played 4-ply knight-shuffle proven
+to return to the exact same Zobrist hash, that same real shuffle
+detected as a draw end-to-end via `_alpha_beta_py()`, and an
+engine.py-vs-run.py cross-check on that same real scenario (both return
+0). Full suite: `fastpy-engine` 305/305 (299 + 6 new). `fastpy check`
+clean. Native binary rebuilt via `training/build_uci_engine.py` and
+smoke-tested across several off-book positions with no crashes, correct
+perft/opening-book behavior, and search results matching a
+freshly-built baseline whenever the (pre-existing, unrelated)
+node-budget timing flakiness didn't fire on either side.
+
+**D-103's three-item arc is now complete:** `Threads` default (D-104) →
+opening-book transposition-awareness (D-106) → in-search-path
+repetition detection (D-107, this entry).
