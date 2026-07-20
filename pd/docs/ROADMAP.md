@@ -1280,15 +1280,34 @@ rather than defaulting into either.
 
 Not a committed phase — a ranked candidate list from Session 82's HCE
 audit (DECISIONS.md D63), kept here so a future session can pick one
-up without re-auditing `eval/` from scratch. None of these have a
-checkbox because none are scheduled; pick one explicitly before
+up without re-auditing `eval/` from scratch. Items 2-3 have no
+checkbox because they're still unscheduled; pick one explicitly before
 starting, don't default into the list top-down without asking.
 
-1. **Passed-pawn king distance** — `pawns.rs`'s passed-pawn bonus is
-   rank-only; add king-distance scaling (the "square of the pawn"
-   idea). Highest-ranked: well-established, high classical-engine
-   value, currently fully absent. Needs new Texel-tunable parameters,
-   small in count.
+1. [x] **Passed-pawn king distance** — DONE (Session 83, CI-confirmed
+   green, 418 lib tests passing, 0 failed). Added
+   `passed_pawn_king_distance_bonus()` to `eval/pawns.rs`: EG-only bonus
+   per passed pawn, scaled by Chebyshev distance from each king to the
+   pawn's promotion square and by how advanced the passer already is
+   (`rank_idx`). Deliberately pure multiply-add (no division) so the
+   term stays linear and was wired fully into the Texel tuning chain:
+   two new diff features in `texel/features.rs`
+   (`passed_king_enemy_dist_diff` / `passed_king_own_dist_diff`), two
+   new weights in `texel/weights.rs` / `weights_f64.rs`
+   (`enemy_king_dist_eg` / `own_king_dist_eg`, hand-picked default `1`
+   each — see note below), forward+gradient terms in
+   `texel/predict.rs` / `predict_f64.rs`, and the two `TunableWeights`
+   construction sites in `src/bin/texel_diag.rs` /
+   `src/bin/texel_tune.rs` (read/write the tuned-weights dump format).
+   Not yet Texel-tuned — same "hand-picked, ready for a future tuning
+   run" status Phase 8's original constants had before Phase 14.
+   ⚠️ Weight started at `2`/`2`, dropped to `1`/`1` mid-session: at
+   weight 2 a worst-case combo (enemy king literally on the promotion
+   square, own king 7 squares away, pawn also isolated) flipped the
+   sign of the pre-existing `test_passed_pawn_bonus` sanity test
+   (+51 → −5). Weight 1 keeps that test comfortably positive (+23) — if
+   a future Texel tuning run pushes these weights back up, re-check
+   that test by hand rather than assuming it still holds.
 2. **Pawn storm** — `king_safety.rs` scores the defensive pawn shield
    only; add a mirrored term scoring advanced pawns on files near the
    *enemy* king as an attacking resource.
@@ -1308,14 +1327,14 @@ new information changing one of those constraints.
 
 ---
 
-**Confirmed via Session 71's real CI `cargo test` log (rustc 1.97.0,
-Actions run) — this is a full, current, authoritative count, not an
-estimate.** Per-module breakdown below is still not recomputed (lib's
-396 is one crate-level number, not split by src/ submodule) — low
-priority, not blocking anything.
+**Confirmed via Session 83's real CI `cargo test` log (Actions run,
+`logs_80464922497.zip`) — lib test count updated to 418 (was 396 at
+Session 71's count; +22 from Session 82's D59/D60 work landing plus
+Session 83's Phase 24 item 1 tests).** Per-module breakdown below is
+still not recomputed — low priority, not blocking anything.
 | Test Crate/Binary        | Count | Status |
 |---------------------------|-------|--------|
-| lib (all of src/, unit tests) | 396 | ✅ |
+| lib (all of src/, unit tests) | 418 | ✅ |
 | tests/make_unmake.rs      | 19    | ✅     |
 | tests/perft.rs            | 18    | ✅     |
 | tests/setup.rs            | 21    | ✅     |
@@ -1324,22 +1343,30 @@ priority, not blocking anything.
 | src/bin/uci_match_runner.rs | 12  | ✅     |
 | src/bin/match_runner.rs   | 6     | ✅     |
 | src/bin/eval_diag.rs, texel_diag.rs, texel_gen.rs, texel_tune.rs, train_nnue.rs, selfplay.rs | 0 each (no #[test] fns yet) | — |
-| **TOTAL** | **545 run, 540 passed, 0 failed, 5 ignored** (Session 82, CI-confirmed) | ✅ |
+| **TOTAL** | **567 run, 562 passed, 0 failed, 5 ignored** (Session 83, CI-confirmed) | ✅ |
 
-✅ **Session 82's D59/D60 changes are now fully CI-confirmed.** Gokul
-supplied the `Test` job's logs (`logs_80383979241.zip`) for commit
-`4429ec0` (confirmed via checkout SHA — same commit as the earlier
-Deploy-log check). `pet_dragon_lib`'s test binary — which is where both
-new `#[cfg(test)]` modules live — ran 412 tests, 412 passed, 0 failed.
-All 9 new tests confirmed passing **by name** in the log:
-`test_search_at_singular_extension_depth_no_panic` and the 8
-`test_lmp_*` tests in `search::pruning::tests`. Across every test
-binary in the job (lib, `match_runner`, `uci_match_runner`,
-`node_count`, `make_unmake`, `perft`, `setup`) the total is 540 passed,
-5 ignored, **0 failed** — no compile errors anywhere in the job. This
-supersedes the earlier "not yet CI-confirmed" note from the Deploy-log
-check; both the wasm32 production build and the native `cargo test`
-run are now verified green for this commit.
+✅ **Session 83's Phase 24 item 1 (D63) is now fully CI-confirmed.**
+Gokul supplied the `Test` job's logs for the final green run
+(`logs_80464922497.zip`). Getting there took 3 CI round-trips, all
+fixed same-session:
+1. First submission compiled but broke `texel::predict()`'s
+   self-consistency test (`test_predict_matches_evaluate_default_weights`)
+   — the new eval term wasn't mirrored in the Texel predictor. Fixed by
+   dropping a truncating `/7` from the formula (pure multiply-add,
+   fully linear) and wiring it through `features.rs`/`predict.rs`/
+   `weights.rs`/`weights_f64.rs`/`predict_f64.rs`.
+2. Second submission failed to compile (`E0063`, missing fields) —
+   `src/bin/texel_diag.rs` and `src/bin/texel_tune.rs` construct/parse
+   `TunableWeights` outside the `texel/` module and were missed by the
+   first pass. Fixed by grepping the full repo for `TunableWeights`
+   construction sites rather than trusting the initial file list.
+3. Third submission compiled and ran but broke a pre-existing sanity
+   test (`test_passed_pawn_bonus`, `score > 0`) — the new term's
+   weight (2) was strong enough to flip sign in a worst-case king
+   placement. Fixed by halving the weight to 1 (see item 1's note
+   above for the exact numbers).
+
+This supersedes Session 82's "540 passed, 0 failed" total.
 
 ---
 

@@ -7,7 +7,75 @@ Most recent session at TOP.
 
 ---
 
-## Session 82 — 2026-07-19 (23.6/23.7: singular-extension multi-cut + negative extensions, Late Move Pruning — D59/D60)
+## Session 83 — 2026-07-20 (Phase 24 item 1: passed-pawn king distance — D63)
+
+**Built/done, in order:**
+
+1. **Implemented Phase 24 item 1 (D63)** — passed-pawn king-distance
+   bonus in `eval/pawns.rs` (`passed_pawn_king_distance_bonus()`):
+   EG-only, scaled by Chebyshev distance from each king to the passer's
+   promotion square and by how advanced the passer already is
+   (`rank_idx`). Pure multiply-add by design (no division) so the term
+   stays linear in its two weights.
+2. **First CI round-trip (`logs_80438759341.zip`) — compiled, but
+   broke `texel::predict()`'s self-consistency test.** The new eval
+   term wasn't mirrored in the independent Texel predictor
+   (`test_predict_matches_evaluate_default_weights` failed:
+   predict=354, evaluate=345). Root cause: hadn't read D35/Session 53's
+   load-bearing constraint that any `eval/*.rs` term needs a matching
+   feature+weight in `texel/{features,predict,weights,weights_f64,
+   predict_f64}.rs`. Fixed by dropping a truncating `/7` from the
+   formula and wiring two new diff features
+   (`passed_king_enemy_dist_diff` / `passed_king_own_dist_diff`) and
+   two new weights (`enemy_king_dist_eg` / `own_king_dist_eg`) through
+   all 5 texel files, proved bit-exact equivalence by hand (packed-
+   score addition is associative, so per-pawn-then-pack and
+   diff-then-multiply-once are the same i64 sum before `taper()`).
+3. **Second CI round-trip (`logs_80462058909.zip`) — compile error
+   `E0063`, missing fields.** `src/bin/texel_diag.rs` and
+   `src/bin/texel_tune.rs` construct/parse `TunableWeights` directly
+   (read/write the tuned-weights dump file format) and were missed by
+   the first pass — hadn't grepped the *whole* repo for
+   `TunableWeights` construction sites, only `texel/`. Fixed both;
+   confirmed via `grep -rl "TunableWeights" src/` that no other site
+   existed.
+4. **Third CI round-trip (`logs_80462762656.zip`) — compiled and ran,
+   but broke a pre-existing sanity test.** `eval::pawns::tests::
+   test_passed_pawn_bonus` (asserts a lone passed pawn scores `> 0`)
+   flipped to `-5` at weight `2`: its fixture FEN is a worst-case
+   combo (enemy king literally on the promotion square, own king 7
+   squares away, the pawn also isolated). Fixed by halving both
+   weights to `1` — recomputed the same FEN by hand: `+23` (68 passed
+   − 17 isolated − 28 king-dist), comfortably positive.
+5. **Fourth CI round-trip (`logs_80464922497.zip`) — green.** 418 lib
+   tests passed, 0 failed, across all binaries 567 run / 562 passed /
+   5 ignored / 0 failed.
+6. **Docs updated to close out the item** (this entry + `ROADMAP.md`
+   Phase 24 item 1 checked off + test-count table refreshed).
+
+**Bugs fixed:** see round-trips 1-3 above (Texel self-consistency,
+missing-fields compile error, sign-flip on a pre-existing test) — all
+same-session, all CI-confirmed fixed by round-trip 4.
+
+**Decisions made:** none new for `DECISIONS.md` — this was an
+implementation of an already-decided D63 candidate, not a new
+architectural choice. The weight-magnitude walk-back (2→1) is recorded
+in `ROADMAP.md`'s Phase 24 item 1 entry, not `DECISIONS.md`, since it's
+a tuning-value note, not a decision.
+
+**Next session start point:** Phase 24 item 2 — pawn storm
+(`king_safety.rs` scores the defensive pawn shield only; add a
+mirrored term scoring advanced pawns on files near the *enemy* king as
+an attacking resource). Read `king_safety.rs` in full before writing
+anything (Tier 2 already covers `ENGINE_ARCHITECTURE.md`'s summary of
+it, but the actual current source hasn't been read this fresh). Given
+this session's pattern, budget for a Texel-wiring pass on the new
+term(s) from the start rather than discovering the requirement via a
+failed CI run again.
+
+---
+
+
 
 **Built/done, in order:**
 
