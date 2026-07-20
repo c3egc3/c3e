@@ -1308,15 +1308,34 @@ starting, don't default into the list top-down without asking.
    (+51 → −5). Weight 1 keeps that test comfortably positive (+23) — if
    a future Texel tuning run pushes these weights back up, re-check
    that test by hand rather than assuming it still holds.
-2. **Pawn storm** — `king_safety.rs` scores the defensive pawn shield
-   only; add a mirrored term scoring advanced pawns on files near the
-   *enemy* king as an attacking resource.
+2. [x] **Pawn storm** — DONE (Session 83, CI-confirmed green first try,
+   422 lib tests passing, 0 failed). Added `PAWN_STORM_BONUS[8]` +
+   `pawn_storm_danger()` to `eval/king_safety.rs`: mirror image of the
+   existing pawn shield — scores ENEMY pawns advanced on files near a
+   king as an attacking resource, indexed by rank-distance-to-king
+   bucket (0-7), subtracted into `king_safety_score`. MG-scoped like
+   every other term in this file (the whole block is scaled by
+   `* phase / 24`, not run through the tapered `s()`/`taper()`
+   pipeline `eval/pawns.rs` uses). Wired fully into the Texel chain
+   from the start this time (learned from item 1's 3 round-trips):
+   `king_us_storm_buckets`/`king_them_storm_buckets` in
+   `texel/features.rs`, `pawn_storm_bonus: [i32;8]` in
+   `texel/weights.rs`/`weights_f64.rs` (default `[40,32,24,16,8,0,0,0]`,
+   hand-picked, not yet Texel-tuned), forward+gradient in
+   `texel/predict.rs`/`predict_f64.rs`, and both `TunableWeights`
+   construction sites in `src/bin/texel_diag.rs`/`texel_tune.rs`.
+   Also hand-verified against every pre-existing `king_safety.rs` test
+   FEN before submitting: none of them have an actually-advanced enemy
+   pawn near the opposing king (all either have no enemy pawns or
+   enemy pawns still on their home rank), so the new term contributes
+   exactly 0 everywhere those tests check — no repeat of item 1's
+   sign-flip surprise.
 3. **King-relative PST bucketing** — `tables.rs`'s `pst_value()` is
    pure absolute-square; add a small, coarse correction (same-side/
    center/opposite-side buckets, NOT full per-square NNUE-style
    buckets — see D63 for why full buckets would hit the same
    parameter-count-vs-data wall NNUE already has). Lowest-ranked/most
-   speculative of the three.
+   speculative of the three. Not started.
 
 Also on record for context, not actionable: D64 surveyed evaluation
 paradigms beyond HCE/NNUE (MCTS+policy/value net, searchless
@@ -1328,13 +1347,14 @@ new information changing one of those constraints.
 ---
 
 **Confirmed via Session 83's real CI `cargo test` log (Actions run,
-`logs_80464922497.zip`) — lib test count updated to 418 (was 396 at
-Session 71's count; +22 from Session 82's D59/D60 work landing plus
-Session 83's Phase 24 item 1 tests).** Per-module breakdown below is
-still not recomputed — low priority, not blocking anything.
+`logs_80500379634.zip`) — lib test count updated to 422 (was 396 at
+Session 71's count; +22 from Session 82's D59/D60 work landing, +4
+from Phase 24 item 1's tests, +4 from Phase 24 item 2's tests).**
+Per-module breakdown below is still not recomputed — low priority,
+not blocking anything.
 | Test Crate/Binary        | Count | Status |
 |---------------------------|-------|--------|
-| lib (all of src/, unit tests) | 418 | ✅ |
+| lib (all of src/, unit tests) | 422 | ✅ |
 | tests/make_unmake.rs      | 19    | ✅     |
 | tests/perft.rs            | 18    | ✅     |
 | tests/setup.rs            | 21    | ✅     |
@@ -1343,12 +1363,19 @@ still not recomputed — low priority, not blocking anything.
 | src/bin/uci_match_runner.rs | 12  | ✅     |
 | src/bin/match_runner.rs   | 6     | ✅     |
 | src/bin/eval_diag.rs, texel_diag.rs, texel_gen.rs, texel_tune.rs, train_nnue.rs, selfplay.rs | 0 each (no #[test] fns yet) | — |
-| **TOTAL** | **567 run, 562 passed, 0 failed, 5 ignored** (Session 83, CI-confirmed) | ✅ |
+| **TOTAL** | **571 run, 566 passed, 0 failed, 5 ignored** (Session 83, CI-confirmed) | ✅ |
 
-✅ **Session 83's Phase 24 item 1 (D63) is now fully CI-confirmed.**
-Gokul supplied the `Test` job's logs for the final green run
-(`logs_80464922497.zip`). Getting there took 3 CI round-trips, all
-fixed same-session:
+✅ **Session 83's Phase 24 item 1 (D63) is fully CI-confirmed** (see
+below) and **item 2 (D63) is also now fully CI-confirmed, green on the
+first CI submission** — Gokul supplied the `Test` job's logs
+(`logs_80500379634.zip`). Applying item 1's lessons up front (full
+Texel-chain wiring done in the same submission as the eval change, and
+every pre-existing test FEN hand-checked against the new term before
+submitting) avoided repeating any of item 1's 3 round-trips.
+
+**Item 1's CI history, for reference** — Gokul supplied the `Test`
+job's logs for the final green run (`logs_80464922497.zip`). Getting
+there took 3 CI round-trips, all fixed same-session:
 1. First submission compiled but broke `texel::predict()`'s
    self-consistency test (`test_predict_matches_evaluate_default_weights`)
    — the new eval term wasn't mirrored in the Texel predictor. Fixed by

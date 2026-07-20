@@ -7,7 +7,7 @@ Most recent session at TOP.
 
 ---
 
-## Session 83 — 2026-07-20 (Phase 24 item 1: passed-pawn king distance — D63)
+## Session 83 — 2026-07-20 (Phase 24 items 1 & 2: passed-pawn king distance + pawn storm — D63)
 
 **Built/done, in order:**
 
@@ -63,15 +63,46 @@ architectural choice. The weight-magnitude walk-back (2→1) is recorded
 in `ROADMAP.md`'s Phase 24 item 1 entry, not `DECISIONS.md`, since it's
 a tuning-value note, not a decision.
 
-**Next session start point:** Phase 24 item 2 — pawn storm
-(`king_safety.rs` scores the defensive pawn shield only; add a
-mirrored term scoring advanced pawns on files near the *enemy* king as
-an attacking resource). Read `king_safety.rs` in full before writing
-anything (Tier 2 already covers `ENGINE_ARCHITECTURE.md`'s summary of
-it, but the actual current source hasn't been read this fresh). Given
-this session's pattern, budget for a Texel-wiring pass on the new
-term(s) from the start rather than discovering the requirement via a
-failed CI run again.
+**Phase 24 item 2 (pawn storm), same session, after item 1 shipped:**
+
+1. **Implemented `PAWN_STORM_BONUS[8]` + `pawn_storm_danger()` in
+   `eval/king_safety.rs`** — mirror image of the existing pawn shield:
+   scores enemy pawns advanced on files near a king, indexed by rank-
+   distance-to-king bucket. Read `king_safety.rs` in full first, as
+   planned.
+2. **Applied item 1's lessons up front this time**, before submitting
+   anything: checked whether `king_safety.rs`'s constants are wired
+   into `texel::predict()` (they are — `king_safety_side()` — almost
+   made the same mistake again, caught it by grepping before writing
+   the doc comment that would have claimed otherwise) and did the full
+   5-file Texel wiring (`features.rs`/`predict.rs`/`weights.rs`/
+   `weights_f64.rs`/`predict_f64.rs`) plus both `TunableWeights`
+   construction sites (`texel_diag.rs`/`texel_tune.rs`) in the same
+   submission as the eval change, instead of discovering the
+   requirement via a failed CI run.
+3. **Hand-checked every pre-existing `king_safety.rs` test FEN**
+   against the new term before submitting (learned from item 1's
+   round-trip 3) — confirmed none of them have an actually-advanced
+   enemy pawn near the opposing king, so the new term evaluates to 0
+   everywhere those tests check.
+4. **CI round-trip (`logs_80500379634.zip`) — green on the first
+   submission.** 422 lib tests passed, 0 failed.
+
+**Bugs fixed (item 2):** none — first submission was green.
+
+**Decisions made (item 2):** none new for `DECISIONS.md`, same
+reasoning as item 1.
+
+**Next session start point:** Phase 24 items 1 and 2 are both fully
+shipped and CI-confirmed — the whole Phase 24 candidate list from
+D63 is now down to item 3 (King-relative PST bucketing), which is
+explicitly the lowest-confidence/most speculative item and was flagged
+as needing more thought before implementing, not a straightforward
+"pick it up and go." Don't default into it without discussing the
+design first — unlike items 1-2, item 3 doesn't have a clear
+mirrored-existing-pattern shape to copy. If Gokul wants to keep
+working the Phase 24 list, start there; otherwise ROADMAP.md's other
+phases are unblocked too.
 
 ---
 
