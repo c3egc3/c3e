@@ -1,9 +1,19 @@
 # PyRt Architecture
 
+## Non-goals
+PyRt is a new language with its own defined syntax subset that looks
+Python-like — it is **not** a Python-compatible runtime and will not
+run arbitrary existing `.py` files unmodified. Closest precedent:
+Cython (`.pyx`), which is Python-like syntax that compiles to C, not
+real Python. Reasons: Rust's static typing can't express Python's
+dynamic typing/duck typing without major trade-offs, and matching
+Python's full standard library is a separate, much larger effort not
+in scope here.
+
 ## Pipeline
 
 ```
-.pyr source file
+.pyrt source file
     ↓
 Lexer      (source text  → tokens)
     ↓

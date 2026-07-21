@@ -73,6 +73,15 @@ upload paths → Gokul uploads/commits to GitHub → Gokul checks the
 Actions tab and reports back pass, or pastes the error log if it fails
 → Claude fixes based on the real compiler error.
 
+### D009 — Source file extension
+**Decision:** PyRt source files use the extension **`.pyrt`** (not
+`.pyr`, which was used informally in early docs). The planned CLI
+command is renamed `pyrtc` (was `pyrc`) to match.
+**Why:** Matches the project's final name exactly, avoiding the
+mismatch of a `.pyr` extension on a project called PyRt. Closest
+precedent: Cython uses `.pyx` (Python-like syntax, compiles to C) —
+same idea, PyRt's own extension should reflect its own name.
+
 ## Open questions (not yet decided)
 - How are Python exceptions mapped to Rust's Result/panic model?
 - Is there a real borrow-checker-aware mode planned, or is auto-clone

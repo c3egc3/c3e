@@ -9,7 +9,7 @@ Goal: prove the pipeline end-to-end on a tiny subset of syntax.
 - [ ] Hand-written lexer (tokenizer) — std only
 - [ ] Hand-written parser → AST — std only
 - [ ] Codegen: AST → valid Rust source (string emission)
-- [ ] Verify: transpile a sample .pyr file, compile the emitted .rs,
+- [ ] Verify: transpile a sample .pyrt file, compile the emitted .rs,
       run it, confirm correct output
 - [ ] Commit working prototype to repo under /src
 
@@ -31,7 +31,7 @@ Goal: prove the pipeline end-to-end on a tiny subset of syntax.
 - [ ] Move to GitHub Codespaces for real `cargo` + external crates
 - [ ] Consider real parser crate (pest/chumsky) once past hand-written
       prototype limits
-- [ ] Basic CLI: `pyrc build file.pyr` → runs rustc, produces binary
+- [ ] Basic CLI: `pyrtc build file.pyrt` → runs rustc, produces binary
 - [ ] Error messages that point back to PyRt source lines, not
       generated Rust lines
 

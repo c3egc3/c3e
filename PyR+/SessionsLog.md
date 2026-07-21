@@ -27,6 +27,13 @@ start of a new conversation so Claude has continuity.
   trivial test), and .github/workflows/build.yml which auto-runs
   `cargo build` + `cargo test` on every push, giving Gokul a pass/fail
   check on GitHub with no terminal needed.
+- Clarified scope: PyRt will NOT run arbitrary existing Python
+  programs — it's a new language with its own defined syntax subset
+  that looks Python-like, compiling to Rust (closest precedent:
+  Cython). Non-goal, worth keeping visible across sessions.
+- Locked source file extension as **`.pyrt`** (was informally `.pyr`
+  in early docs) and renamed the planned CLI from `pyrc` to `pyrtc` to
+  match (D009).
 
 **Next session should:**
 - Gokul uploads the scaffold files to g-c-3/PyRt, confirms the first
