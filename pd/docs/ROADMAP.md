@@ -1445,6 +1445,83 @@ the session continues from step 2.
 
 ---
 
+## Phase 26 — Candidates Surfaced from External-Advice Review (Session 83)
+
+**Not scheduled, not started.** Gokul asked two outside AIs for variant-
+adaptation advice and shared the responses, and separately asked for a
+direct comparison against current Stockfish (verified via live web
+search — Stockfish 18, Jan 2026 stable, current dev builds — not
+memory, since Stockfish moves fast and training-data recall would be
+stale). Most of the external advice turned out to already be covered
+(verified against the real repo, not assumed —
+`PawnStartMap`, `pawn_start_key` zobrist hashing, Texel-tuned
+setup-agnostic PST/eval, `texel_gen.rs`'s randomized-start sampling)
+or based on a wrong premise about Pet Dragon (one response assumed
+Chess960-style flexible castling with rooks on any file — Pet Dragon's
+king is hardcoded to e1/e8, confirmed directly in `movegen/castling.rs`;
+Gokul confirmed he doesn't want that built). Two items were genuinely
+open and worth keeping on record:
+
+1. **Null-move king-exposure guard.** Checked `search/alpha_beta.rs`'s
+   `can_null_move` condition directly — current guards are the
+   standard set (not PV, not in check, sufficient depth, `static_eval
+   >= beta`, has-non-pawn-material zugzwang guard, no consecutive
+   nulls). No king-safety/exposure-specific guard exists. The
+   suggestion: be more conservative with the reduction (or disable
+   null-move entirely) when the side-to-move's king has few safe
+   squares, since a random Pet Dragon start can leave a king with no
+   natural pawn shield immediately, unlike a standard opening where
+   the king is reliably still safe this early. Real and specific, but
+   **unproven** — would need its own isolated SPRT-style test (fixed
+   games, same time control, with/without the guard) before trusting
+   it, not a blind add.
+2. **Deeper/more adversarial perft coverage.** `tests/perft.rs` already
+   has Pet-Dragon-specific tests (`generate_with_seed` across 20 seeds)
+   but only to depth 1-2 with loose "reasonable range" assertions, not
+   deep exact-value verification or deliberately constructed
+   adversarial setups (rank-1 double-step immediately followed by en
+   passant, castling blocked by an intervening piece on an unusual
+   rook file). Worth strengthening given the position space size, but
+   this is test-suite hardening, not a strength lever — low urgency
+   unless a real bug surfaces.
+3. **Expand correction history beyond a single pawn-hash table.**
+   Surfaced by comparing against Stockfish 18 (current stable,
+   confirmed via its own release notes and source) — Pet Dragon already
+   has `search/pruning.rs::CorrectionHistory`, matching Stockfish's
+   original 2023 pawn-structure-indexed design (tested, applied to
+   static eval only). Current Stockfish has evolved this further:
+   evidence of additional correction signal sources beyond pawn
+   structure (continuation-based, non-pawn-material), and — per a
+   recent Stockfish PR — using the correction signal to also adjust
+   singular/double/triple extension *margins*, not just static eval.
+   Real, concrete, and well-scoped (extend an existing, already-tested
+   mechanism rather than build something new), but the specific
+   additional signal sources worth adding need their own scoping pass
+   before implementation, and each addition should get its own
+   isolated CI-verified diff + eventual SPRT-style validation, not be
+   bundled into one large change.
+
+**Explicitly NOT adopted, with reasoning on record so this doesn't get
+re-litigated without new information:**
+- Chess960-style flexible castling (X-FEN-style per-file rights) —
+  wrong premise about Pet Dragon, Gokul confirmed out of scope.
+- "DragonView" (per-piece View/Sovereign-View system with
+  extend-on-danger-jump / prune-on-zero-view-change / view-delta move
+  ordering) — most of the underlying primitives (attack tables, SEE,
+  king-ring danger) already exist in some form; the genuinely novel
+  search-integration ideas are unproven and the proposal itself flags
+  a real NPS-regression risk (30-50%) from over-triggering king
+  recompute. A large, invasive architecture change for an unproven
+  payoff, on a codebase where the working pattern this session
+  (small, individually-verified, CI-confirmed diffs) has been
+  succeeding. If any slice of this is ever worth revisiting, it's the
+  narrowest one — richer king-safety signal computed relative to
+  current king square — through the same discuss-design-first → small
+  diff → CI-verify discipline already established, not adopted as a
+  named system.
+
+---
+
 **Confirmed via Session 83's real CI `cargo test` log (Actions run,
 `logs_80664145490.zip`) — lib test count updated to 427 (was 396 at
 Session 71's count; +22 from Session 82's D59/D60 work landing, +4
