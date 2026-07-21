@@ -1,4 +1,4 @@
-# PyR+ Architecture
+# PyRt Architecture
 
 ## Pipeline
 
@@ -16,6 +16,11 @@ rustc/cargo (Rust source  → binary)
 
 Phase 0 constraint: Lexer, Parser, and Codegen must be hand-written
 using only Rust std (see Decisions.md D007). No pest/chumsky/etc yet.
+
+Verification note: Claude's sandbox cannot compile or run Rust at all
+(no toolchain installed, no internet to install one). All compilation
+verification happens via GitHub Actions CI on the g-c-3/PyRt repo
+instead — see Decisions.md D008.
 
 ## Syntax mapping (draft — v0.1 subset)
 
@@ -42,7 +47,7 @@ fn main() {
 ```
 
 Mapping rules established so far:
-| PyR+ | Rust |
+| PyRt | Rust |
 |---|---|
 | `def name(a: T, b: T) -> T:` | `fn name(a: T, b: T) -> T {` |
 | indentation block | `{ }` braces |
@@ -55,7 +60,7 @@ Not yet designed: `if`/`elif`/`else`, loops, lists, strings/formatting,
 classes, error handling, imports/modules.
 
 ## Type hint → Rust type table (draft, expand as needed)
-| PyR+ hint | Rust type |
+| PyRt hint | Rust type |
 |---|---|
 | `int` | `i32` |
 | `float` | `f64` |
@@ -73,4 +78,4 @@ deliberate simplification for Phase 0/1 — revisit in Phase 2.
   expression, Rust-style) vs when it emits an explicit `return` +
   semicolon
 - String type: always `String`, or infer `&str` for read-only params?
-- How multi-file PyR+ projects map to Rust's module system
+- How multi-file PyRt projects map to Rust's module system

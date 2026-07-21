@@ -1,4 +1,4 @@
-# PyR+ Roadmap
+# PyRt Roadmap
 
 Language with Python-like syntax that transpiles to Rust source code.
 
@@ -23,7 +23,7 @@ Goal: prove the pipeline end-to-end on a tiny subset of syntax.
       mapping, see Decisions.md)
 
 ## Phase 2 — Ownership & borrowing story
-- [ ] Decide and implement how PyR+ hides/exposes ownership (see
+- [ ] Decide and implement how PyRt hides/exposes ownership (see
       Decisions.md v0.1 defaults: auto-clone, mutable by default)
 - [ ] Revisit whether smarter borrow inference is worth the complexity
 
@@ -32,12 +32,12 @@ Goal: prove the pipeline end-to-end on a tiny subset of syntax.
 - [ ] Consider real parser crate (pest/chumsky) once past hand-written
       prototype limits
 - [ ] Basic CLI: `pyrc build file.pyr` → runs rustc, produces binary
-- [ ] Error messages that point back to PyR+ source lines, not
+- [ ] Error messages that point back to PyRt source lines, not
       generated Rust lines
 
 ## Phase 4 — Ecosystem / usability
 - [ ] Package/module system
-- [ ] Interop with existing Rust crates from PyR+ code
+- [ ] Interop with existing Rust crates from PyRt code
 - [ ] Docs / examples / playground
 
 ## Status
