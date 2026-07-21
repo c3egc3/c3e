@@ -2309,3 +2309,41 @@ submission, CI-confirmed green on the first submission
 (`logs_80664145490.zip`). See `ROADMAP.md`'s Phase 24 item 3 entry and
 `SESSION_LOG.md`'s Session 83 entry for the full implementation
 summary.
+
+## D66 — Full Texel Re-Tuning Chosen as Next Strength Lever (Session 83)
+
+**Context:** Gokul set a new broad goal — make Pet Dragon "lethal,
+precisive, scary, brutal" regardless of game phase — and asked Claude
+to decide the right first move rather than picking for him.
+
+**Options weighed:** (1) full Texel re-tuning pass, (2) endgame
+conversion technique, (3) further search depth/efficiency tuning, (4)
+un-shelving NNUE (D61).
+
+**Decision: (1), full Texel re-tuning.** Reasoning:
+- A mistuned evaluation constant is wrong in every phase of the game
+  equally — this is the one lever that's structurally "irrespective of
+  opening/middlegame/endgame" by construction, not just in aspiration.
+- The hard infrastructure already exists and is proven
+  (`texel_gen.rs`/`texel_tune.rs`/the `.yml` workflows, all built and
+  validated in Phase 14) — this is a re-run + apply, not new
+  engineering.
+- It's genuinely stale in two ways, so this isn't "re-run something
+  that's already fine": every eval term added since Session 56's one
+  tuning pass (including this session's 3 new D63 terms) ships
+  hand-picked and untuned, and Phase 14.2's original dataset has long
+  since expired (30-day artifact retention).
+- (2) and (3) are narrower and harder to scope without first knowing
+  where the current eval/search is actually leaving Elo on the table —
+  a full re-tune is a reasonable prerequisite diagnostic for either,
+  not a competing alternative to them. (4) remains a real structural
+  investment per D58, not a quick lever.
+
+**Not a permanent ranking** — if a re-tuned eval doesn't move the
+needle, (2)/(3) become the natural next investigation, informed by
+where the re-tune's residual errors concentrate.
+
+**Status:** scoped as Phase 25 in `ROADMAP.md`, not started — next
+concrete action is Gokul triggering `texel_gen.yml` to generate a
+fresh dataset (mobile-friendly, `workflow_dispatch` only, matching
+every other training workflow in this repo).
