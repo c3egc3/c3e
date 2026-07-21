@@ -7,7 +7,7 @@ Most recent session at TOP.
 
 ---
 
-## Session 83 — 2026-07-20 (Phase 24 items 1, 2 & 3: passed-pawn king distance + pawn storm + minor-piece shelter — D63, now fully closed out)
+## Session 83 — 2026-07-20 (Phase 24 items 1, 2 & 3: passed-pawn king distance + pawn storm + minor-piece shelter — D63, now fully closed out; then game analysis, Phase 25 scoped + kicked off, Phase 26 logged)
 
 **Built/done, in order:**
 
@@ -133,13 +133,102 @@ as a new entry in `DECISIONS.md` this session (see that file).
 **Phase 24 / D63 is now fully closed out** — all three candidates
 implemented, CI-confirmed green, documented.
 
-**Next session start point:** No specific Phase 24 follow-up is
-queued. Check `ROADMAP.md`'s other phases for the next task — nothing
-about this session's work blocks anything else. If a future session
-wants to revisit any of D63's three terms with real Texel-tuned
-weights (all three currently ship hand-picked constants, same status
-Phase 8's original terms had pre-Phase-14), that would need a full
-tuning-data run via `texel_tune.rs`, not a quick edit.
+**Post-Phase-24, same session — game analysis, goal-setting, and
+Phase 25/26 scoping:**
+
+1. **Analyzed a real Pet Dragon (skill 20) vs Stockfish (skill 10)
+   match log Gokul supplied**, on his report that low skill levels beat
+   Stockfish but skill 20 "played pathetic" and lost. Replayed the
+   whole game with `python-chess` (installed this session) rather than
+   hand-tracing: ruled out a variant-rules mismatch (standard start FEN
+   means Pet Dragon's custom pawn rule coincides with normal chess
+   here), found a real opening inaccuracy (`3...c6?!`) and traced
+   material through the whole game — conclusion was NOT "broken skill
+   scaling": Black was only 1-2 pawns down for most of the game,
+   fought back to material equality by move 60, and actually lost to a
+   late endgame technique collapse around moves 60-65. Flagged the
+   comparison as likely confounded (unknown what Stockfish skill level
+   the "skill 0-4 wins" games used) and recommended a real batched
+   `uci_match_runner.rs` comparison over trusting n=1.
+2. **Verified, not assumed, whether `PawnStartMap` leaks into eval/
+   search** (Gokul's doubt) — grepped `eval/`, `texel/`, `search/` for
+   any reference to `pawn_starts`/`started_here`: zero hits. Confirmed
+   it's correctly scoped to move generation (`movegen/pawns.rs`'s
+   double-step gate) and Zobrist hashing (`pawn_start_key`) only.
+3. **Clarified a separate doubt** (D10/D11's "pawn start feature
+   convergence") — this is NNUE-specific (128 extra input features
+   that go to 0 once a pawn's moved), unrelated to `PawnStartMap` and
+   currently dormant since NNUE is shelved (D61).
+4. **New goal set: make Pet Dragon "lethal... irrespective of game
+   phase."** Presented 4 candidate levers (full Texel re-tune, endgame
+   conversion technique, search depth/efficiency, un-shelve NNUE),
+   asked Gokul to prioritize, he asked Claude to decide. Chose full
+   Texel re-tune — reasoning recorded as **D66**. Scoped as **Phase 25**
+   in `ROADMAP.md` (2-step plan: `texel_gen.yml` then `texel_tune.yml`,
+   both pre-existing mobile-friendly `workflow_dispatch` workflows —
+   no new infrastructure needed).
+5. **Corrected a real misconception about Chess960.** Gokul initially
+   asked for the engine to also outperform Chess960 opponents,
+   believing it was already covered by Pet Dragon's variant. Checked
+   `movegen/castling.rs` directly: castling is hardcoded to `E1`/`E8`
+   king squares with standard `G1`/`C1` targets — genuine Chess960
+   support (flexible king placement, proper Chess960 castling
+   semantics) does not exist and would be real new work. Gokul
+   confirmed he doesn't want that built — his actual intent was just
+   "be strong on whatever position comes up, including Chess960-shaped
+   ones within our own pool," which Phase 25 already covers (eval
+   confirmed rank/position-agnostic in step 2 above).
+6. **Reviewed two outside-AI variant-adaptation responses Gokul
+   shared**, plus did a live-web-search-grounded comparison against
+   current Stockfish (18, Jan 2026 stable + current dev builds — not
+   memory, Stockfish moves too fast to trust training-data recall).
+   Verified claims against the real repo rather than taking either
+   source's word: most of the advice was already correctly implemented
+   (`PawnStartMap`, `pawn_start_key` zobrist hashing, Texel-tuned
+   setup-agnostic PST confirmed via `tables.rs`'s header, `texel_gen.rs`
+   confirmed sampling from the randomized-start generator not a
+   standard-position bias). One response's core premise (Chess960-style
+   flexible castling) was simply wrong for this repo. The other
+   ("DragonView," a per-piece View/Sovereign-View system) was assessed
+   and **not adopted** — mostly a repackaging of existing techniques
+   (attack tables, SEE, king-ring danger) plus unproven search-
+   integration ideas carrying a self-flagged 30-50% NPS-regression
+   risk; too large/invasive a bet against this session's proven
+   small-diff pattern. Full reasoning on record in `ROADMAP.md` Phase
+   26 so it isn't re-litigated without new information. 3 genuinely
+   open, real candidates logged as **Phase 26** (not scheduled): a
+   null-move king-exposure guard, deeper adversarial perft coverage,
+   and expanding `CorrectionHistory` beyond its current single
+   pawn-hash table (Stockfish 18 confirmed to have evolved past this;
+   Pet Dragon's version matches Stockfish's original 2023 design).
+7. **Triggered Phase 25 step 1** (`texel_gen.yml`) at the very end of
+   the session — `num_games=4000`, `seed_start=10000`. Caught a real
+   correctness risk before it happened: checked `texel_gen.rs`'s seed
+   math directly (`seed = seed_start + game_idx`, sequential, no
+   dedup elsewhere) and confirmed run #4 (`texel-data-seed2000-n3500`
+   artifact) already consumed seeds 2000-5499 — an initially-suggested
+   `seed_start=4000` would have silently overlapped and regenerated
+   duplicate games. `10000` is clear of that and any plausible range
+   from the other 2 prior production runs without needing to check
+   them individually. Not yet confirmed to complete — status is
+   **IN PROGRESS** at session close.
+
+**Bugs fixed (post-Phase-24 work):** none — this stretch was analysis,
+scoping, and verification, no code shipped except triggering the
+existing `texel_gen.yml` workflow (no code change).
+
+**Decisions made (post-Phase-24 work):** D66 (full Texel re-tune
+chosen as the next strength lever, over 3 other candidates).
+
+**Next session start point:** Check whether the `texel_gen.yml` run
+(seed 10000, 4000 games, ~5h estimated) completed — Gokul will bring
+the Run ID or artifact at the start of the fresh conversation. If
+green: move straight to Phase 25 step 2 (`texel_tune.yml`, fed this
+run's `data_run_id`, short sanity run first per the existing plan). If
+it failed or is still running: diagnose before retriggering, don't
+assume a blind rerun is the right move. Phase 26's 3 candidates remain
+logged and unscheduled — no action needed on them unless explicitly
+picked up.
 
 ---
 

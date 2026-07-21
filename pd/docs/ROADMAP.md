@@ -1437,11 +1437,26 @@ workflow in this repo):**
    skipping the `weights.rs` half silently breaks the self-consistency
    test).
 
-**Status: NOT STARTED.** Step 1 (`texel_gen.yml`) is the next concrete
-action — Gokul needs to trigger it from the Actions tab (mobile GitHub
-app works fine) since I have no write/dispatch access to Actions from
-here. Once a run completes, share the Run ID (or the log/artifact) and
-the session continues from step 2.
+**Status: IN PROGRESS.** Step 1 (`texel_gen.yml`) was triggered at the
+end of Session 83 — `num_games=4000`, `seed_start=10000`. Seed chosen
+deliberately clear of prior runs' ranges: run #4 (the only one checked
+directly) used `seed_start=2000, n=3500` per its artifact name
+(`texel-data-seed2000-n3500`), consuming seeds 2000-5499 (confirmed via
+`texel_gen.rs`: each game's seed is `seed_start + game_idx`, sequential,
+no wraparound — so `seed_start` values must be chosen to keep ranges
+non-overlapping across runs, there's no dedup elsewhere in the
+pipeline). `10000` is safely clear of that and any plausible range from
+the other 2 prior production runs without needing to check them
+individually. Expected runtime ~5h by scaling from run #4's confirmed
+4h22m/3500-games figure — not yet confirmed for 4000 games specifically.
+
+**Next session's first action:** check whether the `texel_gen.yml` run
+(seed 10000, 4000 games) completed successfully — Gokul will bring the
+Run ID or artifact. If green, move straight to step 2
+(`texel_tune.yml`, fed this run's `data_run_id`). If it failed or is
+still running past a reasonable window, diagnose before proceeding —
+don't retrigger blindly, since a partial/failed run may still have
+produced a usable partial artifact worth checking first.
 
 ---
 
