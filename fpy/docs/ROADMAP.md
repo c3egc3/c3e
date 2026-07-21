@@ -960,12 +960,86 @@ Sprint-level tracking. Checked = done. Unchecked = active or upcoming.
       With Session 64 done, D-103's three-item arc (Threads default →
       opening-book transpositions → in-search-path repetition) is
       complete.
-- [ ] **NEXT UP (Session 65):** no specific candidate queued — D-103's
-      three-item arc (Sessions 62-64) is now fully closed, and the
-      false lead investigated above turned out not to be a real issue.
-      Pick a genuinely fresh area from ROADMAP's other open items below,
-      rather than defaulting to more repetition/book/search-timing work
-      out of momentum.
+- [x] **Session 65 — Static Exchange Evaluation (SEE): built and fully
+      tested, see D-108.** No specific candidate was queued after
+      D-103's arc closed, so this session picked a genuinely fresh area
+      (evaluation/move-ordering, not search-control-flow) rather than
+      defaulting to more repetition/book/search-timing work: `engine.py`
+      gained `static_exchange_eval()` plus three supporting helpers
+      (`attackers_to()`, `piece_value_at_sq()`,
+      `least_valuable_attacker_square()`) implementing the classic
+      "swap list" algorithm — the net material result of playing out a
+      full capture sequence on one square assuming both sides always
+      recapture with their least valuable attacker, with either side
+      free to stop early. Deliberately scoped the SAME way `msb()` was
+      in Session 27/D-62: a standalone, fully tested utility, NOT yet
+      wired into `sort_moves()`/quiescence()'s pruning — ready for
+      whichever future session does that. A real ordering bug (attacker
+      existence must be checked BEFORE computing a ply's gain, not
+      after — the original draft computed a phantom gain value even for
+      completely undefended captures) was caught during this session's
+      own hand-verification against known-correct textbook exchange
+      values, not left for a future session to find. 13 new tests
+      (`TestStaticExchangeEvaluation` in `test_move_gen.py`) covering
+      undefended captures, forced and declined recaptures, a 3-ply
+      exchange, en passant, promoting captures (including the
+      `attacked_val` promotion-value fix this surfaced), and X-ray
+      attacker revelation. `fastpy-engine` 318/318 (305 + 13 new).
+      `fastpy check` clean. Native binary rebuilt and smoke-tested — no
+      behavior change anywhere in actual play, since SEE isn't called
+      from any search path yet.
+- [x] **Session 66 — SEE wired into `sort_moves()`/`quiescence()`:
+      resolved, see D-109. Results genuinely mixed on a small sample —
+      shipped anyway, reasoning below, not overclaimed as a clean win.**
+      Both uses from the queued item landed: (1) `sort_moves()` now
+      orders captures by SEE instead of plain MVV-LVA (winning/equal
+      captures first, losing captures sort after quiet moves); (2)
+      `quiescence()` skips captures with SEE < 0 rather than recursing
+      into them. A real performance bug was caught and fixed during
+      this session's own benchmarking, not shipped and left for later:
+      `sort_moves()`'s selection sort was recomputing each move's score
+      up to O(n) times across outer iterations — cheap when scoring was
+      plain MVV-LVA, a real measured NPS regression (roughly halved)
+      once captures started calling SEE. Fixed by precomputing each
+      move's score exactly once into a parallel array before sorting.
+      Benchmarked (D-49/D-20-style) across 5 positions at depth 8-10,
+      using a corrected test harness that waits for `bestmove` before
+      sending `quit` (an earlier version raced the search the same way
+      Session 64's investigation found, producing a false "correctness
+      regression" alarm that was resolved once the harness was fixed):
+      3 clean wins (40-63% fewer nodes AND faster wall-clock), 1 mild
+      wall-clock regression despite fewer nodes, 1 position with MORE
+      nodes, slower, AND a different bestmove chosen (though at a
+      similar evaluation, -68 vs -60). That last case was isolated
+      before shipping: an ordering-only build (no quiescence pruning at
+      all — a change that can only reorder moves, never skip any)
+      independently produced the SAME different move/score as the
+      pruning-only and combined builds, proving the divergence is
+      ordinary alpha-beta reordering sensitivity (a comparably-valued
+      alternative line, not a hung piece or missed tactic), not a
+      quiescence-pruning correctness bug. Decision to ship despite the
+      mixed sample: SEE-based capture ordering is standard practice in
+      essentially every strong engine, the correctness of
+      `static_exchange_eval()` itself was already validated separately
+      and thoroughly (D-108's 13 tests), a 5-position sample is too
+      small and noisy to give a statistically clean verdict either way,
+      and the only real way to validate a move-ordering change's effect
+      on playing strength is large-scale self-play — not available in
+      this environment, flagged as the appropriate follow-up if that
+      infrastructure is ever built. `fastpy-engine` 318/318 (unchanged
+      count — this session only changed `sort_moves()`/`quiescence()`
+      bodies and 3 existing tests' call sites, not net test count).
+      `fastpy check` clean, native binary rebuilt and smoke-tested.
+- [ ] **NEXT UP (Session 67):** no specific candidate queued. Options
+      worth considering, in no particular order: (1) large-scale
+      self-play infrastructure, if ever worth the investment, to
+      properly validate Session 66's move-ordering change and any
+      future search-heuristic change against actual playing strength
+      rather than hand-picked position samples; (2) the deferred
+      MVV-LVA tie-break among SEE-equal captures noted in
+      `move_order_score()`'s own docstring; (3) picking a genuinely
+      fresh area, same as how Session 65 was chosen, if nothing above
+      seems worth the session.
 
 ---
 

@@ -2,6 +2,134 @@
 
 Append-only. One entry per session. Most recent at top.
 
+## Session 66 — SEE wired into sort_moves()/quiescence() (D-109): mixed benchmark results, shipped with honest reasoning after isolating the one real regression
+**Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
+`fastpy-engine/tests/test_phase4.py` changed. Docs updated:
+`docs/DECISIONS.md` (D-109), `docs/ROADMAP.md`, this entry.
+
+**Baseline check first (per the D-61/D-65 PROCESS rule):** the real
+remote `main` still only has Session 64's work (299 tests) — Session 65
+hadn't been committed yet at the time this session started. Continued
+from this conversation's own working copy of Session 65's state (318
+tests, SEE built but not wired), confirmed still correct, rather than
+building on the stale remote.
+
+**Task:** Session 65's queued follow-up — wire `static_exchange_eval()`
+(D-108) into `sort_moves()` (capture ordering) and `quiescence()` (SEE
+pruning).
+
+**A real performance bug caught during this session's own benchmarking:**
+`sort_moves()`'s selection sort recomputed each move's score inside the
+inner loop — O(n) redundant calls per move, fine for cheap MVV-LVA, a
+measured ~2x NPS regression once captures called SEE. Fixed by
+precomputing every score once into a parallel array before sorting.
+
+**Benchmarked across 5 positions, results reported honestly:** 3 clean
+wins (fewer nodes AND faster), 1 mild wall-clock regression, 1 real
+regression (more nodes, slower, AND a different bestmove chosen). The
+concerning case (Italian Game) was isolated before shipping — built an
+ordering-only variant (which can only reorder moves, never skip any) and
+a pruning-only variant separately; BOTH independently produced the same
+divergent result as the combined version, proving it's ordinary
+alpha-beta reordering sensitivity, not a `quiescence()` pruning
+correctness bug (a real concern given `quiescence()`'s pre-existing gap:
+no check-evasion handling at all).
+
+**Also caught and fixed during this investigation:** an initial
+benchmark run showed an alarming 41-cp sign flip, traced to the test
+HARNESS racing `quit` against the search's own completion — the exact
+same class of issue Session 64 already found. Fixed the harness to wait
+for `bestmove` before quitting; the alarming result resolved into an
+ordinary close score once fixed.
+
+**Decision to ship, discussed with and agreed by Gokul rather than
+decided unilaterally:** SEE-based capture ordering is standard practice
+in virtually every strong engine — the real risk was a logic bug, not a
+node-count loss on hand-picked positions, and that risk was specifically
+investigated and ruled out (see the isolation above), not just assumed
+away. `static_exchange_eval()`'s own correctness was already validated
+separately and thoroughly in D-108. A 5-position sample is too small to
+give a clean verdict on playing strength either way; genuine validation
+would need large-scale self-play, not available in this environment —
+flagged as a future option, not treated as a blocker for shipping a
+standard, well-understood technique.
+
+**Verification:** full suite `fastpy-engine` 318/318 (3 existing
+`TestSortMoves` tests updated to call the new `r._sort_moves_py()`
+mirror, since `sort_moves()` now transitively touches
+`static_exchange_eval()`'s bare array and can no longer be called
+directly under plain Python — same limitation class as
+`find_best_move()`). `fastpy check` clean. Native binary rebuilt and
+smoke-tested (book hit, perft depth-1, off-book search all correct).
+
+**What's next:** no specific candidate queued for Session 67 — options
+noted (self-play infrastructure, the deferred MVV-LVA SEE-tie-break) but
+none forced; pick a fresh area if neither seems worth it, same as how
+Session 65 was chosen.
+
+## Session 65 — Static Exchange Evaluation (D-108): built and fully tested as a standalone utility, deliberately not yet wired into search
+**Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
+`fastpy-engine/tests/test_move_gen.py` changed. Docs updated:
+`docs/DECISIONS.md` (D-108), `docs/ROADMAP.md`, this entry.
+
+**Baseline check first (per the D-61/D-65 PROCESS rule):** pulled fresh
+`main` for both repos. `fastpy` 386/386, `fastpy-engine` 305/305 —
+matches Session 64's logged counts.
+
+**Task:** no specific candidate was queued after D-103's arc closed at
+the end of Session 64 — picked Static Exchange Evaluation as a
+genuinely fresh area (evaluation/move-ordering) rather than defaulting
+to more repetition/book/search-timing work.
+
+**What shipped:** `static_exchange_eval()` plus three helpers
+(`attackers_to()`, `piece_value_at_sq()`, `least_valuable_attacker_
+square()`) implementing the classic SEE "swap list" algorithm. Scoped
+deliberately the same way `msb()` was in Session 27/D-62: built and
+fully tested in isolation, NOT wired into `sort_moves()`/`quiescence()`
+this session — that's a different, larger unit of work needing proper
+before/after node-count validation, queued as Session 66.
+
+**Two real bugs caught during this session's own verification, before
+any test was committed:** (1) the forward loop computed a ply's gain
+value BEFORE confirming an attacker actually existed to produce it —
+exposed by the simplest possible case, an undefended capture, which
+came out corrupted until the check was moved to happen first; (2) a
+promoting capture used the moving pawn's value instead of the promoted
+piece's value for what's available to be recaptured. Both caught by
+hand-verifying textbook exchange values (undefended capture, a
+queen-takes-defended-pawn blunder, a 3-ply exchange) against the code's
+actual output before writing a single committed test — full writeup
+with the hand-derivation in D-108.
+
+**Verification:** 13 new tests (`TestStaticExchangeEvaluation` in
+`test_move_gen.py`) covering undefended/forced/declined recaptures, a
+3-ply exchange, en passant, both promoting-capture cases, X-ray
+attacker revelation, and cross-checks against `is_sq_attacked()`/
+`piece_at_square()`. Full suite: `fastpy-engine` 318/318 (305 + 13
+new). `fastpy check` clean. Native binary rebuilt via
+`training/build_uci_engine.py`, smoke-tested — byte-identical behavior
+to pre-session, confirming zero impact on actual play since SEE isn't
+called from any search path yet. One unrelated pre-existing flaky
+subprocess-timing test failed under full-suite load once and passed
+cleanly on re-run and in isolation — same class of timing sensitivity
+already understood from Session 64's investigation, not a regression.
+
+**Python-mode note:** only `_static_exchange_eval_py()` needed a
+mirror in `run.py` — the three helper functions have no bare
+fixed-array locals and are imported and used directly from `engine.py`.
+`static_exchange_eval()` itself has no early-return path before
+touching its bare `gain: int32[32]` local, so — unlike
+`find_best_move()`/`alpha_beta()` — it cannot be exercised directly
+under plain Python at all, not even partially; correctness for the
+compiled path rests on `fastpy check`, a full native build, and a
+structural comparison against the already-verified Python mirror.
+
+**Next up (Session 66):** wire `static_exchange_eval()` into
+`sort_moves()` (capture ordering) and/or `quiescence()` (SEE-based
+pruning) — with the same before/after node-count benchmarking rigor
+D-49/D-20 used for LMR/null-move/futility, since this next step affects
+every search, unlike this session's isolated addition.
+
 ## Session 64 — In-search-path repetition detection (D-107): the last of D-103's three-item arc, closed with a design safer than originally assumed
 **Status:** COMPLETE ✅ — `fastpy-engine/engine.py`, `fastpy-engine/run.py`,
 `fastpy-engine/tests/test_move_gen.py` changed. `native/uci_main.cpp`

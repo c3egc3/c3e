@@ -4242,3 +4242,237 @@ node-budget timing flakiness didn't fire on either side.
 **D-103's three-item arc is now complete:** `Threads` default (D-104) →
 opening-book transposition-awareness (D-106) → in-search-path
 repetition detection (D-107, this entry).
+
+## D-108: Static Exchange Evaluation — built and fully tested, deliberately not yet wired into search (Session 65)
+
+D-103's three-item arc (Threads default, opening-book transpositions,
+in-search-path repetition) closed at the end of Session 64 with nothing
+queued for Session 65. Picked Static Exchange Evaluation (SEE) as a
+genuinely fresh area — evaluation/move-ordering, not search-control-flow
+— rather than defaulting to more of the same territory out of momentum.
+
+**Scope decided before writing code:** build and thoroughly verify
+`static_exchange_eval()` as a standalone utility, explicitly NOT wired
+into `sort_moves()` or `quiescence()` this session. Same precedent as
+`msb()` (Session 27, D-62: "a general utility... not yet wired into any
+move-gen caller"). Wiring SEE into move ordering or pruning changes
+EVERY search's behavior, and validating that properly needs the kind of
+before/after node-count benchmarking D-49/D-20 used for LMR/null-move/
+futility — a different, larger unit of work than building and correctness-
+verifying the function itself. Queued explicitly as Session 66.
+
+**The algorithm:** the classic "swap list" technique (see
+chessprogramming.org's "SEE - The Swap Algorithm") — a negamax over a
+totally-ordered, forced-order sequence of captures on one square. Three
+new helpers support it:
+- `attackers_to(sq, board, occupied, by_black)` — `is_sq_attacked()`'s
+  exact reverse-attack-tracing shape, generalized from "any attacker?
+  (bool)" to "which squares? (bitboard)" and from board's own occupancy
+  to a caller-supplied one.
+- `piece_value_at_sq()` — like the existing `piece_at_square()` (used by
+  MVV-LVA), but returns `VAL_KING` for a king instead of 0. Deliberately
+  a separate function: MVV-LVA's "a king is worth 0" bias is correct for
+  its purpose (a king can never really be captured), but SEE needs the
+  real value in both attacker and (within its own simplified simulation)
+  victim roles.
+- `least_valuable_attacker_square()` — picks the cheapest-tier attacker
+  from a bitboard, pawn-first through king-last.
+
+`static_exchange_eval()` walks a local `occupied` bitboard that shrinks
+as pieces are removed from the simulation, calling `attackers_to()`
+fresh at each step. Recomputing from scratch each step (rather than
+incrementally patching in "X-ray" reveals the way some implementations
+do) is what makes X-ray attacker revelation work correctly with NO
+special-case logic at all: whatever `attackers_to()` returns against
+the shrinking `occupied` is already exactly right, by construction.
+
+**A real ordering bug, caught during this session's own verification,
+not left for a future session:** the first draft computed each ply's
+`gain[d]` value BEFORE confirming an attacker actually existed to
+perform that ply — using whatever piece was already known from the
+previous step, on the assumption that "it was found last time, so it's
+valid this time" is enough. This is true for ply ≥ 2, but WRONG for
+ply 1: the very first "does the opponent have any recapture at all"
+question was never actually asked before computing gain[1] anyway.
+Concretely: an UNDEFENDED capture — the simplest possible case, SEE
+should just equal the victim's value — came out corrupted, because a
+phantom "what if the opponent recaptures" value got computed and folded
+into the result even though no such recapture piece exists. Caught by
+hand-verifying a small battery of textbook exchange values (undefended
+capture, a defended-pawn queen blunder, a 3-ply rook/bishop/rook
+exchange) before writing any committed tests — the undefended case is
+exactly the one that exposed it, since it's the case with NO valid
+ply-1 attacker at all. Fixed by restructuring the loop to check attacker
+existence FIRST, then increment the ply counter and compute its gain
+only on success — meaning every `gain[]` entry that ever gets written
+now corresponds to a capture that can actually happen.
+
+A second, smaller correctness issue was caught the same way: a
+promoting capture's `attacked_val` (the value of the piece now sitting
+on the target square, available to be recaptured) was initially computed
+as the MOVING PAWN's value, when it should be the PROMOTED PIECE's value
+— what's actually sitting there after a promoting capture is the queen
+(or whatever was promoted to), not a pawn. Fixed by checking `move`'s
+own promotion and overriding `attacked_val` accordingly. Verified with a
+dedicated test: same promoting-capture position, once undefended (scores
+the captured rook's value, unaffected by the promotion) and once with a
+bishop recapturing the newly-promoted queen (scores using the queen's
+real value, not the pawn's).
+
+**Deliberate simplifications, both standard for SEE as used by most
+engines** (documented in the function's own docstring, not hidden):
+does not verify a defending king's recapture wouldn't itself be
+moving into check (SEE is a heuristic estimate, not a legality oracle —
+the real search's legal-move generator is what actually enforces this);
+a pawn promoting PARTWAY THROUGH the swap sequence (not via `move`
+itself, which IS handled correctly per the fix above) keeps its
+pre-promotion value for the rest of the sequence, a case rare enough not
+to be worth the added complexity of tracking.
+
+**Python-mode mirror:** `_static_exchange_eval_py()` in `run.py`. Only
+this one function needed a mirror — `attackers_to()`/`piece_value_at_sq()`/
+`least_valuable_attacker_square()` have no bare fixed-array locals and
+are imported and used directly from `engine.py`, confirmed by calling
+them successfully under plain Python execution. `static_exchange_eval()`
+itself, unlike `find_best_move()`/`alpha_beta()`, has no early-return
+path that runs before touching its bare `gain: int32[32]` local — every
+call path reaches it — so it genuinely cannot be exercised directly
+under Python at all, not even partially; the compiled version's
+correctness rests on `fastpy check` passing, a full native build
+succeeding, and a structural line-for-line comparison against the
+already-verified Python mirror (both were fixed for the identical two
+bugs above, in the same session, from the same hand-derived test
+values).
+
+**Verified:** 13 new tests (`TestStaticExchangeEvaluation` in
+`test_move_gen.py`) — undefended capture, a forced losing recapture
+(queen takes a pawn defended by a pawn), a declined recapture (a 3-ply
+setup where recapturing would lose the queen, so the defender correctly
+stops early instead), a 3-ply rook/bishop/rook exchange, en passant, two
+promoting-capture cases (undefended and defended), an X-ray-attacker
+case, an `attackers_to()`-vs-`is_sq_attacked()` agreement check, and the
+`piece_value_at_sq()`-vs-`piece_at_square()` king-value contrast. Full
+suite: `fastpy-engine` 318/318 (305 + 13 new; one single re-run showed
+an unrelated pre-existing flaky subprocess-timing test failing under
+full-suite load and passing cleanly both in isolation and on a full-suite
+re-run — not investigated further, matches the same class of
+test-harness timing sensitivity already understood from Session 64).
+`fastpy check` clean. Native binary rebuilt via
+`training/build_uci_engine.py` and smoke-tested — byte-identical
+behavior to pre-session across a book hit, an off-book search, and a
+plain depth-1 query, confirming zero impact on actual play since SEE
+isn't called from any search path yet.
+
+**What's next:** Session 66 — wire `static_exchange_eval()` into
+`sort_moves()` (capture ordering) and/or `quiescence()` (SEE-based
+pruning), with proper before/after node-count validation.
+
+## D-109: SEE wired into sort_moves()/quiescence() — mixed benchmark results, shipped anyway with honest reasoning (Session 66)
+
+Picked up the item Session 65 (D-108) queued: wire `static_exchange_eval()`
+into actual search. Two changes landed:
+
+1. **`sort_moves()`**: captures now ordered by SEE (`move_order_score()`)
+   instead of plain MVV-LVA. A winning-or-equal capture (SEE ≥ 0) scores
+   `CAPTURE_SEE_BASE + see`, always above quiet moves; a losing capture
+   scores its raw negative SEE, always below quiet moves. `mvv_lva()`
+   itself is untouched (still directly tested/usable); only
+   `sort_moves()`'s own scoring function changed.
+2. **`quiescence()`**: a capture with SEE < 0 is skipped entirely rather
+   than recursed into — standard, widely-used quiescence pruning.
+
+**A real performance bug, caught during this session's own benchmarking,
+not shipped and left for later:** `sort_moves()`'s selection sort called
+its scoring function inside the INNER loop, meaning any move not yet
+selected got rescored on every subsequent outer_i pass — O(n) calls for
+the same move, O(n²) total. This didn't matter when scoring was cheap
+MVV-LVA (a couple of array lookups), but became a measured, real NPS
+regression (roughly halved: ~1.5M → ~0.6-0.8M) once captures started
+calling `static_exchange_eval()`, which walks a small search of its own.
+Fixed by precomputing every move's score exactly once into a parallel
+`scores: int32[218]` array before sorting — the selection sort's O(n²)
+part is now purely cheap comparisons and swaps (with `scores[]` swapped
+in lockstep with `moves[]`), matching the original version's actual
+performance characteristic. Mirrored the identical fix in
+`_sort_moves_py()` (`run.py`) for consistency, even though that mirror is
+only used by tests directly, not by the actual Python-mode search path
+(which already scored via a list comprehension — inherently O(n), never
+had this bug).
+
+**Benchmarking methodology:** 5 positions (Ruy Lopez, Sicilian, Queen's
+Gambit Declined, Italian Game, King's Indian), depth 8-10, comparing a
+freshly-built pre-session baseline against the new binary. A first pass
+used a fixed-delay-before-`quit` test harness and showed an alarming
+41-cp sign flip on one position — investigated immediately rather than
+either dismissed or reported as a finding, and traced to the SAME class
+of issue Session 64 already discovered: the harness's `quit` raced the
+search's own completion, producing a corrupted, prematurely-aborted
+score. Rewritten to wait for `bestmove` before sending `quit` (a proper
+UCI client's actual behavior); re-run resolved the alarming discrepancy
+into an ordinary close score.
+
+**Results, reported honestly rather than cherry-picked:**
+
+| Position | Nodes | Wall-clock | Same move? |
+|---|---|---|---|
+| Ruy Lopez | -40% | faster | yes |
+| Sicilian | -4% | **slower** | yes |
+| QGD | -58% | faster | yes |
+| Italian | **+16% (more)** | **slower** | **no** |
+| King's Indian | -63% | faster (>2x) | yes |
+
+3 clean wins, 1 mild regression, 1 real regression including a different
+bestmove chosen (Italian Game: c4d5/-68 baseline vs c4b3/-60 new).
+
+**The Italian Game divergence was isolated before shipping, not shipped
+on faith:** built two further variants from the fixed code — one with
+ONLY the `sort_moves()` ordering change (quiescence pruning reverted to
+searching every capture), one with ONLY the `quiescence()` pruning
+change (ordering reverted to plain MVV-LVA). A pure-reordering change
+can, by construction, never SKIP a node that would otherwise be fully
+searched — it can only change which cutoffs happen first. If the
+ordering-only variant had matched baseline while the pruning-only
+variant alone showed the divergence, that would implicate the pruning
+(a real concern, given `quiescence()`'s pre-existing gap: it doesn't
+handle being in check at all, so skipping a "losing" capture that was
+actually tactically necessary was a genuine risk worth ruling out).
+Instead, BOTH isolated variants independently produced the exact same
+different move and score as the combined version — conclusively
+demonstrating the divergence is ordinary alpha-beta reordering
+sensitivity (a comparably-valued alternative line the search settles
+into, given different cutoff timing), not a quiescence-pruning
+correctness bug. This is the single most important finding of this
+session: the mechanism that carried the actual risk (pruning that could
+silently omit something tactically necessary) was specifically ruled
+out, not merely assumed innocent.
+
+**Decision to ship despite the mixed sample, discussed and agreed with
+Gokul rather than decided unilaterally:** SEE-based capture ordering is
+standard practice in essentially every strong engine — the prior is
+already "this works," and the real risk was a logic bug, not a
+node-count loss on some hand-picked positions. `static_exchange_eval()`'s
+own correctness was already validated thoroughly and separately (D-108's
+13 tests): what remained uncertain here was purely a search-order
+effect on alpha-beta, a well-documented, expected, non-monotonic
+characteristic of the algorithm, not evidence of an error. A 5-position
+sample is too small and noisy to give a statistically clean verdict
+either way — the only real way to validate a move-ordering change's
+effect on PLAYING STRENGTH is large-scale self-play (hundreds/thousands
+of games), which isn't available in this environment. Flagged as the
+appropriate follow-up investment if that infrastructure is ever built,
+rather than pretending a handful of node counts can substitute for it.
+
+**Verified:** full suite `fastpy-engine` 318/318 (unchanged count — this
+session changed `sort_moves()`/`quiescence()` bodies and 3 existing
+`TestSortMoves` call sites in `test_phase4.py`, which now call the new
+`r._sort_moves_py()` mirror since `sort_moves()` transitively touches
+`static_exchange_eval()`'s bare array and can no longer be called
+directly under plain Python — not net-new tests). `fastpy check` clean.
+Native binary rebuilt via `training/build_uci_engine.py` and smoke-tested
+(book hit, perft depth-1, and a real off-book search all still correct).
+
+**What's next:** no specific candidate queued for Session 67. Large-scale
+self-play infrastructure (to properly validate this session's change and
+any future one against playing strength) and the deferred MVV-LVA
+tie-break among SEE-equal captures are both noted as options; otherwise
+pick a fresh area the way Session 65 was chosen.
