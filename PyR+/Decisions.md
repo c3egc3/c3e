@@ -120,6 +120,19 @@ showed "This repository is empty" despite a scaffold (`Cargo.toml`,
 showed the real content, confirming a stale cache on the root page
 rather than a real absence of files.
 
+**Update 2026-07-23:** the assumption that direct blob fetches are
+always reliable turned out to be wrong too. A blob fetch of
+`src/main.rs` returned old placeholder content even after Gokul had
+pushed an updated version and GitHub Actions had already run a green
+`cargo test` against the new version (confirmed via Gokul's
+screenshots of the file listing and Actions tab, both showing the
+update). So GitHub's caching can affect blob pages, not just root/tree
+pages. Revised protocol: if Gokul reports a state (via description or
+screenshot) that a fetch — root, tree, or blob — contradicts, treat
+Gokul's report as authoritative and don't re-assert the fetch is
+correct. Screenshots of the actual GitHub app are stronger evidence
+than any fetch when the two disagree.
+
 ## Open questions (not yet decided)
 
 - How are Python exceptions mapped to Rust's Result/panic model?

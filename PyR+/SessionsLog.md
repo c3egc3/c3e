@@ -6,6 +6,39 @@ start of a new conversation so Claude has continuity.
 
 ---
 
+## Session 004 — 2026-07-23
+
+**Did:**
+
+- Before starting the parser, re-fetched `src/main.rs` to confirm the
+baseline and got old placeholder content back — despite Gokul having
+already confirmed a green CI check for the lexer update. Raised this
+as a real concern (rather than assuming it was fine) before proceeding.
+- Gokul provided screenshots of the actual GitHub app: file listing
+showing `lexer.rs` and `main.rs` both updated, and the Actions tab
+showing the relevant run (Build PyRt #6, commit 87794c8) green. This
+confirmed the lexer work is genuinely live and verified — the fetch
+was stale, not the repo.
+- Updated D010 in Decisions.md: direct blob-URL fetches, previously
+assumed reliable even when root/tree pages were stale, turned out to
+also be capable of returning stale content. Revised the protocol to
+treat Gokul's first-hand report/screenshots as authoritative over any
+fetch, regardless of which page type (root, tree, or blob) is stale.
+
+**Next session should:**
+
+- Write the hand-written parser (tokens → AST) for the minimal subset
+(as originally planned for Session 003/004) — proceeding now on the
+confirmed-correct file contents from Session 003, without re-fetching
+main.rs/lexer.rs again this session since Gokul's screenshots already
+confirm their live state matches what was generated
+
+**Open threads carried forward:**
+
+- See "Open questions" in Decisions.md
+- Whether to eventually relax the tabs-not-allowed-for-indentation
+lexer rule (currently an implementation choice, not a locked decision)
+
 ## Session 003 — 2026-07-22
 
 **Did:**
