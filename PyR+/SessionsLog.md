@@ -6,6 +6,53 @@ start of a new conversation so Claude has continuity.
 
 ---
 
+## Session 003 — 2026-07-22
+
+**Did:**
+
+- Drafted the v0.1 *minimal* syntax subset for the lexer to target
+(smaller than the full syntax-mapping draft in Architecture.md): one
+function def, one typed param, `return`, `print`. Example:
+`def show(x: int) -> int:` / `print(x)` / `return x`.
+- Wrote the real hand-written lexer (`src/lexer.rs`) covering that
+subset, including Python-style significant indentation via an
+Indent/Dedent token scheme, tab-rejection, and blank-line/comment
+handling. Included `cargo test` cases covering the sample program's
+token sequence and error cases (tabs, inconsistent dedent).
+- Updated `src/main.rs` to run the lexer on the sample program and
+print its tokens, replacing the old scaffold placeholder (kept the
+pre-existing sanity test).
+- Corrected the workflow assumption baked into the old "Next session
+should" note: it said "get it running in-chat," but per the
+2026-07-22 sandbox correction (D008) Claude cannot run/compile Rust
+at all — verification is via GitHub Actions `cargo test`, not
+in-chat execution. Used the Python sandbox instead to conceptually
+mirror and sanity-check the tokenizing/indentation algorithm before
+writing the Rust.
+- Found Roadmap.md was stale in two ways and fixed both: (1) it still
+said "Phase 0, not yet started" despite scaffold + lexer work done;
+(2) it still referenced the old `.pyr`/`pyrc` naming superseded by
+D009 (`.pyrt`/`pyrtc`). Ticked the lexer checkbox and updated status.
+- Added a "Lexer (implemented)" section to Architecture.md documenting
+the token set and design choices actually made (spaces-only
+indentation, comment/blank-line handling), separate from the
+broader syntax-mapping draft which stays aspirational.
+
+**Next session should:**
+
+- Write the hand-written parser (tokens → AST) for the same minimal
+subset the lexer covers
+- Once parser exists, start codegen (AST → Rust source string) to
+close the loop on the "def/param/return/print" example end-to-end
+
+**Open threads carried forward:**
+
+- See "Open questions" in Decisions.md
+- Whether to eventually relax the tabs-not-allowed-for-indentation
+lexer rule (currently an implementation choice, not a locked decision)
+- Confirm the pushed lexer/main.rs changes pass GitHub Actions
+(cargo build + cargo test) — not yet confirmed in this log
+
 ## Session 002 — 2026-07-22
 
 **Did:**
