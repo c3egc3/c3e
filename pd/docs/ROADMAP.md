@@ -1196,31 +1196,22 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              Stockfish-distillation data augmentation for the
              converged-toward-standard-chess phase of a game) are all
              real structural investments now, not quick tries.
-- [~] 23.4 — HELD for the future (D62, Session 82). Variant-specific
-             opening statistics. Originally scoped as "Ease: Medium,
-             data-aggregation script over existing `selfplay.rs`
-             output" — that estimate turned out wrong on actual
-             inspection of the source (Session 82): `selfplay.rs`'s
-             output is NNUE training rows only (`stm_features |
-             nstm_features | search_eval_cp | game_result`) and
-             records neither the starting seed, the position identity,
-             nor which move was played at the root — the aggregation
-             script would have nothing to aggregate. Bigger issue
-             underneath that: `Position::generate_with_seed` draws
-             from 2.16M distinct starting positions, and self-play
-             games run on sequentially incrementing seeds, so almost
-             every self-play game visits a starting position that's
-             never repeated — an exact-position-keyed book would have
-             a near-zero hit rate against real games, the same
-             starved-coverage problem NNUE has (D53/D58/23.3), just
-             for a different keyspace. Needs a real design decision
-             (exact-position book vs. bucketing by structural features
-             so similar-not-identical positions share statistics)
-             before any code gets written, not a should-be-quick
-             aggregation script. Explicitly deferred rather than
-             designed on the spot — resume by re-reading this note and
-             picking a design, don't restart from the original ROADMAP
-             framing above.
+- [~] 23.4 — DESIGNED, not started (D67, Session 84). Variant-specific
+             opening statistics. D62 (Session 82) held this pending an
+             exact-vs-bucketed design pick; D67 closed that question —
+             **bucketed by structural features**, v1 bucket key =
+             (rook_files, knight_files), 420 buckets, root-only
+             move-ordering bias as the usage mechanism (not an
+             auto-play book), stats table baked into the binary at
+             build time as `src/opening_stats.rs`. Full pipeline spec
+             (selfplay.rs new output stream → aggregation script →
+             generated table → ordering.rs hook) in D67. Existing
+             self-play data cannot be reused — needs a fresh
+             generation pass with the new output stream. Queued
+             behind Phase 25; do not start until Phase 25 closes.
+             Resume by re-reading D67's "Status" section for the
+             concrete 6-step build order — the design question itself
+             is closed, don't re-litigate exact-vs-bucketed.
 - [~] 23.5 — HELD for the future (D61, Session 82). NNUE architecture
              upgrade: king-relative bucketed features, replacing the
              current flat 768+128=896 input set. Shelving NNUE
@@ -1266,13 +1257,12 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              untaken change (see D60 for the full rationale). ⚠️ Elo
              impact not yet measured, same as 23.6.
 
-**Phase 23 status as of Session 82: no active items.** 23.1–23.3 and
-23.6–23.7 are done; 23.4 and 23.5 are both explicitly HELD (D61, D62)
-rather than in progress. Don't auto-resume either without a fresh
-scoping decision — 23.5 needs NNUE work un-shelved first, 23.4 needs
-the exact-vs-bucketed design question answered first. If no other
-instruction is given at the start of a session, ask what to work on
-rather than defaulting into either.
+**Phase 23 status as of Session 84: no active items.** 23.1–23.3 and
+23.6–23.7 are done; 23.5 is HELD (D61, needs NNUE un-shelved first);
+23.4 is DESIGNED but not started (D67) — queued behind Phase 25, not
+picked up yet. Don't auto-resume either without explicit instruction.
+If no other instruction is given at the start of a session, ask what
+to work on rather than defaulting into either.
 
 ---
 
@@ -1371,6 +1361,16 @@ all of them out given Pet Dragon's CPU/WASM deployment target and
 current training-data constraints — don't re-investigate this without
 new information changing one of those constraints.
 
+**Phase 24 addendum — 4th candidate identified, Session 84 (D68).**
+A separate question (whether the engine scores pieces defending each
+other) surfaced a gap D63's original audit didn't check for:
+Stockfish's **Threats** term — hanging-piece penalty, weak-queen-
+protection penalty, minor/rook threat bonus, restricted-piece penalty
+(`threats.cpp`, GPL v3, same credited family as material/PST).
+Documented, not implemented, not scheduled — full scope in
+DECISIONS.md D68. Phase 24 items 1-3 remain closed; this is a new
+candidate, not a reopened item.
+
 ---
 
 ## Phase 25 — Full Texel Re-Tuning Pass (Session 83)
@@ -1437,26 +1437,44 @@ workflow in this repo):**
    skipping the `weights.rs` half silently breaks the self-consistency
    test).
 
-**Status: IN PROGRESS.** Step 1 (`texel_gen.yml`) was triggered at the
-end of Session 83 — `num_games=4000`, `seed_start=10000`. Seed chosen
-deliberately clear of prior runs' ranges: run #4 (the only one checked
-directly) used `seed_start=2000, n=3500` per its artifact name
-(`texel-data-seed2000-n3500`), consuming seeds 2000-5499 (confirmed via
-`texel_gen.rs`: each game's seed is `seed_start + game_idx`, sequential,
-no wraparound — so `seed_start` values must be chosen to keep ranges
-non-overlapping across runs, there's no dedup elsewhere in the
-pipeline). `10000` is safely clear of that and any plausible range from
-the other 2 prior production runs without needing to check them
-individually. Expected runtime ~5h by scaling from run #4's confirmed
-4h22m/3500-games figure — not yet confirmed for 4000 games specifically.
+**Status: Step 1 COMPLETE, step 2 not yet triggered.** Gokul ran it
+with different parameters than originally planned —
+`seed_start=15000, num_games=3500` (not `10000`/`4000` as noted at the
+end of Session 83; recording actual values here since that's what the
+data reflects). Confirmed via the Actions run page: "Texel Tuning Data
+Generation #7", commit `afb51f0`, on `main`, **Status: Success**,
+duration 5h19m49s. Artifact `texel-data-seed15000-n3500` (1.24 MB,
+run ID `29891640736`) — also published as a permanent GitHub Release
+asset (won't hit the 90-day artifact retention window):
+`https://github.com/g-c-3/pet-dragon/releases/download/texel-data-seed15000-n3500/texel_data.txt`.
+62,125 samples (spot-checked head/tail — well-formed, spans opening
+through king-and-minor endgames per the tail rows).
 
-**Next session's first action:** check whether the `texel_gen.yml` run
-(seed 10000, 4000 games) completed successfully — Gokul will bring the
-Run ID or artifact. If green, move straight to step 2
-(`texel_tune.yml`, fed this run's `data_run_id`). If it failed or is
-still running past a reasonable window, diagnose before proceeding —
-don't retrigger blindly, since a partial/failed run may still have
-produced a usable partial artifact worth checking first.
+**Sequencing note before triggering step 2 — do not skip.** This data
+was generated at commit `afb51f0`, which predates the Session 84
+rank-battery fix (`open_lines.rs` + `texel/features.rs`, queued for
+commit — see Session 84 notes). The dataset itself is fine to reuse
+regardless (`texel_gen.rs` writes raw FEN + result, not pre-extracted
+features — feature extraction happens at `texel_tune.yml` time against
+whatever code is on `main` then). But **`texel_tune.yml` must run
+against a `main` that already has the rank-battery fix committed**,
+or the new rank-battery term won't be in this tuning pass at all and
+will ship untuned again — exactly the staleness problem Phase 25
+exists to fix. Confirm the fix is pushed before triggering step 2.
+
+**Step 2 plan, ready to trigger once the above is confirmed:** run
+`texel_tune.yml` with `data_urls` set to the Release asset URL above
+(simpler than `data_run_id` here since it's already a permanent link,
+not subject to artifact expiry). Per the original plan, start with a
+short sanity run — override `epochs` to `15` (default is `50`) — and
+leave `learning_rate=1.0, k=auto, seed=42, batch_size=16384,
+weight_decay=0.0` at their defaults for this sanity pass. Check
+`texel_diag.rs`-style output for wild outliers before committing to a
+longer run.
+
+**Next session's first action (if not done by end of this one):**
+confirm the rank-battery fix is committed to `main`, then trigger
+`texel_tune.yml` per the step 2 plan above.
 
 ---
 

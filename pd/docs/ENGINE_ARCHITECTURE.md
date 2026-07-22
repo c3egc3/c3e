@@ -221,6 +221,18 @@ None of the three are scheduled — this is a documented candidate list,
 not a roadmap commitment. See DECISIONS.md D63 for the full
 investigation.
 
+**Fourth gap found separately (D68, Session 84).** Checking whether
+the engine scores pieces defending each other surfaced a gap outside
+D63's original checklist: no **Threats** term (Stockfish's
+`threats.cpp` — hanging-piece penalty, weak-queen-protection penalty,
+minor/rook threat bonus, restricted-piece penalty). The only existing
+piece-support logic anywhere is `open_lines.rs`'s connected-rooks/
+battery detection, which is rook/file-specific, not general. Also
+documented-not-scheduled; full scope in DECISIONS.md D68, including a
+flagged double-counting risk against `mobility.rs`'s attack counts and
+`king_safety.rs`'s attacker-weight term that should be hand-checked
+before implementation, not discovered mid-CI.
+
 **Alternative eval paradigms surveyed (D64, Session 82).** For the
 record, so this doesn't get re-investigated from scratch later: MCTS +
 policy/value network (AlphaZero/Leela-style — different search

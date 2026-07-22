@@ -2347,3 +2347,165 @@ where the re-tune's residual errors concentrate.
 concrete action is Gokul triggering `texel_gen.yml` to generate a
 fresh dataset (mobile-friendly, `workflow_dispatch` only, matching
 every other training workflow in this repo).
+
+## D67 — Phase 23.4: Bucketed Structural Opening Statistics — Full Design Chosen (Session 84)
+
+D62 held 23.4 pending an exact-vs-bucketed design pick. Chosen:
+**bucketed by structural features (Path B).** Exact-position book
+(Path A) rejected — with self-play drawing from a 2.16M-position
+keyspace on sequentially incrementing seeds, a real game would need
+to draw from a small *reused* seed pool for an exact-position book to
+ever hit, and that's a policy change to how real games get their
+starting position (currently a fresh random seed every game), not a
+23.4-scoped decision. Not taken.
+
+### Bucket key (two-tier, so v1 ships small and v2 extends the same
+### aggregation path rather than redesigning it)
+
+**Tier 1 (v1 — build this first):**
+```
+BucketKey = (rook_files: sorted 2-of-8, knight_files: sorted 2-of-8)
+```
+Only the file each rook/knight *started* on, independent of whether
+it started rank 1 or rank 2. Combinatorially: `C(8,2) × C(6,2)` = 28 ×
+15 = **420 buckets**. Chosen because rook/knight file placement drives
+the two things that matter most for early-game plans in a variant with
+open lines from move 1 (VARIANT_ARCHITECTURE.md) — open/semi-open file
+control and knight outpost potential — while staying small enough that
+a few thousand self-play games actually populate most buckets with
+more than a handful of samples each, unlike the 2.16M-keyspace problem
+Path A had.
+
+**Tier 2 (future extension, not v1):**
+```
+BucketKey += (bishop_files: sorted 2-of-remaining-4,
+              queen_file: 1-of-remaining-2,
+              rank_mask: 7-bit, one bit per non-pawn/non-king piece,
+                         1 = started rank 2, 0 = started rank 1)
+```
+Adds ~6 × 2 × 128 ≈ 1500× more buckets. Do not build this until Tier 1
+buckets show enough per-bucket sample depth in practice that splitting
+further wouldn't just re-create the sparsity problem — this is an
+empirical call to make once real data exists, not a decision to make
+now.
+
+### Data pipeline
+
+1. **`selfplay.rs` — new output stream.** Current output
+   (`stm_features | nstm_features | search_eval_cp | game_result`) has
+   no starting-position identity or root move (D62 finding). Add a
+   second, opt-in output stream:
+   `starting_seed | rook_files | knight_files | root_move_uci |
+   game_result`. Computed once per game at position setup — cheap.
+   Existing NNUE training-row output is unchanged; this is an
+   additive stream, not a replacement, so Phase 25/NNUE data
+   generation isn't affected by this work.
+2. **Aggregation script** (new, offline — runs where `texel_tune.rs`
+   currently runs, same CI pattern). Groups rows by `BucketKey`,
+   tallies win/draw/loss per candidate root move within each bucket.
+   **Minimum-sample threshold: 30 games per (bucket, root move) pair**
+   before that entry is trusted (standard small-sample floor) — below
+   threshold, the entry is omitted rather than shipped with a
+   misleadingly confident win rate.
+3. **Existing self-play data cannot be reused.** Every prior
+   self-play run (Phase 14 onward) used the old output format with no
+   starting-position identity recorded — this needs a fresh generation
+   pass with the new stream, not a re-aggregation of existing
+   artifacts. Real cost to budget when this gets picked up.
+
+### Runtime deployment
+
+WASM/browser play needs the bucket-stats table client-side. Chosen:
+**bake it into the binary at build time** as a generated
+`src/opening_stats.rs` (a static table, same shape as how magic
+bitboard constants are generated/committed) produced by the offline
+aggregation script and committed to the repo — not fetched at runtime.
+420 buckets × a handful of root-move entries each is small; a
+runtime fetch would add load-time latency and a network dependency
+for something that fits in the binary for free. Re-generate and
+re-commit this file whenever a new self-play data pass accumulates
+enough volume to matter — same "downloadable, replace the file"
+workflow already used for Texel-tuned weights.
+
+### Usage mechanism
+
+**Not** an auto-play opening book (engine blindly plays the top bucket
+move). Chosen: **root-only move-ordering bias** — if the current
+position's bucket has a trusted entry (past the 30-game threshold)
+favoring a specific root move, nudge that move earlier in root move
+ordering / apply a small eval bonus at the root, but let full search
+still evaluate and can still override it. This degrades gracefully
+(empty or thin bucket ⇒ zero effect, falls straight through to normal
+search) rather than risking a bad hard-coded book move in a variant
+with no established opening theory to validate against. Same "one
+more capped signal, not a replacement mechanism" shape already used
+for the Phase 23.6 extension family (D59) and Tension Field's proposed
+search hook.
+
+### Status
+
+**Designed, not started.** Queued behind Phase 25 (full Texel
+re-tune) — no code changes yet. Concrete build order for whichever
+session picks this up: (1) `selfplay.rs` new output stream, (2) run a
+fresh self-play generation pass with it, (3) aggregation script, (4)
+generate + commit `src/opening_stats.rs`, (5) wire root-move-ordering
+bias into `ordering.rs`, (6) unit test against a few known buckets by
+hand before trusting the table. Resume by re-reading this entry, not
+by re-deciding exact-vs-bucketed — that question is closed.
+
+## D68 — Threats Evaluation Term (Hanging/Undefended Pieces): Fourth HCE Gap Identified, Not Implemented (Session 84)
+
+Gokul asked whether the engine has anything scoring "pieces defending
+each other" / board-wide support relationships. It does not — checked
+against `ENGINE_ARCHITECTURE.md`'s current term list (material, PST,
+mobility, pawn structure, king safety, open lines, tempo) plus a grep
+of `eval/*.rs`. The only existing piece-supports-piece logic is
+`open_lines.rs`'s connected-rooks/battery detection — narrow, rook/
+file-specific, not a general defended-vs-hanging signal.
+
+**This is not the same proposal as the uploaded "coordination graph"
+idea** (that one was generic and speculative, no prior-art citation).
+This is Stockfish's established **Threats** evaluation term
+(`threats.cpp` in Stockfish's `evaluate.cpp` pipeline, GPL v3, same
+family already credited for Pet Dragon's material/PST baseline per
+`PROJECT_CONTEXT.md`) — hanging-piece penalty, weak-queen-protection
+penalty, minor/rook threat bonus, restricted-piece penalty. Since it's
+a known-working term from an already-credited GPL v3 source rather
+than an unvalidated idea, it's lower-risk than either Tension Field or
+the coordination-graph pitch, and belongs in the same D63-style
+gap-audit lineage rather than as a new speculative feature.
+
+**Scope, matching D63's three items:**
+- New `eval/threats.rs`, MG-scoped like `king_safety.rs`'s pattern
+  (existing convention: `* phase / 24` in this repo, not the tapered
+  `s()`/`taper()` pipeline `pawns.rs` uses — pick per D65/D63's
+  precedent, whichever the implementing session confirms is still the
+  house style by re-reading a current file, don't assume from this
+  note).
+- **Reuse existing attack bitboards** — `mobility.rs` and
+  `king_safety.rs` already compute per-square attacker sets; this must
+  reuse those rather than adding a second full attacker-enumeration
+  pass (same reuse discipline the uploaded Tension Field spec called
+  out, and the same NPS-regression risk if skipped).
+- **Double-counting risk, flagged in advance this time** (Phase 24
+  items 1-3 found their overlap risk mid-implementation or via
+  hand-check; doing it now instead): hanging-piece detection overlaps
+  conceptually with `mobility.rs`'s attack counts and with
+  `king_safety.rs`'s attacker-weight tropism term. Needs the same
+  hand-verification against existing test FENs Phase 24 items used
+  before trusting it's additive signal — don't skip that step just
+  because the term itself is well-precedented.
+- Full Texel-chain wiring in the same submission as the eval change
+  (features/predict/weights/weights_f64/predict_f64/texel_diag/
+  texel_tune) — apply Phase 24 item 1's lesson directly, don't
+  discover the missing sites via failed CI.
+
+**Status:** documented candidate, not implemented, not scheduled.
+Queued behind Phase 25 same as D67 — if picked up before Phase 25
+closes, its new eval term would also need folding into whatever
+Texel dataset generation happens for Phase 25, same sequencing
+concern raised for Tension Field. Logged as a Phase 24 addendum in
+`ROADMAP.md` rather than reopening Phase 24's "fully closed out"
+status — Phase 24 items 1-3 stay closed; this is a new, separate
+candidate found by a different question, not an unfinished Phase 24
+item.
