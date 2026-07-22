@@ -29,6 +29,9 @@ at all — verification is via GitHub Actions `cargo test`, not
 in-chat execution. Used the Python sandbox instead to conceptually
 mirror and sanity-check the tokenizing/indentation algorithm before
 writing the Rust.
+- Confirmed with Gokul that the pushed lexer.rs/main.rs changes passed
+GitHub Actions (green check) — lexer is verified working end-to-end
+via `cargo test`, not just in-chat reasoning.
 - Found Roadmap.md was stale in two ways and fixed both: (1) it still
 said "Phase 0, not yet started" despite scaffold + lexer work done;
 (2) it still referenced the old `.pyr`/`pyrc` naming superseded by
@@ -50,8 +53,6 @@ close the loop on the "def/param/return/print" example end-to-end
 - See "Open questions" in Decisions.md
 - Whether to eventually relax the tabs-not-allowed-for-indentation
 lexer rule (currently an implementation choice, not a locked decision)
-- Confirm the pushed lexer/main.rs changes pass GitHub Actions
-(cargo build + cargo test) — not yet confirmed in this log
 
 ## Session 002 — 2026-07-22
 
