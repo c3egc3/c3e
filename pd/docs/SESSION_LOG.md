@@ -7,6 +7,96 @@ Most recent session at TOP.
 
 ---
 
+## Session 84 — 2026-07-22/23 (Rank-battery bug fix; Phase 23.4 design closed — D67; Threats-term gap found — D68; Phase 25 completed and applied — D69)
+
+**Built/done, in order:**
+
+1. **Reviewed two uploaded documents** (Tension Field eval/search-extension
+   spec + a generic "stack more modules" pitch). Recommended against
+   acting on either immediately — mid-Phase-25 is the wrong time to add
+   more untuned terms, and the modules proposed were generic
+   engine-strength ideas, not Pet-Dragon-specific. Redirected to what
+   actually differentiates Pet Dragon (variant mechanics, D62's opening
+   statistics idea) instead.
+
+2. **D67 — closed Phase 23.4's exact-vs-bucketed design question**,
+   held open since D62 (Session 82). Chose bucketed-by-structural-
+   features: v1 bucket key = (rook_files, knight_files), 420 buckets,
+   root-only move-ordering bias as the usage mechanism (not an
+   auto-play book), stats table baked into the binary at build time.
+   Full data pipeline and 6-step build order documented. Designed, not
+   started — queued behind Phase 25.
+
+3. **D68 — found a 4th HCE gap** while answering whether the engine
+   scores pieces defending each other: no Stockfish-style **Threats**
+   term (hanging-piece/weak-queen-protection/restricted-piece
+   penalties). Documented as a Phase 24 addendum, not implemented —
+   distinguished from the uploaded "coordination graph" pitch by being
+   an established, already-credited-family (Stockfish, GPL v3) term
+   rather than a speculative one.
+
+4. **Fixed a confirmed bug in `open_lines.rs`**: `BATTERY_ROOK_QUEEN`
+   only checked same-file rook/queen alignment, never same-rank —
+   despite Pet Dragon's start position (all pieces on ranks 1-2) making
+   the rank case actually *more* common than the file case
+   statistically. Added the missing rank check (reusing the existing
+   weight, no new Texel parameter needed), mirrored identically in
+   `texel/features.rs` for dual-sync. Hand-verified against all existing
+   `open_lines.rs` test FENs — no regressions, one new test added.
+   Confirmed live on `main` before proceeding to Phase 25 step 2.
+
+5. **Ran Phase 25 (D66) to completion.** Step 1 (`texel_gen.yml`) had
+   already been triggered pre-session with different params than
+   planned (`seed_start=15000, n=3500` vs. the planned `10000`/`4000`)
+   — confirmed successful (run #7, 62,125 samples, also published as a
+   permanent Release asset). Step 2: ran a 15-epoch/decay=0 sanity tune
+   first (pipeline health check — clean, monotonic loss, but several
+   sparse features sign-flipped as expected from zero regularization),
+   then the real 75-epoch/decay=0.03 run. Ran `texel_diag.yml` against
+   the final result — all 10 cases passed clean. Two `texel_diag.yml`
+   trigger mistakes along the way (guessed a run ID from a log-zip
+   filename instead of the actual workflow run ID; got a 404; corrected
+   once Gokul supplied the real run URL) — noted and fixed, not repeated.
+
+6. **Applied the tune to production code (D69).** All 8 files
+   (`eval/material.rs`, `tables.rs`, `mobility.rs`, `pawns.rs`,
+   `king_safety.rs`, `open_lines.rs`, `mod.rs`, `texel/weights.rs`)
+   updated and cross-verified programmatically field-by-field for
+   dual-sync, not just by eye. **One tuned result rejected and NOT
+   applied** — `KNIGHT_NEAR_OWN_KING_BONUS`/`BISHOP_NEAR_OWN_KING_BONUS`
+   tuned negative, which broke two existing tests encoding a validated
+   invariant (shelter should help, not hurt); kept at Phase 24
+   hand-picked defaults instead of changing the tests to fit a
+   noisy first-tune result. `TEMPO` bumped 20→24, required widening one
+   test bound that was tightly coupled to the old exact value. Full
+   watch-item list (rook_on_seventh MG sign, pawn_storm_bonus
+   non-monotonicity, bishop_pair/battery_bishop_queen large swings) in
+   DECISIONS.md D69 — none blocking, all worth a second look whenever
+   more self-play data accumulates next.
+
+**Decisions made:** D67 (23.4 bucketed design, full spec), D68 (Threats
+term gap, documented candidate), D69 (Phase 25 application + the
+knight/bishop-near-king rejection + watch-item list).
+
+**Bugs fixed:** rank-battery detection gap in `BATTERY_ROOK_QUEEN`
+(`open_lines.rs` + `texel/features.rs`).
+
+**Files delivered this session, not yet confirmed committed by Gokul:**
+`eval/material.rs`, `eval/tables.rs`, `eval/mobility.rs`,
+`eval/pawns.rs`, `eval/king_safety.rs`, `eval/open_lines.rs`,
+`eval/mod.rs`, `texel/weights.rs` (Phase 25 application — the
+open_lines.rs/features.rs battery fix from earlier in the session was
+already confirmed committed before Phase 25 started).
+
+**Next session start point:** confirm the 8 Phase-25-application files
+above are committed to `main` (check via `raw.githubusercontent.com`
+before assuming). Once confirmed, Phase 25 is fully closed — no
+default next task; ask what to work on next (candidates on record:
+Phase 23.4 build per D67's 6-step order, Phase 24's 4th candidate
+(Threats term) per D68, or Phase 26's parked items).
+
+---
+
 ## Session 83 — 2026-07-20 (Phase 24 items 1, 2 & 3: passed-pawn king distance + pawn storm + minor-piece shelter — D63, now fully closed out; then game analysis, Phase 25 scoped + kicked off, Phase 26 logged)
 
 **Built/done, in order:**

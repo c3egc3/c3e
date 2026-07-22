@@ -2509,3 +2509,74 @@ concern raised for Tension Field. Logged as a Phase 24 addendum in
 status — Phase 24 items 1-3 stay closed; this is a new, separate
 candidate found by a different question, not an unfinished Phase 24
 item.
+
+## D69 — Phase 25 Complete: Full Texel Re-Tune Applied (Session 84)
+
+Applied the Phase 25 re-tune to production code. Source: `texel_tune.yml`
+run against 62,125 fresh self-play positions (`texel_gen.yml`,
+seed_start=15000, n=3500), `epochs=75`, `weight_decay=0.03`. Sanity-
+checked two ways before applying: (1) a 15-epoch/decay=0 run first to
+confirm the pipeline itself was healthy (loss monotonically decreasing,
+no NaN/divergence) before spending the longer run; (2) `texel_diag.yml`
+run against the final 75-epoch result — all 10 sanity cases (5 random
+Pet Dragon starts symmetric, up/down material swings correctly signed,
+K+P vs K endgames correctly signed) passed clean.
+
+**Files touched:** `eval/material.rs`, `eval/tables.rs`,
+`eval/mobility.rs`, `eval/pawns.rs`, `eval/king_safety.rs`,
+`eval/open_lines.rs`, `eval/mod.rs`, `texel/weights.rs`. Every field
+cross-verified programmatically (not just by eye) to match exactly
+between each eval file and `TunableWeights::default()` — dual-sync
+confirmed, not assumed.
+
+**One tuned result rejected outright, not applied — this is the
+important part of this decision.** The tuner returned
+`KNIGHT_NEAR_OWN_KING_BONUS = -1` and `BISHOP_NEAR_OWN_KING_BONUS = -3`
+(Phase 24 item 3, its first-ever tune). Both existing
+`king_safety.rs` tests encode a validated invariant — sheltering your
+own minors near your own king should help, not hurt —
+(`test_minor_piece_shelter_knight_same_zone_vs_different` hard-asserts
+the constant is positive; `test_king_safety_rewards_minor_piece_shelter`
+checks the shelter ordering directly) and a negative value breaks both.
+Unlike `bishop_pair`/`rook_on_seventh` in material.rs and open_lines.rs
+(also first/early real tunes, also initially sign-flipped in the
+15-epoch/no-decay sanity run), this pair did NOT recover under
+`weight_decay=0.03` across the full 75-epoch run — treated as this
+term's first tune landing on noise rather than signal, most likely
+because "friendly minor in the exact same king-file-zone as the king"
+is a narrow, rare condition even across 62,125 samples. **Kept at the
+Phase 24 hand-picked defaults (`8`/`6`) in both `king_safety.rs` and
+`weights.rs`.** This is the correct call per house rules — a tuned
+result that inverts a validated sanity check gets rejected, not
+shipped, and the tests are not the thing that gets changed to
+accommodate it.
+
+**Watch items — not blocking, but worth re-checking once more
+self-play data accumulates (next natural re-tune, not a scheduled
+task):**
+- `rook_on_seventh` MG flipped negative (`s(8,47)→s(-14,39)`). Verified
+  this doesn't break `test_rook_on_seventh` — that test's position has
+  phase=2 (near-pure endgame taper weighting), so the still-strongly-
+  positive EG value dominates — but the MG sign flip itself is
+  unconfirmed as signal vs. noise from one tune.
+- `pawn_storm_bonus` (Phase 24 item 2, its first tune) came out
+  non-monotonic (`[14,10,46,13,14,6,1,-5]` vs. the smooth hand-picked
+  `[40,32,24,16,8,0,0,0]`) — index 2 sits well above its neighbours.
+  Existing tests only check the distance-3-vs-6 endpoints (still
+  correctly ordered, 13 > 1), so this shipped, but the middle bump is
+  unexplained.
+- `bishop_pair` (`s(18,29)→s(2,15)`) and `battery_bishop_queen`
+  (`s(15,5)→s(33,19)`) both moved substantially from their Phase 14/
+  hand-picked origins. Both stayed positive and passed `texel_diag`, so
+  applied, but flagged as larger-than-typical swings worth a second
+  look with more data.
+
+**Tempo bumped `20→24`** — required widening
+`test_evaluate_start_pos_near_zero`'s bound (`≤20→≤30`) since that
+bound was tightly coupled to the old exact tempo value; the widened
+bound still enforces the same "near zero, tempo only" intent.
+
+**Next natural trigger for re-tuning:** whenever self-play data volume
+meaningfully increases again (e.g. picking up D67's opening-stats data
+collection, or any future Phase pass that generates fresh self-play
+data) — not a scheduled task on its own.

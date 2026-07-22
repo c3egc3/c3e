@@ -1472,9 +1472,17 @@ weight_decay=0.0` at their defaults for this sanity pass. Check
 `texel_diag.rs`-style output for wild outliers before committing to a
 longer run.
 
-**Next session's first action (if not done by end of this one):**
-confirm the rank-battery fix is committed to `main`, then trigger
-`texel_tune.yml` per the step 2 plan above.
+**Status: COMPLETE (Session 84, D69).** Sanity run (15ep/decay=0) →
+full run (75ep/decay=0.03) → `texel_diag.yml` (10/10 pass) → applied
+to all 8 files (`eval/material.rs`, `tables.rs`, `mobility.rs`,
+`pawns.rs`, `king_safety.rs`, `open_lines.rs`, `mod.rs`,
+`texel/weights.rs`), cross-verified field-by-field for dual-sync. One
+tuned result rejected (`knight`/`bishop_near_own_king` — broke two
+validated tests, kept at Phase 24 defaults). Full reasoning, rejected
+values, and a watch-item list (rook_on_seventh, pawn_storm_bonus,
+bishop_pair/battery_bishop_queen) in DECISIONS.md D69. **Not yet
+confirmed committed to `main` by Gokul as of this entry** — verify via
+`raw.githubusercontent.com` before assuming done.
 
 ---
 
