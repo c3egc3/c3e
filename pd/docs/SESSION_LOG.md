@@ -110,10 +110,51 @@ Most recent session at TOP.
    artifact's name or contents. Not yet run — no actual opening data
    exists yet, this is purely the capture-mechanism.
 
+9. **Ran and validated the first real opening-stats collection batch,
+   then found and corrected a real design error (D71).** Gokul
+   confirmed `selfplay.rs`/`selfplay.yml` CI-green and committed. A
+   500-game validation batch first (format-checked: 500/500 rows,
+   correct structure, sensible values — e.g. `a2f7` and `f2f7` root
+   moves, long diagonal/file slides consistent with each game's own
+   rook/knight file placement). Then a real collection attempt at
+   `shards=15, games_per_shard=2000` — Gokul flagged it was tracking
+   toward 600 min runtime, which would have exceeded the Actions
+   360-min job ceiling and produced nothing (no partial-artifact
+   upload on timeout); cancelled and resized to `games_per_shard=800`
+   (12,000 games total), which completed. Validated: no data loss
+   (12,000/12,000), all seeds unique, all values well-formed. Checked
+   bucket coverage before building the aggregator, and found **D67's
+   "420 buckets" estimate was wrong** — it assumed rook/knight files
+   were drawn from disjoint pools, but pieces of different types (or
+   even both rooks) can share a file across its two ranks. Real count:
+   1,054 distinct buckets already hit in just 12,000 games, 2.5x the
+   estimate. Consequence, checked directly: zero (bucket, move) pairs
+   clear the 30-sample threshold with this batch (max 16) — expected
+   given the corrected count, not a bug, but worth surfacing before
+   building the aggregator so an empty first output isn't mistaken for
+   broken.
+
+10. **Built the aggregator (D67 step 3, D71).**
+    `src/bin/aggregate_opening_stats.rs` +
+    `.github/workflows/aggregate_opening_stats.yml`, mirroring
+    `texel_tune.rs`/`.yml`'s exact input pattern
+    (`data_run_id`/`data_paths`/`data_urls`, comma-separated) so future
+    accumulated batches combine rather than replace. Generates
+    `src/opening_stats.rs`: a 12-bit-packed-key sorted static array with
+    binary-search `lookup()`, chosen over a `phf` map to avoid a new
+    WASM-uncertain dependency. Per bucket, keeps only the single
+    best-win-rate move clearing the threshold; non-qualifying buckets
+    are omitted (not zero-filled) so "no data" stays distinguishable
+    from "checked, no edge" at lookup time. Includes its own generated
+    tests (table sorted, a lookup miss returns `None`). Not yet run
+    against real data — would currently produce a valid but empty
+    table.
+
 **Decisions made:** D67 (23.4 bucketed design, full spec), D68 (Threats
 term gap, documented candidate), D69 (Phase 25 application + the
 knight/bishop-near-king rejection + watch-item list), D70 (CI-caught
-test break, ENEMY_KING_DIST_EG/OWN_KING_DIST_EG reverted).
+test break, ENEMY_KING_DIST_EG/OWN_KING_DIST_EG reverted), D71
+(bucket-count estimate corrected empirically, aggregator built).
 
 **Bugs fixed:** rank-battery detection gap in `BATTERY_ROOK_QUEEN`
 (`open_lines.rs` + `texel/features.rs`); `test_passed_pawn_bonus`
@@ -123,16 +164,22 @@ failure from D69's king-distance term application (D70).
 (rank-battery fix, confirmed committed); `eval/material.rs`,
 `eval/tables.rs`, `eval/mobility.rs`, `eval/king_safety.rs`,
 `eval/open_lines.rs`, `eval/mod.rs` (D69, Phase 25 application);
-`eval/pawns.rs` + `texel/weights.rs` (D70's correction, supersedes
-D69's originals for these two files — CI-confirmed green); `selfplay.rs`
-+ `.github/workflows/selfplay.yml` (Phase 23.4 step 1 — not yet
-confirmed committed as of this entry).
+`eval/pawns.rs` + `texel/weights.rs` (D70's correction, CI-confirmed
+green); `selfplay.rs` + `.github/workflows/selfplay.yml` (Phase 23.4
+step 1, confirmed committed and CI-green);
+`src/bin/aggregate_opening_stats.rs` +
+`.github/workflows/aggregate_opening_stats.yml` (Phase 23.4 step 3 —
+not yet confirmed committed as of this entry).
 
-**Next session start point:** confirm `selfplay.rs`/`selfplay.yml` are
-committed to `main` (check via `raw.githubusercontent.com`). Once
-confirmed, next action is D67 step 2 — Gokul triggers `selfplay.yml`
-from the Actions tab to generate the first real opening-stats dataset
-— then step 3 (aggregation script) is the next code task.
+**Next session start point:** confirm the aggregator files are
+committed to `main`. 12,000 games of opening-stats data already
+collected (`seed100000-15×800`) but nothing clears the 30-sample
+threshold yet (D71) — next action is Gokul running more
+`selfplay.yml` batches (fresh `seed_start` each time, e.g. `120000`
+next) to accumulate toward that, then running
+`aggregate_opening_stats.yml` across all accumulated batches together.
+No fixed target — check back periodically rather than committing to
+one number now.
 
 ---
 

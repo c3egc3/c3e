@@ -1198,26 +1198,42 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              real structural investments now, not quick tries.
 - [~] 23.4 — IN PROGRESS (D67 design, Session 84). Variant-specific
              opening statistics, bucketed by structural features. Full
-             design in DECISIONS.md D67. Build order and status:
-             1. **DONE (Session 84)** — `selfplay.rs` new output stream
-                (`starting_seed | rook_files | knight_files |
-                root_move_uci | game_result`), plus `selfplay.yml`
-                updated to upload/merge it as its own artifact
-                (`opening-data-combined-...`), parallel to the existing
-                NNUE artifact. Not yet run — no opening data exists yet.
-             2. NOT STARTED — run a fresh self-play generation pass
-                with the updated `selfplay.yml` (Gokul, via Actions tab).
-             3. NOT STARTED — aggregation script (bucket by
-                (rook_files, knight_files), 30-game minimum-sample
-                threshold per D67).
-             4. NOT STARTED — generate + commit `src/opening_stats.rs`.
+             design in DECISIONS.md D67; bucket-count estimate corrected
+             empirically in D71 (true count is several times larger than
+             the original "420" — see D71, not a design problem, just a
+             wrong estimate). Build order and status:
+             1. **DONE (Session 84)** — `selfplay.rs` new output stream,
+                `selfplay.yml` uploads/merges it as its own artifact.
+             2. **DONE (Session 84)** — first real data collection run,
+                `seed_start=100000, 15×800` = 12,000 games. Validated:
+                format correct, no data loss, but zero (bucket, move)
+                pairs clear the 30-sample threshold yet (D71) — expected
+                given the corrected bucket count, more runs needed.
+             3. **DONE (Session 84)** — aggregation script
+                (`src/bin/aggregate_opening_stats.rs` +
+                `.github/workflows/aggregate_opening_stats.yml`), same
+                `data_run_id`/`data_paths`/`data_urls` input pattern as
+                `texel_tune.yml` so future runs' data accumulates rather
+                than replacing prior batches. Not yet run against real
+                data — nothing clears the threshold yet, would just
+                generate an empty (but valid) `src/opening_stats.rs`.
+             4. NEXT — accumulate more `selfplay.yml` batches (fresh
+                `seed_start` each time) until a meaningful number of
+                (bucket, move) pairs clear 30 samples, then run the
+                aggregator and commit the generated
+                `src/opening_stats.rs`. No fixed target game count —
+                open-ended accumulation, check back periodically.
              5. NOT STARTED — wire root-move-ordering bias into
-                `ordering.rs`.
+                `ordering.rs` (reads `opening_stats::lookup()`, already
+                built and ready to call once the table has real entries).
              6. NOT STARTED — unit test against a few known buckets by
-                hand.
-             Resume by re-reading D67's "Status" section and this list —
-             the design question is closed, only the build order above
-             is live.
+                hand (partially covered already — the generated file's
+                own `test_table_sorted_by_key`/`test_lookup_miss_returns_none`
+                — but a hand-picked known-bucket check is still worth
+                doing once real entries exist).
+             Resume by re-reading D67 + D71 — the design question and
+             the bucket-count correction are both closed, only steps 4-6
+             above are live.
 - [~] 23.5 — HELD for the future (D61, Session 82). NNUE architecture
              upgrade: king-relative bucketed features, replacing the
              current flat 768+128=896 input set. Shelving NNUE

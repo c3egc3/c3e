@@ -2367,14 +2367,18 @@ starting position (currently a fresh random seed every game), not a
 BucketKey = (rook_files: sorted 2-of-8, knight_files: sorted 2-of-8)
 ```
 Only the file each rook/knight *started* on, independent of whether
-it started rank 1 or rank 2. Combinatorially: `C(8,2) × C(6,2)` = 28 ×
-15 = **420 buckets**. Chosen because rook/knight file placement drives
-the two things that matter most for early-game plans in a variant with
-open lines from move 1 (VARIANT_ARCHITECTURE.md) — open/semi-open file
-control and knight outpost potential — while staying small enough that
+it started rank 1 or rank 2. Estimated at the time of this design
+(WRONG — corrected empirically in D71, Session 84, once real data
+existed — see D71 for the actual bucket count and why this estimate
+undercounted) as `C(8,2) × C(6,2)` = 28 × 15 = 420 buckets. Chosen
+because rook/knight file placement drives the two things that matter
+most for early-game plans in a variant with open lines from move 1
+(VARIANT_ARCHITECTURE.md) — open/semi-open file control and knight
+outpost potential — while staying (it was believed) small enough that
 a few thousand self-play games actually populate most buckets with
 more than a handful of samples each, unlike the 2.16M-keyspace problem
-Path A had.
+Path A had. The reasoning for *why* file-based bucketing is the right
+axis still holds — only the specific count was wrong.
 
 **Tier 2 (future extension, not v1):**
 ```
@@ -2632,3 +2636,59 @@ the same reason. All four "held back" terms are first-tune, sparse/
 compound features — a reasonable pattern to watch for specifically
 next time: first-time tunes of compound or narrow-condition features
 deserve extra scrutiny before shipping, not just a sign check.
+
+## D71 — Phase 23.4 Step 2/3: Bucket Count Corrected Empirically; Aggregator Built (Session 84)
+
+**D67's "420 buckets" estimate was wrong — corrected here with real
+data.** That estimate assumed rook files and knight files were drawn
+from disjoint pools (rooks "use up" 2 of 8 files, knights pick from
+the remaining 6), i.e. that a *file*, once touched by a rook, couldn't
+also host a knight. False: only *squares* are exclusive in Pet
+Dragon's setup, not files — a rook and a knight (or both rooks) can
+share a file across its two ranks. First real data run (Session 84,
+12,000 games, `seed_start=100000`, `15×800`) found **1,054 distinct
+(rook_files, knight_files) buckets already hit in just 12,000 games**,
+2.5x the wrong estimate, with no sign of plateauing yet. The
+file-based-bucketing *reasoning* itself (D67) still holds — file
+placement is still the right axis for open-line/outpost dynamics —
+only the count was wrong. No design change needed, just corrected
+expectations: this key space is meaningfully sparser than planned, so
+useful table entries will take longer to accumulate than D67 assumed.
+
+**Consequence, checked directly, not assumed:** with the same 12,000
+games, 8,130 distinct (bucket, root-move) pairs exist, and **zero**
+clear D67's 30-sample threshold (max observed: 16). Expected given the
+corrected bucket count, not a bug — flagged to Gokul before building
+the aggregator so the first real run's near-empty output table isn't
+mistaken for something broken.
+
+**Aggregator built** (D67 step 3): `src/bin/aggregate_opening_stats.rs`
++ `.github/workflows/aggregate_opening_stats.yml`, following the same
+pattern as `texel_tune.rs`/`.yml` — accepts one or more opening-stats
+data files (local paths or URLs, same `data_paths`/`data_urls` dual
+input style), groups by `(sorted rook_files, sorted knight_files)`,
+then by root move within each bucket, and for each bucket keeps only
+the single best-win-rate move that clears the 30-sample threshold
+(matching D67's usage design — root-only move-ordering bias needs one
+favored move per bucket, not a full ranking). Buckets with no
+qualifying move are omitted, not zero-filled — an absent bucket and a
+"we checked and nothing stood out" bucket need to stay distinguishable
+so the ordering hook (D67 step 5) can tell "no data" from "data says
+no edge here." Outputs `src/opening_stats.rs`: a static, sorted-by-key
+array (12-bit packed key: 3 bits each for rook_file_0, rook_file_1,
+knight_file_0, knight_file_1) with a `lookup(key) -> Option<&Entry>`
+binary search — chosen over a `phf` compile-time map to avoid adding a
+new dependency with unconfirmed WASM compatibility, matching this
+project's existing zero-added-dependency pattern for generated tables.
+
+**Status:** aggregator built and ready, not yet run against real data
+(nothing clears the threshold yet with only 12,000 games — running it
+now would just generate an empty `src/opening_stats.rs`, technically
+correct but not worth committing). Next: Gokul runs more
+`selfplay.yml` batches with fresh `seed_start` values, concatenating
+each new `opening_data_combined.txt` with prior ones (12,000 games
+already in hand from `seed100000-15x800`) until a meaningful number of
+(bucket, move) pairs clear 30 samples, then run the aggregator. No
+fixed target game count set — this is genuinely open-ended
+accumulation, same as the NNUE self-play data's growth pattern; check
+back periodically rather than committing to one large number now.
