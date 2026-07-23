@@ -2580,3 +2580,55 @@ bound still enforces the same "near zero, tempo only" intent.
 meaningfully increases again (e.g. picking up D67's opening-stats data
 collection, or any future Phase pass that generates fresh self-play
 data) — not a scheduled task on its own.
+
+## D70 — CI Caught a Real Test Break in D69's Application: ENEMY_KING_DIST_EG/OWN_KING_DIST_EG Reverted (Session 84)
+
+Gokul ran CI after committing D69's application. `test_passed_pawn_bonus`
+failed: `-24` instead of the expected `>0`. Root cause traced exactly —
+not guessed: that test's position (White pawn e5, White king e1, Black
+king e8) has Black's king sitting exactly on the pawn's promotion
+square while White's king is 7 squares away. D69 had applied Phase 25's
+tuned `ENEMY_KING_DIST_EG`/`OWN_KING_DIST_EG` (`1→3`, a 3x jump, D63
+item 1's first-ever tune), which cubes through `own_dist × advancement`
+in `passed_pawn_king_distance_bonus()` and swings this specific
+position to `-84` for that term alone, overwhelming the base passed-pawn
+bonus (`77 - 17 - 84 = -24`, matching the CI output exactly).
+
+**This should have been caught before shipping, not after.** D69's
+per-field verification checked that eval and `weights.rs` matched each
+other correctly (dual-sync), and checked several individual test cases
+by hand — but `ENEMY_KING_DIST_EG`/`OWN_KING_DIST_EG` specifically was
+reasoned about too quickly, on the assumption that a positive-staying
+weight on a term that was already accounted for in the passed-pawn
+bonus couldn't flip the total sign. That reasoning didn't actually
+compute the specific test FEN's numbers, and turned out wrong. No
+Rust toolchain is available in this environment to compile and run
+`cargo test` directly, which is exactly why this kind of arithmetic
+needs to be walked through explicitly per-test rather than pattern-
+matched from a "this term stayed positive, should be fine" impression
+— the lesson for future sessions applying a Texel result: every
+existing test whose FEN is even plausibly close to an edge case for a
+changed term needs the actual number worked out, not just a
+directional sanity check.
+
+**Fix — same rejection category as D69's knight/bishop-near-king
+call:** `ENEMY_KING_DIST_EG`/`OWN_KING_DIST_EG` reverted to the Phase 24
+hand-picked default (`1`/`1`) in both `eval/pawns.rs` and
+`texel/weights.rs`. This is D63 item 1's first-ever tune, on a
+compound/product feature (`king_distance × rank_advancement`) —
+inherently sparser and more overfit-prone than a simple per-rank
+bucket, the same risk profile that made the knight/bishop-near-king
+result untrustworthy. Recomputed `test_passed_pawn_bonus` by hand with
+the reverted value: `77 - 17 - 28 = 32 > 0` — passes, and matches the
+term's pre-Phase-25 (already-known-passing) behavior exactly, so this
+isn't a new risk, it's a restoration.
+
+**Updated watch-item list (supersedes D69's):** `rook_on_seventh` MG
+sign, `pawn_storm_bonus` non-monotonicity, `bishop_pair`/
+`battery_bishop_queen` large swings — unchanged from D69 — **plus**
+`enemy_king_dist_eg`/`own_king_dist_eg` now also held at hand-picked
+defaults alongside `knight_near_own_king`/`bishop_near_own_king`, for
+the same reason. All four "held back" terms are first-tune, sparse/
+compound features — a reasonable pattern to watch for specifically
+next time: first-time tunes of compound or narrow-condition features
+deserve extra scrutiny before shipping, not just a sign check.

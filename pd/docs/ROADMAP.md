@@ -1472,17 +1472,20 @@ weight_decay=0.0` at their defaults for this sanity pass. Check
 `texel_diag.rs`-style output for wild outliers before committing to a
 longer run.
 
-**Status: COMPLETE (Session 84, D69).** Sanity run (15ep/decay=0) →
-full run (75ep/decay=0.03) → `texel_diag.yml` (10/10 pass) → applied
-to all 8 files (`eval/material.rs`, `tables.rs`, `mobility.rs`,
-`pawns.rs`, `king_safety.rs`, `open_lines.rs`, `mod.rs`,
-`texel/weights.rs`), cross-verified field-by-field for dual-sync. One
-tuned result rejected (`knight`/`bishop_near_own_king` — broke two
-validated tests, kept at Phase 24 defaults). Full reasoning, rejected
-values, and a watch-item list (rook_on_seventh, pawn_storm_bonus,
-bishop_pair/battery_bishop_queen) in DECISIONS.md D69. **Not yet
-confirmed committed to `main` by Gokul as of this entry** — verify via
-`raw.githubusercontent.com` before assuming done.
+**Status: COMPLETE (Session 84, D69, corrected by D70).** Sanity run
+(15ep/decay=0) → full run (75ep/decay=0.03) → `texel_diag.yml` (10/10
+pass) → applied to all 8 files (`eval/material.rs`, `tables.rs`,
+`mobility.rs`, `pawns.rs`, `king_safety.rs`, `open_lines.rs`, `mod.rs`,
+`texel/weights.rs`), cross-verified field-by-field for dual-sync. Two
+tuned results rejected: `knight`/`bishop_near_own_king` (D69 — broke
+two validated tests) and `enemy`/`own_king_dist_eg` (D70 — CI caught
+this one after D69 shipped; `test_passed_pawn_bonus` failed, traced
+and fixed). Both held at Phase 24 hand-picked defaults. Full reasoning
+and a 4-item watch list (rook_on_seventh, pawn_storm_bonus,
+bishop_pair/battery_bishop_queen large swings) in DECISIONS.md D69/D70.
+**`pawns.rs`/`weights.rs` from D70 supersede the D69 versions — confirm
+the corrected versions are what's actually on `main`, and get a fresh
+CI run to confirm green, before treating Phase 25 as fully closed.**
 
 ---
 

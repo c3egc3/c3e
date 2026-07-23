@@ -68,32 +68,55 @@ Most recent session at TOP.
    invariant (shelter should help, not hurt); kept at Phase 24
    hand-picked defaults instead of changing the tests to fit a
    noisy first-tune result. `TEMPO` bumped 20→24, required widening one
-   test bound that was tightly coupled to the old exact value. Full
-   watch-item list (rook_on_seventh MG sign, pawn_storm_bonus
-   non-monotonicity, bishop_pair/battery_bishop_queen large swings) in
-   DECISIONS.md D69 — none blocking, all worth a second look whenever
-   more self-play data accumulates next.
+   test bound that was tightly coupled to the old exact value.
+
+7. **CI caught a second break D69 missed (D70).** Gokul ran CI after
+   committing — `test_passed_pawn_bonus` failed (`-24` instead of
+   `>0`). Traced exactly: D69's applied `ENEMY_KING_DIST_EG`/
+   `OWN_KING_DIST_EG` (`1→3`, D63 item 1's first tune) swings hard
+   negative for that test's specific FEN (enemy king already on the
+   pawn's promotion square, own king 7 away) — `-84` alone from that
+   term, overwhelming the base passed-pawn bonus. This should have been
+   caught during D69's own verification, not after — the per-field
+   dual-sync check confirmed eval matched `weights.rs`, but didn't walk
+   every changed term's arithmetic against every existing test FEN by
+   hand, and this was the one gap. No Rust toolchain is available in
+   this environment to actually run `cargo test`, so this class of
+   error (a term that stays positive but still flips a *combined*
+   test's sign) needs explicit per-test computation next time, not a
+   directional sanity impression. Fixed: reverted
+   `ENEMY_KING_DIST_EG`/`OWN_KING_DIST_EG` to the hand-picked default
+   (`1`/`1`) in both `eval/pawns.rs` and `texel/weights.rs`, same
+   rejection category as the knight/bishop-near-king call — recomputed
+   by hand against the failing test (`32 > 0`, passes, matches known
+   pre-Phase-25 behavior exactly).
 
 **Decisions made:** D67 (23.4 bucketed design, full spec), D68 (Threats
 term gap, documented candidate), D69 (Phase 25 application + the
-knight/bishop-near-king rejection + watch-item list).
+knight/bishop-near-king rejection + watch-item list), D70 (CI-caught
+test break, ENEMY_KING_DIST_EG/OWN_KING_DIST_EG reverted).
 
 **Bugs fixed:** rank-battery detection gap in `BATTERY_ROOK_QUEEN`
-(`open_lines.rs` + `texel/features.rs`).
+(`open_lines.rs` + `texel/features.rs`); `test_passed_pawn_bonus`
+failure from D69's king-distance term application (D70).
 
 **Files delivered this session, not yet confirmed committed by Gokul:**
-`eval/material.rs`, `eval/tables.rs`, `eval/mobility.rs`,
-`eval/pawns.rs`, `eval/king_safety.rs`, `eval/open_lines.rs`,
-`eval/mod.rs`, `texel/weights.rs` (Phase 25 application — the
+`eval/pawns.rs` and `texel/weights.rs` — D70's correction, supersedes
+the versions delivered earlier this session. `eval/material.rs`,
+`eval/tables.rs`, `eval/mobility.rs`, `eval/king_safety.rs`,
+`eval/open_lines.rs`, `eval/mod.rs` — D69's application, unaffected by
+D70, still pending Gokul's confirmation of commit status (the
 open_lines.rs/features.rs battery fix from earlier in the session was
 already confirmed committed before Phase 25 started).
 
-**Next session start point:** confirm the 8 Phase-25-application files
-above are committed to `main` (check via `raw.githubusercontent.com`
-before assuming). Once confirmed, Phase 25 is fully closed — no
-default next task; ask what to work on next (candidates on record:
-Phase 23.4 build per D67's 6-step order, Phase 24's 4th candidate
-(Threats term) per D68, or Phase 26's parked items).
+**Next session start point:** confirm ALL of this session's files are
+committed to `main` (check via `raw.githubusercontent.com` before
+assuming) — especially that the D70-corrected `pawns.rs`/`weights.rs`
+overwrote D69's originals and not the other way around. Get a fresh
+CI run to confirm green before considering Phase 25 truly closed. Once
+confirmed, no default next task; ask what to work on next (candidates
+on record: Phase 23.4 build per D67's 6-step order, Phase 24's 4th
+candidate (Threats term) per D68, or Phase 26's parked items).
 
 ---
 
