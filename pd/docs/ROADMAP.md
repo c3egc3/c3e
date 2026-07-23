@@ -1196,22 +1196,28 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              Stockfish-distillation data augmentation for the
              converged-toward-standard-chess phase of a game) are all
              real structural investments now, not quick tries.
-- [~] 23.4 — DESIGNED, not started (D67, Session 84). Variant-specific
-             opening statistics. D62 (Session 82) held this pending an
-             exact-vs-bucketed design pick; D67 closed that question —
-             **bucketed by structural features**, v1 bucket key =
-             (rook_files, knight_files), 420 buckets, root-only
-             move-ordering bias as the usage mechanism (not an
-             auto-play book), stats table baked into the binary at
-             build time as `src/opening_stats.rs`. Full pipeline spec
-             (selfplay.rs new output stream → aggregation script →
-             generated table → ordering.rs hook) in D67. Existing
-             self-play data cannot be reused — needs a fresh
-             generation pass with the new output stream. Queued
-             behind Phase 25; do not start until Phase 25 closes.
-             Resume by re-reading D67's "Status" section for the
-             concrete 6-step build order — the design question itself
-             is closed, don't re-litigate exact-vs-bucketed.
+- [~] 23.4 — IN PROGRESS (D67 design, Session 84). Variant-specific
+             opening statistics, bucketed by structural features. Full
+             design in DECISIONS.md D67. Build order and status:
+             1. **DONE (Session 84)** — `selfplay.rs` new output stream
+                (`starting_seed | rook_files | knight_files |
+                root_move_uci | game_result`), plus `selfplay.yml`
+                updated to upload/merge it as its own artifact
+                (`opening-data-combined-...`), parallel to the existing
+                NNUE artifact. Not yet run — no opening data exists yet.
+             2. NOT STARTED — run a fresh self-play generation pass
+                with the updated `selfplay.yml` (Gokul, via Actions tab).
+             3. NOT STARTED — aggregation script (bucket by
+                (rook_files, knight_files), 30-game minimum-sample
+                threshold per D67).
+             4. NOT STARTED — generate + commit `src/opening_stats.rs`.
+             5. NOT STARTED — wire root-move-ordering bias into
+                `ordering.rs`.
+             6. NOT STARTED — unit test against a few known buckets by
+                hand.
+             Resume by re-reading D67's "Status" section and this list —
+             the design question is closed, only the build order above
+             is live.
 - [~] 23.5 — HELD for the future (D61, Session 82). NNUE architecture
              upgrade: king-relative bucketed features, replacing the
              current flat 768+128=896 input set. Shelving NNUE
@@ -1257,12 +1263,12 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              untaken change (see D60 for the full rationale). ⚠️ Elo
              impact not yet measured, same as 23.6.
 
-**Phase 23 status as of Session 84: no active items.** 23.1–23.3 and
+**Phase 23 status as of Session 84: 23.4 in progress.** 23.1–23.3 and
 23.6–23.7 are done; 23.5 is HELD (D61, needs NNUE un-shelved first);
-23.4 is DESIGNED but not started (D67) — queued behind Phase 25, not
-picked up yet. Don't auto-resume either without explicit instruction.
-If no other instruction is given at the start of a session, ask what
-to work on rather than defaulting into either.
+23.4 is IN PROGRESS — step 1 of D67's 6-step build order done
+(`selfplay.rs`/`selfplay.yml`), steps 2-6 not started. If no other
+instruction is given at the start of a session, ask what to work on
+rather than assuming 23.4 continues automatically.
 
 ---
 
@@ -1472,20 +1478,19 @@ weight_decay=0.0` at their defaults for this sanity pass. Check
 `texel_diag.rs`-style output for wild outliers before committing to a
 longer run.
 
-**Status: COMPLETE (Session 84, D69, corrected by D70).** Sanity run
-(15ep/decay=0) → full run (75ep/decay=0.03) → `texel_diag.yml` (10/10
-pass) → applied to all 8 files (`eval/material.rs`, `tables.rs`,
-`mobility.rs`, `pawns.rs`, `king_safety.rs`, `open_lines.rs`, `mod.rs`,
-`texel/weights.rs`), cross-verified field-by-field for dual-sync. Two
-tuned results rejected: `knight`/`bishop_near_own_king` (D69 — broke
-two validated tests) and `enemy`/`own_king_dist_eg` (D70 — CI caught
-this one after D69 shipped; `test_passed_pawn_bonus` failed, traced
-and fixed). Both held at Phase 24 hand-picked defaults. Full reasoning
-and a 4-item watch list (rook_on_seventh, pawn_storm_bonus,
-bishop_pair/battery_bishop_queen large swings) in DECISIONS.md D69/D70.
-**`pawns.rs`/`weights.rs` from D70 supersede the D69 versions — confirm
-the corrected versions are what's actually on `main`, and get a fresh
-CI run to confirm green, before treating Phase 25 as fully closed.**
+**Status: COMPLETE and CI-CONFIRMED GREEN (Session 84, D69, corrected
+by D70).** Sanity run (15ep/decay=0) → full run (75ep/decay=0.03) →
+`texel_diag.yml` (10/10 pass) → applied to all 8 files
+(`eval/material.rs`, `tables.rs`, `mobility.rs`, `pawns.rs`,
+`king_safety.rs`, `open_lines.rs`, `mod.rs`, `texel/weights.rs`),
+cross-verified field-by-field for dual-sync. Two tuned results
+rejected: `knight`/`bishop_near_own_king` (D69) and
+`enemy`/`own_king_dist_eg` (D70, CI-caught after D69 shipped). Both
+held at Phase 24 hand-picked defaults. Full reasoning and a 4-item
+watch list (rook_on_seventh, pawn_storm_bonus, bishop_pair/
+battery_bishop_queen large swings) in DECISIONS.md D69/D70. Gokul
+confirmed a fresh CI run is fully green with the D70-corrected files
+committed — Phase 25 is genuinely done, no open threads.
 
 ---
 

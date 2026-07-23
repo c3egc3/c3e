@@ -7,7 +7,7 @@ Most recent session at TOP.
 
 ---
 
-## Session 84 — 2026-07-22/23 (Rank-battery bug fix; Phase 23.4 design closed — D67; Threats-term gap found — D68; Phase 25 completed and applied — D69)
+## Session 84 — 2026-07-22/23 (Rank-battery bug fix; Phase 23.4 design closed — D67; Threats-term gap found — D68; Phase 25 completed, applied, and CI-corrected — D69/D70; Phase 23.4 step 1 started)
 
 **Built/done, in order:**
 
@@ -89,7 +89,26 @@ Most recent session at TOP.
    (`1`/`1`) in both `eval/pawns.rs` and `texel/weights.rs`, same
    rejection category as the knight/bishop-near-king call — recomputed
    by hand against the failing test (`32 > 0`, passes, matches known
-   pre-Phase-25 behavior exactly).
+   pre-Phase-25 behavior exactly). **Gokul confirmed a fresh CI run
+   green after this fix — Phase 25 is genuinely closed.**
+
+8. **Started Phase 23.4, step 1 of D67's build order.** Read
+   `selfplay.rs` in full before editing. Added a second, additive
+   output stream (`starting_seed | rook_files | knight_files |
+   root_move_uci | game_result`) — one row per game, captured from
+   White's starting setup before any move is made (Pet Dragon's
+   mirrored setup makes White's rook/knight files canonical for both
+   colors), root move and result backfilled the same way the existing
+   NNUE stream backfills `game_result_from_stm`. Also updated
+   `selfplay.yml`, which the code change alone wasn't sufficient for —
+   the workflow never passed a 4th CLI arg and never uploaded the new
+   file as an artifact, so without this it would have been silently
+   generated and thrown away inside the ephemeral runner. Added a
+   parallel per-shard upload + merge job step, mirroring the existing
+   NNUE artifact pattern exactly, as its own artifact
+   (`opening-data-combined-...`) that doesn't touch the primary
+   artifact's name or contents. Not yet run — no actual opening data
+   exists yet, this is purely the capture-mechanism.
 
 **Decisions made:** D67 (23.4 bucketed design, full spec), D68 (Threats
 term gap, documented candidate), D69 (Phase 25 application + the
@@ -100,23 +119,20 @@ test break, ENEMY_KING_DIST_EG/OWN_KING_DIST_EG reverted).
 (`open_lines.rs` + `texel/features.rs`); `test_passed_pawn_bonus`
 failure from D69's king-distance term application (D70).
 
-**Files delivered this session, not yet confirmed committed by Gokul:**
-`eval/pawns.rs` and `texel/weights.rs` — D70's correction, supersedes
-the versions delivered earlier this session. `eval/material.rs`,
+**Files delivered this session:** `open_lines.rs` + `texel/features.rs`
+(rank-battery fix, confirmed committed); `eval/material.rs`,
 `eval/tables.rs`, `eval/mobility.rs`, `eval/king_safety.rs`,
-`eval/open_lines.rs`, `eval/mod.rs` — D69's application, unaffected by
-D70, still pending Gokul's confirmation of commit status (the
-open_lines.rs/features.rs battery fix from earlier in the session was
-already confirmed committed before Phase 25 started).
+`eval/open_lines.rs`, `eval/mod.rs` (D69, Phase 25 application);
+`eval/pawns.rs` + `texel/weights.rs` (D70's correction, supersedes
+D69's originals for these two files — CI-confirmed green); `selfplay.rs`
++ `.github/workflows/selfplay.yml` (Phase 23.4 step 1 — not yet
+confirmed committed as of this entry).
 
-**Next session start point:** confirm ALL of this session's files are
-committed to `main` (check via `raw.githubusercontent.com` before
-assuming) — especially that the D70-corrected `pawns.rs`/`weights.rs`
-overwrote D69's originals and not the other way around. Get a fresh
-CI run to confirm green before considering Phase 25 truly closed. Once
-confirmed, no default next task; ask what to work on next (candidates
-on record: Phase 23.4 build per D67's 6-step order, Phase 24's 4th
-candidate (Threats term) per D68, or Phase 26's parked items).
+**Next session start point:** confirm `selfplay.rs`/`selfplay.yml` are
+committed to `main` (check via `raw.githubusercontent.com`). Once
+confirmed, next action is D67 step 2 — Gokul triggers `selfplay.yml`
+from the Actions tab to generate the first real opening-stats dataset
+— then step 3 (aggregation script) is the next code task.
 
 ---
 
