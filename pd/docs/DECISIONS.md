@@ -2692,3 +2692,94 @@ already in hand from `seed100000-15x800`) until a meaningful number of
 fixed target game count set — this is genuinely open-ended
 accumulation, same as the NNUE self-play data's growth pattern; check
 back periodically rather than committing to one large number now.
+
+## D72 — Phase 23.4 Steps 2 (cont.)/5: Real Aggregator Run + ordering.rs Wired, One Panic Bug Caught Pre-Ship (Session 84)
+
+**Accumulated a second data batch and ran the aggregator for real.**
+`seed120000-15×1200` (18,000 games) added to the existing
+`seed100000-15×800` (12,000 games) — 30,000 games total, no seed
+overlap, no data loss. Bucket count barely grew (1,054 → 1,068,
+effectively plateaued — D71's corrected estimate holds up), but
+growth in *qualifying* (bucket, move) pairs was far slower than bucket
+growth: 2.5x the games produced only 2 pairs clearing the 30-sample
+threshold (up from 0). The real sparsity driver isn't the bucket count
+— it's that each bucket splits across many plausible root moves, so
+per-(bucket, move) sample depth grows much slower than per-bucket
+depth. Getting broad table coverage will need on the order of hundreds
+of thousands of games, not tens of thousands — flagged to Gokul, who
+chose to run the aggregator now on the thin real result and iterate
+later rather than wait.
+
+Ran `aggregate_opening_stats.yml` against both batches (`data_run_id`
+of both `selfplay.yml` runs). Output — 2 entries, both mapping to the
+same move:
+```
+bucket (rook a,d / knight b,h) -> a2a7, win_rate 0.9677, n=31
+bucket (rook a,g / knight b,h) -> a2a7, win_rate 0.9000, n=30
+```
+Internally consistent, not noise-shaped: both qualifying buckets have
+a rook on the a-file, which is exactly the precondition for `a2a7`
+(an open-file rook lift) to be legal at all. First real evidence the
+full pipeline — parse, bucket, tally, threshold, pack, binary search —
+is correct end to end, not just structurally plausible.
+
+**Wired into `search/ordering.rs` (D67 step 5).** Additive
+`OPENING_STATS_BONUS = 150_000` on top of a move's normal score —
+below `COUNTERMOVE_SCORE` (200,000) so a real countermove signal still
+wins ties, and negligible next to `TT_MOVE_SCORE`/
+`WINNING_CAPTURE_BASE` (millions), so it can only meaningfully move an
+otherwise-ordinary quiet move, never override a real tactical signal —
+matches D67's "nudge, don't force" usage design exactly.
+
+**Gate: `ply == 0 && pos.fullmove_number == 1 && side_to_move ==
+White`, both conditions required, not just one.** `ply == 0` alone
+would fire on *every* `go` command regardless of how far into a game
+the position already is (`score_moves` runs at every node, and `ply`
+is search depth from wherever `go` was called, not moves-since-game-
+start) — the bucket key is defined by the game's ORIGINAL rook/knight
+files, so applying it to a position whose pieces have already moved
+would silently apply the wrong signal, or worse, could coincidentally
+collide with an unrelated real bucket. The `fullmove_number ==
+1 && White to move` check is what actually pins this to "zero moves,
+real or hypothetical, played since the random setup."
+
+**Caught a real panic bug before shipping, not after.** The
+file-extraction helper (`sorted_files`, mirrors `selfplay.rs`'s helper
+of the same name) originally hard-panicked on anything other than
+exactly 2 bits set — correct for `selfplay.rs`, which only ever sees
+`Position::generate_with_seed`'s guaranteed-fresh output (exactly 2
+rooks/2 knights by construction). Wrong for `ordering.rs`: it sees
+arbitrary UCI-supplied positions, and an *existing* test FEN in the
+same file (`test_capture_before_quiet`,
+`"4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1"` — zero rooks, zero knights)
+matches the gate's `fullmove_number==1, White to move` condition
+exactly. Checked this against the actual test suite before shipping
+rather than assuming the gate was narrow enough — it wasn't, and this
+would have crashed the engine on any real analysis/custom position
+with fullmove 1 and White to move, not just this one test. Fixed:
+`sorted_files` returns `Option<[u8; 2]>`, `None` on a mismatch, treated
+identically to a genuine table miss (graceful fallthrough to normal
+scoring) rather than a program-invariant violation. Re-verified every
+existing `ordering.rs` test by hand against the fixed version — none
+change behavior (`Position::start_pos()`'s standard-chess rook/knight
+files pack to key 462, not in the 2-entry table, so every test using
+`start_pos()` at ply 0 gets a harmless miss; `test_capture_before_quiet`
+now gets `None` instead of panicking, matching its pre-existing,
+already-passing expectation).
+
+**Known, accepted duplication:** `sorted_files` now exists in three
+places (`selfplay.rs`, `aggregate_opening_stats.rs`'s `parse_file_pair`,
+`ordering.rs`) with slightly different panic-vs-Option behavior for
+good reason in each (explained above). Not deduplicated into a shared
+lib function this session — would mean reopening the already-committed,
+CI-green `selfplay.rs` for a small refactor, not worth the churn/risk
+right now. Flagged here so a future session doesn't "fix" the
+duplication without first re-reading why the panic behavior
+legitimately differs between call sites.
+
+**Status:** step 5 done and CI-pending (not yet confirmed committed).
+Step 6 (hand-verification against real entries through actual
+`score_moves()`, not just the generated file's own structural tests)
+still open — worth doing as a follow-up now that real entries exist to
+verify against. Step 4 (accumulation) continues in the background,
+open-ended, no fixed target.

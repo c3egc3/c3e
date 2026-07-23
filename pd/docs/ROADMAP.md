@@ -1204,36 +1204,50 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
              wrong estimate). Build order and status:
              1. **DONE (Session 84)** — `selfplay.rs` new output stream,
                 `selfplay.yml` uploads/merges it as its own artifact.
-             2. **DONE (Session 84)** — first real data collection run,
-                `seed_start=100000, 15×800` = 12,000 games. Validated:
-                format correct, no data loss, but zero (bucket, move)
-                pairs clear the 30-sample threshold yet (D71) — expected
-                given the corrected bucket count, more runs needed.
-             3. **DONE (Session 84)** — aggregation script
-                (`src/bin/aggregate_opening_stats.rs` +
-                `.github/workflows/aggregate_opening_stats.yml`), same
-                `data_run_id`/`data_paths`/`data_urls` input pattern as
-                `texel_tune.yml` so future runs' data accumulates rather
-                than replacing prior batches. Not yet run against real
-                data — nothing clears the threshold yet, would just
-                generate an empty (but valid) `src/opening_stats.rs`.
-             4. NEXT — accumulate more `selfplay.yml` batches (fresh
-                `seed_start` each time) until a meaningful number of
-                (bucket, move) pairs clear 30 samples, then run the
-                aggregator and commit the generated
-                `src/opening_stats.rs`. No fixed target game count —
-                open-ended accumulation, check back periodically.
-             5. NOT STARTED — wire root-move-ordering bias into
-                `ordering.rs` (reads `opening_stats::lookup()`, already
-                built and ready to call once the table has real entries).
-             6. NOT STARTED — unit test against a few known buckets by
-                hand (partially covered already — the generated file's
-                own `test_table_sorted_by_key`/`test_lookup_miss_returns_none`
-                — but a hand-picked known-bucket check is still worth
-                doing once real entries exist).
-             Resume by re-reading D67 + D71 — the design question and
-             the bucket-count correction are both closed, only steps 4-6
-             above are live.
+             2. **DONE (Session 84)** — two real data collection runs,
+                accumulated: `seed100000-15×800` (12,000 games) +
+                `seed120000-15×1200` (18,000 games) = 30,000 games, no
+                overlap, no data loss. Sparsity worse than even D71's
+                corrected estimate suggested — see D72's note on growth
+                rate. Still open-ended accumulation; more runs welcome
+                whenever convenient, no fixed target.
+             3. **DONE (Session 84)** — aggregation script built AND run
+                for real against the 30,000-game combined dataset (run
+                IDs `29984377150`, `29996467051`). Output: **2 qualifying
+                entries** (both bucket→`a2a7`, a full open-file rook
+                lift — internally consistent: both qualifying buckets
+                have a rook on the a-file, which is what makes that move
+                legal). `src/opening_stats.rs` generated and verified —
+                see D72.
+             4. Ongoing/open-ended — accumulate more `selfplay.yml`
+                batches when convenient, re-run the aggregator (it
+                naturally grows the table as more data clears the
+                threshold — no code changes needed for this, just more
+                data + a re-run).
+             5. **DONE (Session 84)** — root-move-ordering bias wired into
+                `search/ordering.rs` (D72): additive `OPENING_STATS_BONUS`
+                on top of normal scoring, gated on `ply==0 &&
+                fullmove_number==1 && White to move` (the literal unmoved
+                game start, not just any search root — see D72 for why
+                both conditions are required). **Caught and fixed a real
+                panic bug before shipping** — the file-extraction helper
+                assumed exactly 2 rooks/knights (valid for
+                `selfplay.rs`'s guaranteed-fresh setups, NOT valid for
+                `ordering.rs`'s arbitrary UCI-supplied positions); an
+                existing test FEN with zero rooks/knights would have
+                crashed the engine on any real analysis position matching
+                the gate. Fixed to degrade gracefully (`Option`, not
+                panic) — see D72.
+             6. NOT STARTED — hand-verify against the 2 real entries now
+                that they exist (the generated file's own
+                `test_table_sorted_by_key`/`test_lookup_miss_returns_none`
+                cover structural correctness, but a hand-picked
+                known-bucket check through actual `score_moves()` is
+                still worth doing as a follow-up).
+             Resume by re-reading D67 + D71 + D72 — design, bucket-count
+             correction, and the wiring/bug-fix are all closed; only step
+             6 above is live, and step 4 (accumulation) is ongoing
+             background work with no fixed completion point.
 - [~] 23.5 — HELD for the future (D61, Session 82). NNUE architecture
              upgrade: king-relative bucketed features, replacing the
              current flat 768+128=896 input set. Shelving NNUE

@@ -7,7 +7,7 @@ Most recent session at TOP.
 
 ---
 
-## Session 84 — 2026-07-22/23 (Rank-battery bug fix; Phase 23.4 design closed — D67; Threats-term gap found — D68; Phase 25 completed, applied, and CI-corrected — D69/D70; Phase 23.4 step 1 started)
+## Session 84 — 2026-07-22/23 (Rank-battery bug fix; Phase 23.4 design closed — D67; Threats-term gap found — D68; Phase 25 completed, applied, and CI-corrected — D69/D70; Phase 23.4 steps 1-3 built and run, step 5 wired with a caught panic bug — D71/D72)
 
 **Built/done, in order:**
 
@@ -150,15 +150,50 @@ Most recent session at TOP.
     against real data — would currently produce a valid but empty
     table.
 
+11. **Accumulated a second data batch, ran the real aggregator.**
+    `seed120000-15×1200` (18,000 games), combined with the existing
+    12,000 for 30,000 total, no overlap, no loss. Bucket count nearly
+    plateaued (1,054→1,068, D71's correction holds up) but qualifying
+    (bucket, move) pairs grew far slower than bucket count — 2.5x the
+    games only produced 2 pairs clearing 30 samples. Flagged the real
+    driver (per-move split within each bucket, not bucket count) and
+    the scale needed for broad coverage (hundreds of thousands of
+    games) before Gokul decided to run the aggregator now on the thin
+    real result rather than wait. Ran it for real (both `selfplay.yml`
+    run IDs) — output matched a from-scratch manual re-derivation
+    exactly: 2 entries, both mapping to `a2a7` (an open-file rook
+    lift), both from buckets with a rook on the a-file — internally
+    consistent, first real evidence the full pipeline is correct end
+    to end.
+
+12. **Wired the root-move-ordering bias into `search/ordering.rs`
+    (D67 step 5, D72).** Additive bonus, gated on `ply==0 &&
+    fullmove_number==1 && White to move` — both conditions required,
+    since `ply==0` alone fires on every `go` regardless of how far
+    into a real game the position is. **Caught a real panic bug before
+    shipping**, not after: the file-extraction helper assumed exactly
+    2 rooks/2 knights (a valid assumption for `selfplay.rs`'s
+    guaranteed-fresh setups, invalid for `ordering.rs`'s arbitrary
+    UCI-supplied positions) — an *existing* test FEN in the same file
+    (`test_capture_before_quiet`, zero rooks/knights, `fullmove 1,
+    White to move`) matched the new gate exactly and would have
+    panicked. Checked the new gate against the actual existing test
+    suite before shipping rather than assuming it was narrow enough —
+    it wasn't. Fixed to degrade gracefully (`Option`, not panic),
+    hand-verified every existing test's behavior is unchanged.
+
 **Decisions made:** D67 (23.4 bucketed design, full spec), D68 (Threats
 term gap, documented candidate), D69 (Phase 25 application + the
 knight/bishop-near-king rejection + watch-item list), D70 (CI-caught
 test break, ENEMY_KING_DIST_EG/OWN_KING_DIST_EG reverted), D71
-(bucket-count estimate corrected empirically, aggregator built).
+(bucket-count estimate corrected empirically, aggregator built), D72
+(real aggregator run, ordering.rs wired, panic bug caught pre-ship).
 
 **Bugs fixed:** rank-battery detection gap in `BATTERY_ROOK_QUEEN`
 (`open_lines.rs` + `texel/features.rs`); `test_passed_pawn_bonus`
-failure from D69's king-distance term application (D70).
+failure from D69's king-distance term application (D70); a not-yet-
+shipped panic in `ordering.rs`'s new opening-stats gate, caught before
+commit rather than after (D72).
 
 **Files delivered this session:** `open_lines.rs` + `texel/features.rs`
 (rank-battery fix, confirmed committed); `eval/material.rs`,
@@ -168,18 +203,21 @@ failure from D69's king-distance term application (D70).
 green); `selfplay.rs` + `.github/workflows/selfplay.yml` (Phase 23.4
 step 1, confirmed committed and CI-green);
 `src/bin/aggregate_opening_stats.rs` +
-`.github/workflows/aggregate_opening_stats.yml` (Phase 23.4 step 3 —
-not yet confirmed committed as of this entry).
+`.github/workflows/aggregate_opening_stats.yml` (Phase 23.4 step 3,
+confirmed committed, CI-confirmed run successfully against real data);
+`src/opening_stats.rs` (generated, 2 real entries, NEW file);
+`src/lib.rs` (added `pub mod opening_stats;`); `src/search/ordering.rs`
+(D67 step 5 wiring) — the last three not yet confirmed committed as of
+this entry.
 
-**Next session start point:** confirm the aggregator files are
-committed to `main`. 12,000 games of opening-stats data already
-collected (`seed100000-15×800`) but nothing clears the 30-sample
-threshold yet (D71) — next action is Gokul running more
-`selfplay.yml` batches (fresh `seed_start` each time, e.g. `120000`
-next) to accumulate toward that, then running
-`aggregate_opening_stats.yml` across all accumulated batches together.
-No fixed target — check back periodically rather than committing to
-one number now.
+**Next session start point:** confirm `opening_stats.rs`, `lib.rs`,
+and `ordering.rs` are committed to `main` and CI is green (this is a
+real behavior change to the live search, not just a docs/data file —
+get a fresh CI run, don't assume). Once confirmed, Phase 23.4 has one
+open item (step 6 — hand-verify against the 2 real entries through
+actual `score_moves()`) plus ongoing, open-ended data accumulation
+(step 4, no fixed target — check back whenever there's another
+`selfplay.yml` batch or two).
 
 ---
 
