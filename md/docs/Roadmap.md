@@ -18,11 +18,11 @@ within a phase; check SessionLog.md for what's actually in flight.
 - [ ] License decision logged (Decisions D0.6 currently "undecided")
 
 ## Phase 1 — Engine Skeleton
-- [ ] `python-chess` dependency confirmed working in Claude's sandbox
-- [ ] Board setup, basic alpha-beta search, iterative deepening
-- [ ] Material-only leaf evaluation (deliberate placeholder — not a claim
+- [x] `python-chess` dependency confirmed working in Claude's sandbox
+- [x] Board setup, basic alpha-beta search, iterative deepening
+- [x] Material-only leaf evaluation (deliberate placeholder — not a claim
       generator, just enough to make the search skeleton testable)
-- [ ] Basic self-play smoke test (does it complete a legal game without
+- [x] Basic self-play smoke test (does it complete a legal game without
       crashing) — run and actually observed, not assumed
 
 ## Phase 2 — First Claim Generators

@@ -99,3 +99,21 @@ unrelated attempts and out of scope here.
 `Architecture.md`, `Decisions.md`, `Roadmap.md`, `SessionLog.md` (this
 set) plus `CLAUDE_PROJECT_INSTRUCTIONS.md` governing cross-session
 continuity, trigger words, and the delta protocol.
+
+---
+
+## Session 1 — 2026-07-23
+
+**D1.1 — Material-only leaf eval (Phase 1) is scoped outside D0.3's
+constraint, not an exception to it**
+`engine/evaluate.py`'s placeholder uses the standard conventional piece
+values (pawn=1, knight=3, bishop=3, rook=5, queen=9). This is flagged here
+per Architecture §2 / D0.3's instruction to flag any numeric constant
+before it ships: these values are (a) not fitted or tuned by any process,
+just the universally standard scale, and (b) not part of claim generation
+at all — this module doesn't touch the `Claim` object or any claim
+generator. D0.3's constraint is about magnitudes inside claim generators
+specifically. This placeholder is explicit, temporary scaffolding for the
+search skeleton (Roadmap Phase 1) and is expected to be superseded, not
+extended, once Phase 2+ claim generators exist. Recorded so a future
+session doesn't mistake this for quietly-introduced tuned weights.
