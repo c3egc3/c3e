@@ -273,15 +273,23 @@ D71, D72, D73 — see DECISIONS.md for each.
 **Decisions made (final list, this session):** D67, D68, D69, D70,
 D71, D72, D73, D74 — see DECISIONS.md for each.
 
-**Next session start point:** confirm all 9 Phase-24-item-4 files
-(D73, with `eval/threats.rs` superseded by D74's fix) are committed to
-`main` and CI is green — this is the second real behavior bug in this
-session's eval changes (after D70), so don't assume green without
-checking. Once confirmed: Phase 24 (all 4 items) and Phase 23.4 (full
-build order) are both fully closed. No default next task — ask what to
-work on (candidates on record: Phase 23.4 step 4, ongoing data
+**Confirmed by Gokul (same session):** all Phase 24 item 4 files,
+including D74's `eval/threats.rs` fix, are committed to `main` and CI
+is green. Phase 24 (all 4 items) and Phase 23.4 (full build order) are
+both genuinely, fully closed — no open threads from this session.
+
+**Session ending here on context-window grounds** (long session, no
+exact token count available, but heavy signs: many large file fetches,
+substantial doc growth today) rather than a natural task boundary —
+flagging that distinction since it affects nothing about correctness,
+only when to stop.
+
+**Next session start point:** no default next task — ask what to work
+on (candidates on record: Phase 23.4 step 4, ongoing data
 accumulation, no fixed target; Phase 26's parked items; a future Texel
-re-tune once enough new data/terms accumulate to justify one).
+re-tune once enough new data/terms accumulate to justify one; Phase
+23.4's opening-stats table currently has only 2 entries, worth more
+`selfplay.yml` batches whenever convenient).
 
 ---
 
