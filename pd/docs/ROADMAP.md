@@ -1238,16 +1238,29 @@ place (23.4 assumes healthy self-play volume from 23.2; 23.3 assumes
                 crashed the engine on any real analysis position matching
                 the gate. Fixed to degrade gracefully (`Option`, not
                 panic) — see D72.
-             6. NOT STARTED — hand-verify against the 2 real entries now
-                that they exist (the generated file's own
-                `test_table_sorted_by_key`/`test_lookup_miss_returns_none`
-                cover structural correctness, but a hand-picked
-                known-bucket check through actual `score_moves()` is
-                still worth doing as a follow-up).
-             Resume by re-reading D67 + D71 + D72 — design, bucket-count
-             correction, and the wiring/bug-fix are all closed; only step
-             6 above is live, and step 4 (accumulation) is ongoing
-             background work with no fixed completion point.
+             6. **DONE (Session 84)** — hand-verification test added
+                (`test_opening_stats_bias_applies_to_known_bucket` in
+                `search/ordering.rs`): a hand-constructed FEN matching
+                table entry 207 exactly, traced by hand first (confirmed
+                `a2a7` is always a rook-takes-rook capture in this
+                bucket, not a quiet move — Black's mirrored setup
+                guarantees a like-for-like piece on a7), then verified
+                through actual `score_moves()` that the bonus applies
+                additively and the flagged move ends up the single
+                highest-scored move in the position (confirmed correct
+                by hand: every other White piece in the constructed FEN
+                is boxed in or has nothing to capture). Skips gracefully
+                if a future table regeneration drops entry 207, rather
+                than becoming a permanently-frozen data-dependent test.
+             **All 6 build-order steps are now done or ongoing-by-design.**
+             Remaining work is open-ended: step 4 (data accumulation)
+             continues in the background whenever convenient, no fixed
+             target — the table grows automatically as more data clears
+             the threshold on future aggregator re-runs, no further code
+             changes needed for that to happen.
+             Resume by re-reading D67 + D71 + D72 if picking this back
+             up — the design, bucket-count correction, wiring, and
+             verification are all closed.
 - [~] 23.5 — HELD for the future (D61, Session 82). NNUE architecture
              upgrade: king-relative bucketed features, replacing the
              current flat 768+128=896 input set. Shelving NNUE

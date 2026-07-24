@@ -210,14 +210,34 @@ confirmed committed, CI-confirmed run successfully against real data);
 (D67 step 5 wiring) — the last three not yet confirmed committed as of
 this entry.
 
-**Next session start point:** confirm `opening_stats.rs`, `lib.rs`,
-and `ordering.rs` are committed to `main` and CI is green (this is a
-real behavior change to the live search, not just a docs/data file —
-get a fresh CI run, don't assume). Once confirmed, Phase 23.4 has one
-open item (step 6 — hand-verify against the 2 real entries through
-actual `score_moves()`) plus ongoing, open-ended data accumulation
-(step 4, no fixed target — check back whenever there's another
-`selfplay.yml` batch or two).
+**Confirmed by Gokul (same session):** `opening_stats.rs`, `lib.rs`,
+and `ordering.rs` are committed to `main` and CI is green. Phase 23.4
+step 5 fully closed.
+
+13. **Phase 23.4 step 6, closing out the build order (D67/D72).**
+    Added `test_opening_stats_bias_applies_to_known_bucket` to
+    `search/ordering.rs`: a hand-constructed FEN matching real table
+    entry 207, traced by hand first (confirmed `a2a7` is always a
+    rook-takes-rook capture in that bucket — not a quiet move — since
+    Black's mirrored setup guarantees a like-for-like piece on a7, and
+    confirmed it's provably the single highest-scored move in this
+    specific position since every other White piece is boxed in or has
+    nothing to capture), then verified through actual `score_moves()`
+    that the bonus applies additively as designed. Skips gracefully
+    rather than failing if a future table regeneration changes entry
+    207 — verifies the mechanism, not a frozen data point. **All 6 of
+    D67's build-order steps are now done or ongoing-by-design.**
+
+**Decisions made (final list, this session):** D67, D68, D69, D70,
+D71, D72 — see DECISIONS.md for each. D72 additionally updated this
+entry to reflect step 5/6 both closed.
+
+**Next session start point:** Phase 23.4's active build-order is fully
+closed. Only open-ended work remains: step 4 (data accumulation, no
+fixed target — check back whenever there's another `selfplay.yml`
+batch or two and re-run the aggregator). No default next task — ask
+what to work on (other candidates on record: Phase 24 item 4, the
+Threats term per D68; Phase 26's parked items).
 
 ---
 

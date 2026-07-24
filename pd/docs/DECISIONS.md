@@ -2777,9 +2777,17 @@ right now. Flagged here so a future session doesn't "fix" the
 duplication without first re-reading why the panic behavior
 legitimately differs between call sites.
 
-**Status:** step 5 done and CI-pending (not yet confirmed committed).
-Step 6 (hand-verification against real entries through actual
-`score_moves()`, not just the generated file's own structural tests)
-still open — worth doing as a follow-up now that real entries exist to
-verify against. Step 4 (accumulation) continues in the background,
-open-ended, no fixed target.
+**Status:** step 5 confirmed committed and CI-green (Gokul confirmed,
+same session). Step 6 done —
+`test_opening_stats_bias_applies_to_known_bucket` added to
+`search/ordering.rs`, hand-traced against table entry 207 before
+writing the test (confirmed `a2a7` is always a rook-takes-rook capture
+in that bucket, and that it's provably the single highest-scored move
+in the hand-constructed position — every other White piece is boxed in
+or has nothing to capture). Skips gracefully rather than failing if a
+future table regeneration changes or drops entry 207. **All of D67's
+6-step build order is now done or ongoing-by-design** — step 4
+(accumulation) continues in the background whenever convenient, no
+fixed target; the table grows automatically on future aggregator
+re-runs as more data clears the threshold, no further code changes
+needed for that.
