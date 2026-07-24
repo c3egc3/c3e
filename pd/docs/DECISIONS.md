@@ -2791,3 +2791,85 @@ future table regeneration changes or drops entry 207. **All of D67's
 fixed target; the table grows automatically on future aggregator
 re-runs as more data clears the threshold, no further code changes
 needed for that.
+
+## D73 — Phase 24 Item 4: Threats Term Implemented (Session 84)
+
+Implemented D68's 4th HCE gap candidate. Scoped down from D68's
+original 4-part sketch (hanging pieces, weak queen protection, minor/
+rook threat, restricted pieces) to **two** sub-terms, decided during
+implementation rather than assumed from the design note:
+
+1. **`UNDEFENDED_PENALTY[kind]`** — one of our pieces (knight/bishop/
+   rook/queen; pawns and king excluded, see `threats.rs`'s module doc)
+   is attacked by more enemy pieces than it has defenders. This
+   generalizes and subsumes both "hanging" (0 defenders) and "weakly
+   defended" (defended, but still outnumbered) into one continuous
+   signal, rather than two separate constants for the same underlying
+   pattern — simpler than D68's original 4-term sketch without losing
+   anything Stockfish's version captures for this scope.
+2. **`THREAT_BY_MINOR_BONUS`** — one of our knights/bishops currently
+   attacks an enemy rook or queen. A live tactical threat, distinct
+   from `mobility.rs`'s plain square-count.
+
+**"Restricted piece" (Stockfish's low-safe-mobility penalty)
+deliberately dropped**, not merely deferred — it's the most direct
+overlap risk with `mobility.rs`'s existing per-count bonus table,
+which already implicitly scores a piece with few safe squares lower
+than one with many. Included would have meant scoring the same
+underlying signal from two angles; dropped rather than risk it, per
+D68's explicit double-counting warning.
+
+**Double-counting checked against every existing term before writing
+code, not after** (D68's requirement, same discipline Phase 24 items
+1-3 used): `mobility.rs` counts attacked squares regardless of
+occupant; `king_safety.rs`'s `ATTACKER_WEIGHT` only counts attackers
+in the king zone specifically. Neither measures "is this specific
+piece, anywhere on the board, under-defended" or "is this minor
+threatening a bigger piece" — both are genuinely new signal.
+
+**Reuses existing attack primitives** (`knight_attacks`,
+`bishop_attacks`, `rook_attacks`, `pawn_attacks`, `king_attacks` — the
+same low-level functions `mobility.rs`/`king_safety.rs` already use)
+via the standard "reverse attack generation" trick for
+attacker/defender counting (a queen's contribution falls out for free
+from the bishop/rook checks — it attacks a given square via either a
+diagonal or straight ray, never both, so no double-count risk
+combining the two checks). No new move-generation machinery, per D68.
+
+**Full Texel-chain wiring in the same submission** (Phase 24 item 1's
+lesson, applied directly rather than discovered via failed CI this
+time) — touched all of: `eval/threats.rs` (new), `eval/mod.rs`
+(dispatch), `texel/features.rs` (extraction, mirrors `threats_for_color`
+exactly per this repo's established dual-sync duplication pattern —
+not a shared function, matching every other term), `texel/predict.rs`
++ `predict_f64.rs` (forward pass and gradient), `texel/weights.rs` +
+`weights_f64.rs` (struct fields, defaults, `PARAM_COUNT`, flatten/
+unflatten round-trip — including the round-trip test's exhaustive
+per-field assertion list, not just the mechanical plumbing), and two
+files not touched by any Phase 24 item before this one:
+`src/bin/texel_tune.rs`'s output writer and `src/bin/texel_diag.rs`'s
+parser, both of which read/write tuned weights via a fixed positional
+`s(mg,eg)` sequence — found this dependency by tracing where the
+existing `EXPECTED_PAIR_COUNT` constant came from rather than assuming
+`weights.rs`/`weights_f64.rs` were the whole chain.
+
+**Hand-verified against existing tests before considering this done**
+(the exact discipline D69/D70 established this session, applied
+proactively rather than reactively this time): confirmed
+`eval/mod.rs`'s existing tests are unaffected — the new term is
+provably 0 at both the standard chess start and Pet Dragon's mirrored
+start (fully symmetric, no piece attacks anything across the empty
+middle at move 0 in either), and small/bounded everywhere else,
+nowhere near any existing test's threshold.
+
+**Weights: hand-picked starting values, not yet Texel-tuned** — same
+status Phase 8's original Ethereal-derived terms had before Phase 14,
+and the status Phase 24 items 1-3 had before Phase 25. Whenever the
+next natural Texel re-tune happens (triggered by the same "meaningful
+data increase" condition as D66/D69's — no fixed schedule), this term
+gets picked up automatically since the Texel-chain wiring is already
+in place; no separate follow-up task needed to make that happen.
+
+**Status:** implemented, own test module in `threats.rs` (5 tests:
+symmetric-start, undefended-penalized, defended-not-penalized,
+fork-bonus, 1000-seed no-panic, bounded), not yet confirmed committed.

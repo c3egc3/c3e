@@ -1410,15 +1410,21 @@ all of them out given Pet Dragon's CPU/WASM deployment target and
 current training-data constraints — don't re-investigate this without
 new information changing one of those constraints.
 
-**Phase 24 addendum — 4th candidate identified, Session 84 (D68).**
-A separate question (whether the engine scores pieces defending each
-other) surfaced a gap D63's original audit didn't check for:
-Stockfish's **Threats** term — hanging-piece penalty, weak-queen-
-protection penalty, minor/rook threat bonus, restricted-piece penalty
-(`threats.cpp`, GPL v3, same credited family as material/PST).
-Documented, not implemented, not scheduled — full scope in
-DECISIONS.md D68. Phase 24 items 1-3 remain closed; this is a new
-candidate, not a reopened item.
+**Phase 24 addendum — 4th candidate identified (D68) and implemented
+(D73), Session 84.** A separate question (whether the engine scores
+pieces defending each other) surfaced a gap D63's original audit
+didn't check for: Stockfish's **Threats** term (`threats.cpp`, GPL v3,
+same credited family as material/PST). D68 documented the full
+4-part concept; D73 implemented a scoped-down 2-term version
+(`UNDEFENDED_PENALTY`, `THREAT_BY_MINOR_BONUS` — "restricted piece"
+deliberately dropped as the most direct overlap risk with
+`mobility.rs`, not merely deferred). New file `eval/threats.rs`, full
+Texel-chain wiring across 9 files including two
+(`texel_tune.rs`/`texel_diag.rs`) not touched by any earlier Phase 24
+item. Hand-picked starting weights, not yet Texel-tuned — picked up
+automatically whenever the next natural re-tune happens. Not yet
+confirmed committed. Phase 24 items 1-3 remain independently closed;
+this was a new candidate (D68), not a reopened item — now also closed.
 
 ---
 

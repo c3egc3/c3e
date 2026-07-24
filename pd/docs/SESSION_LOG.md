@@ -7,7 +7,7 @@ Most recent session at TOP.
 
 ---
 
-## Session 84 — 2026-07-22/23 (Rank-battery bug fix; Phase 23.4 design closed — D67; Threats-term gap found — D68; Phase 25 completed, applied, and CI-corrected — D69/D70; Phase 23.4 steps 1-3 built and run, step 5 wired with a caught panic bug — D71/D72)
+## Session 84 — 2026-07-22/23 (Rank-battery bug fix; Phase 23.4 design closed — D67; Threats-term gap found — D68; Phase 25 completed, applied, and CI-corrected — D69/D70; Phase 23.4 fully built and CI-confirmed — D71/D72; Phase 24 item 4 (Threats term) implemented — D73)
 
 **Built/done, in order:**
 
@@ -228,16 +228,39 @@ step 5 fully closed.
     207 — verifies the mechanism, not a frozen data point. **All 6 of
     D67's build-order steps are now done or ongoing-by-design.**
 
-**Decisions made (final list, this session):** D67, D68, D69, D70,
-D71, D72 — see DECISIONS.md for each. D72 additionally updated this
-entry to reflect step 5/6 both closed.
+14. **Implemented Phase 24 item 4 — the Threats term (D68→D73).** New
+    `eval/threats.rs`: `UNDEFENDED_PENALTY` (per-piece, attackers >
+    defenders) + `THREAT_BY_MINOR_BONUS` (minor attacking enemy rook/
+    queen). Scoped down from D68's 4-part sketch to these 2 during
+    implementation — dropped "restricted piece" deliberately (most
+    direct `mobility.rs` overlap risk), not deferred. Full Texel-chain
+    wiring across 9 files, including two — `texel_tune.rs`'s writer and
+    `texel_diag.rs`'s parser — that no earlier Phase 24 item had needed
+    to touch (found by tracing where `EXPECTED_PAIR_COUNT` actually
+    came from, rather than assuming `weights.rs`/`weights_f64.rs` were
+    the whole chain). Hand-verified against every existing `eval/mod.rs`
+    test before considering it done (symmetric at both standard-chess
+    and Pet-Dragon starts, bounded elsewhere) — applied D69/D70's
+    verification discipline proactively this time rather than finding
+    a break after the fact.
 
-**Next session start point:** Phase 23.4's active build-order is fully
-closed. Only open-ended work remains: step 4 (data accumulation, no
-fixed target — check back whenever there's another `selfplay.yml`
-batch or two and re-run the aggregator). No default next task — ask
-what to work on (other candidates on record: Phase 24 item 4, the
-Threats term per D68; Phase 26's parked items).
+**Decisions made (final list, this session):** D67, D68, D69, D70,
+D71, D72, D73 — see DECISIONS.md for each.
+
+**Files delivered, Phase 24 item 4 (not yet confirmed committed):**
+`eval/threats.rs` (NEW), `eval/mod.rs`, `texel/features.rs`,
+`texel/predict.rs`, `texel/predict_f64.rs`, `texel/weights.rs`,
+`texel/weights_f64.rs`, `src/bin/texel_tune.rs`,
+`src/bin/texel_diag.rs`.
+
+**Next session start point:** confirm the 9 Phase-24-item-4 files
+above are committed to `main` and CI is green (this adds a new eval
+term to the live `evaluate()` sum, not just data/docs — get a fresh CI
+run). Once confirmed: Phase 24 (all 4 items) and Phase 23.4 (full
+build order) are both fully closed. No default next task — ask what to
+work on (candidates on record: Phase 23.4 step 4, ongoing data
+accumulation, no fixed target; Phase 26's parked items; a future Texel
+re-tune once enough new data/terms accumulate to justify one).
 
 ---
 
