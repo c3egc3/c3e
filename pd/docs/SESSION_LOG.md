@@ -253,10 +253,31 @@ D71, D72, D73 — see DECISIONS.md for each.
 `texel/weights_f64.rs`, `src/bin/texel_tune.rs`,
 `src/bin/texel_diag.rs`.
 
-**Next session start point:** confirm the 9 Phase-24-item-4 files
-above are committed to `main` and CI is green (this adds a new eval
-term to the live `evaluate()` sum, not just data/docs — get a fresh CI
-run). Once confirmed: Phase 24 (all 4 items) and Phase 23.4 (full
+15. **CI caught a real self-consistency bug in D73 (D74).**
+    `test_predict_matches_evaluate_after_moves` failed: 191cp mismatch
+    mid-game. Traced exactly: `evaluate_threats` hardcoded
+    `Color::White`/`Color::Black` instead of using
+    `pos.side_to_move`/`.flip()` like every other `evaluate_*`
+    function — worked by coincidence at the game start, silently wrong
+    sign once Black was to move. Confirmed the sibling convention
+    directly (`evaluate_material`, `evaluate_open_lines`) rather than
+    trusting memory a second time. Named the process gap plainly: the
+    convention was asserted from memory when writing D73, not verified
+    against a sibling file — that's what should have happened first
+    time. Also: none of D73's own tests caught this, since every one
+    happened to use a White-to-move position — closed that gap too
+    with a dedicated side-to-move regression test, not just the bug
+    fix. Only `eval/threats.rs` needed changing —
+    `texel/features.rs`'s threats code was already correct.
+
+**Decisions made (final list, this session):** D67, D68, D69, D70,
+D71, D72, D73, D74 — see DECISIONS.md for each.
+
+**Next session start point:** confirm all 9 Phase-24-item-4 files
+(D73, with `eval/threats.rs` superseded by D74's fix) are committed to
+`main` and CI is green — this is the second real behavior bug in this
+session's eval changes (after D70), so don't assume green without
+checking. Once confirmed: Phase 24 (all 4 items) and Phase 23.4 (full
 build order) are both fully closed. No default next task — ask what to
 work on (candidates on record: Phase 23.4 step 4, ongoing data
 accumulation, no fixed target; Phase 26's parked items; a future Texel

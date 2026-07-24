@@ -2873,3 +2873,47 @@ in place; no separate follow-up task needed to make that happen.
 **Status:** implemented, own test module in `threats.rs` (5 tests:
 symmetric-start, undefended-penalized, defended-not-penalized,
 fork-bonus, 1000-seed no-panic, bounded), not yet confirmed committed.
+
+## D74 — CI Caught a Real Self-Consistency Bug in D73: Side-to-Move Convention Fixed (Session 84)
+
+Gokul ran CI after committing D73. `test_predict_matches_evaluate_after_moves`
+failed: `predict=73 evaluate=-118` mid-game at seed 0 — `predict()` and
+`evaluate()` must be bit-for-bit identical (D35's load-bearing
+self-consistency guarantee for the entire Texel pipeline); a 191cp
+mismatch is a real bug, not noise.
+
+**Root cause, traced exactly:** every `evaluate_*` function in
+`eval/*.rs` computes `us = pos.side_to_move; them = us.flip();` and
+scores from `us`'s perspective — confirmed directly in
+`evaluate_material` and `evaluate_open_lines` before concluding this,
+not assumed from memory (memory was wrong here — see below).
+`eval/threats.rs`'s `evaluate_threats` hardcoded
+`Color::White`/`Color::Black` instead. This happens to be correct at
+the game's start (White to move by default, so hardcoded White
+coincides with side-to-move) and silently wrong the moment Black is to
+move — exactly matching "works at move 0, breaks mid-game."
+`texel/features.rs`'s threats extraction was never affected; it
+already correctly used the caller-supplied `us`/`them`.
+
+**Process gap, named plainly:** D73 claimed the double-counting check
+was done against every existing term "before writing code, not
+after" — true for the double-counting question, but the side-to-move
+convention itself was asserted from memory rather than verified
+against a sibling file at write time. Checked and confirmed after the
+fact this session for `evaluate_material`/`evaluate_open_lines`
+specifically, which is what should have happened before writing
+`evaluate_threats` in the first place. Also worth naming: none of
+D73's own hand-written tests in `threats.rs` caught this, because
+every one of them happened to construct a White-to-move position —
+a real gap in that test suite's design, not just an implementation
+bug.
+
+**Fix:** `evaluate_threats` now derives `us`/`them` from
+`pos.side_to_move`, matching every sibling function exactly. Added
+`test_evaluate_threats_flips_sign_with_side_to_move` — same board,
+only the side-to-move FEN flag differs, asserts the two results are
+exact negatives of each other. Closes the actual coverage gap, not
+just the bug.
+
+**Status:** fix applied, not yet confirmed committed/CI-green as of
+this entry.
