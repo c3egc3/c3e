@@ -1619,7 +1619,37 @@ open and worth keeping on record:
    additional signal sources worth adding need their own scoping pass
    before implementation, and each addition should get its own
    isolated CI-verified diff + eventual SPRT-style validation, not be
-   bundled into one large change.
+   bundled into one large change. **Gokul opted to do all three
+   sub-items, as sequential isolated diffs rather than one bundle:**
+   - 3a. ⏳ **Non-pawn-material correction table — implemented and unit
+     tested (Session 85, D80). NOT yet SPRT-tested.** New
+     `SearchInfo::correction_history_nonpawn`, indexed by a new
+     `pruning::nonpawn_hash()` (knights/bishops/rooks/queens, both
+     colors — excludes pawns and kings), applied additively alongside
+     the existing pawn-hash table.
+   - 3b. Not started — continuation-based correction (indexed by
+     recent move pairs).
+   - 3c. Not started — use the correction signal to adjust
+     singular/double/triple extension margins, not just static eval.
+4. ⚠️ **NEW (Session 85, D81) — engine crashes on an illegal input FEN
+   where the side not to move is already in check.** Found (not
+   caused by, and not fixed as part of) the item 3a work above, while
+   probe-verifying a test position. Root cause fully diagnosed: an
+   illegal `position fen ...` (opponent's king already in check when
+   it's not their move — an unreachable state from any legal game)
+   lets move generation offer a pseudo-legal "capture" of the enemy
+   king, which then crashes the next `in_check` call when it can't
+   find a king. **Cannot occur via legal search from
+   `start_pos()`/`generate_with_seed()`** — doesn't affect self-play,
+   tournament games from a legal start, or any existing test — but a
+   crash from a malformed external UCI `position fen` command (bad
+   GUI, corrupted state, hand-testing) is a worse failure mode than
+   almost anything else currently open. Needs its own scoping session:
+   likely fix is validating FEN legality at parse time and rejecting
+   with a UCI-level error rather than crashing (see D81 for the
+   rejected/candidate alternative of defensively guarding move
+   generation instead, and why parse-time validation is the likely
+   better call).
 
 **Explicitly NOT adopted, with reasoning on record so this doesn't get
 re-litigated without new information:**

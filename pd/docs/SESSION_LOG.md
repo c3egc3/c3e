@@ -103,6 +103,35 @@ path-dependency probe crate. Confirmed 75 is correct (`h1h7: 2`, not
 this as the preferred method for verifying future hand-written perft
 tests before shipping them, instead of hand-arithmetic alone.
 
+**Fifth follow-up (Phase 26 item 3a, D80/D81):** asked which of the
+three item-3 sub-candidates to build; Gokul said do all three, as
+sequential isolated diffs (not one bundle, per the item's own
+methodology note). Started with 3a (non-pawn-material correction).
+Read `pruning.rs`'s `CorrectionHistory` and all three of its
+`main.rs` threading points in full first. Added a second table
+(`correction_history_nonpawn`, indexed by new `nonpawn_hash()`),
+applied additively alongside the existing pawn-hash table, threaded
+through the same `EngineState`/`cmd_go` plumbing.
+
+Followed D79's own recommendation and verified via a standalone probe
+crate before shipping — caught two real issues this way: (1) the first
+draft's search-integration test used the start position, whose small
+natural search-vs-eval error legitimately rounds to 0 under the
+correction table's integer-division weighted average — switched to a
+constructed large-error position (hanging queen); (2) that same
+constructed position, in its first draft, **crashed the engine
+entirely** — traced (via temporary local instrumentation, not shipped)
+to an illegal input FEN (opponent already in check when it's not their
+move), which lets the move generator offer a "capture the enemy king"
+move. **D81**: this is real but NOT a live-play bug — legal search
+from `start_pos()`/`generate_with_seed()` can never reach an illegal
+state, so it can't happen in self-play or tournament games — but it
+means a malformed external `position fen` command crashes the whole
+engine instead of erroring gracefully. Logged as a new Phase 26 item 4
+for a future scoped session; fixed my own test position (king moved
+off the problem diagonal) rather than the underlying gap, which is
+explicitly out of scope for this diff.
+
 **Not done this session:**
 - **Not yet committed to `main`** — three complete files
   (`src/search/mod.rs`, `src/search/alpha_beta.rs`, `src/main.rs`)
@@ -118,12 +147,21 @@ tests before shipping them, instead of hand-arithmetic alone.
   dev-dependency) — reasoned through by hand and cross-checked against
   existing sibling patterns (`Contempt`, `Skill Level`) rather than
   compiled locally. `cargo test` in CI is the real verification.
+- Phase 26 item 3a itself not yet SPRT-tested either — same bar as
+  items 1/2 before being trusted as more than "compiles and passes
+  unit tests."
+- Item 4 (D81's crash finding) not fixed — deliberately out of scope,
+  needs its own scoping session.
+- Items 3b/3c (continuation-based correction; extension-margin use of
+  the signal) not started.
 
-**Next session start point:** Phase 26 items 1 and 2 are both closed.
-Item 3 (expand correction history beyond pawn-hash) is the only
-remaining recorded Phase 26 candidate — needs its own scoping pass
-before implementation per its own note. Ask Gokul what to work on; no
-default next task.
+**Next session start point:** Phase 26 item 3a is implemented and unit
+tested, awaiting commit + CI confirmation, then its own SPRT-style A/B
+(same pattern as items 1/2 — `uci_match_runner.yml`, one binary, option
+on vs. default). After that: item 3b, then 3c, as separate diffs. Item
+4 (illegal-FEN crash, D81) is unscheduled but flagged — worth a
+dedicated session before it's ever hit by a real GUI/tool, not blocking
+anything else.
 
 ---
 

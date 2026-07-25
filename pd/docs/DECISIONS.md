@@ -3185,3 +3185,144 @@ sidesteps the `cargo test`/criterion edition2024 wall entirely since
 `cargo build`/`cargo run` never touch a dependency's dev-dependencies.
 Worth using this method for the *next* new hand-verified perft test
 too, rather than shipping one straight from hand-arithmetic.
+
+
+## D80 — Phase 26 Item 3a: Non-Pawn-Material Correction History Added, Verified by Standalone Probe Before Shipping (Session 85, cont.)
+
+**What was added**: a second, independent `CorrectionHistory` table
+(`SearchInfo::correction_history_nonpawn`) indexed by a new
+`pruning::nonpawn_hash(pos)` — zobrist-style hash over every knight,
+bishop, rook, and queen (both colors), deliberately excluding pawns
+(already the existing table's signal) and kings (too volatile move-to-
+move to usefully index a systematic-error signal by). Applied
+additively alongside the pawn table in `alpha_beta.rs`: both read
+against the same `raw_static_eval` and their corrections combined via
+chained `.apply()` calls (mathematically identical to summing
+directly), each updated independently at node exit against that same
+raw baseline — not cascaded, so neither source's learned correction
+feeds into what the other treats as its own error signal. Threaded
+through `SearchInfo` → `EngineState` → `wait_for_search`/`cmd_go`
+exactly mirroring `correction_history`'s existing plumbing (persists
+across moves within a game).
+
+**This is item 3a of 3** — Gokul asked for all three Phase 26 item-3
+candidates (non-pawn-material, continuation-based, extension-margin
+use of the signal). Building all three as one bundled diff would
+undercut the item's own stated methodology ("each addition should be
+its own isolated CI-verified diff + SPRT-style validation, not
+bundled") — implementing them as sequential, separately-committed
+diffs instead. This is the first.
+
+**Verification methodology — followed through on D79's own
+recommendation**: rather than trust hand-reasoning about whether the
+new update()/apply() call sites are actually reached, built the crate
+standalone (`apt-get`-installed rustc/cargo 1.75, sidestepping the
+known dev-dependency/edition2024 wall) and exercised the new code from
+a throwaway path-dependency probe crate — same method D79 established.
+Caught and fixed two real issues before they ever reached CI:
+
+1. The first draft of the search-integration test used the start
+   position — its naturally-occurring search-vs-eval error at depth 6
+   was small enough that the weighted-average update formula's integer
+   division (`(entry*(256-w) + error*w) / 256`) rounded it back to
+   exactly 0, which would have made the test flaky/misleading rather
+   than a real proof the wiring works. Switched to a constructed
+   position with a large, search-only-discoverable error (an
+   undefended queen on an open file, opponent to move, no recapture
+   possible) — verified via the probe to reliably produce a non-zero
+   correction.
+
+2. The first version of that same test position
+   ("3r3k/8/8/8/3Q4/8/8/K7 w - - 0 1") crashed the engine entirely —
+   see D81 below for the full diagnosis. Not a bug in this diff; an
+   illegal input position (the queen on d4 attacks the black king on
+   h8 diagonally, which means Black is already in check while it's
+   White's move — an unreachable state in real play). Rebuilt the test
+   position with the king on g8 instead of h8 (off that diagonal),
+   confirmed via the probe to be a fully legal position with no crash
+   and the same large, reliably-nonzero correction.
+
+**Tests added**: `pruning.rs` — `nonpawn_hash` basic non-zero checks,
+plus two discriminating tests (`test_nonpawn_hash_ignores_pawn_structure`
+confirms two positions differing only in pawn structure hash
+identically; `test_nonpawn_hash_ignores_king_position` confirms moving
+only a king doesn't change the hash). `alpha_beta.rs` —
+`test_nonpawn_correction_history_wired_into_search` (the corrected
+hanging-queen-position test above) and
+`test_nonpawn_and_pawn_corrections_are_independent_sources` (proves the
+two tables don't alias/leak into each other via explicit seeded
+updates at different hashes).
+
+**Not yet done**: items 3b (continuation-based correction) and 3c
+(extension-margin use of the correction signal) — next, as separate
+diffs. No SPRT-style A/B test run yet for item 3a itself — needed
+before this is trusted as more than "compiles and passes unit tests,"
+same bar as D75-D78.
+
+
+## D81 — Found (Not Fixed): Engine Crashes on Illegal Input FEN Where the Side Not to Move Is Already in Check (Session 85, cont.)
+
+**What was found**: while probe-verifying D80's test position, an
+early draft FEN ("3r3k/8/8/8/3Q4/8/8/K7 w - - 0 1") crashed
+`alpha_beta` at *any* depth, including depth 1, with `panicked at
+src/position/mod.rs:250:14: King must always be on the board` (inside
+`Position::king_sq`, called from `Position::in_check`, called from
+`quiescence`).
+
+**Root cause, fully traced** (instrumented `make_move` locally in a
+scratch build to log every capture — removed before this diff, not
+part of anything shipped): the white queen on d4 has an open diagonal
+to h8 (d4-e5-f6-g7-h8, nothing in between) — geometrically a completely
+normal queen move. Black's king happens to be on h8. Since move
+generation doesn't special-case "the target square holds the enemy
+king" as ungenerateable, and (this is the actual root cause) **the FEN
+itself is illegal** — the side NOT to move (Black) is already in check
+while it's White's turn, a game state that can never arise from legal
+play, since Black's own prior move could never legally leave Black's
+own king in check — the search takes the pseudo-legal "capture" at
+face value, removes the king from the board, and the next call to
+`in_check` (which needs to locate a king that no longer exists) panics.
+
+**This is a garbage-in-garbage-out input-validation gap, not a search
+or move-generation bug reachable through real play.** `Position::from_fen`
+doesn't validate that the side not to move isn't in check, and nothing
+downstream treats "the opponent's king is on a square I could
+geometrically reach" as disallowed — both individually reasonable
+simplifications given the invariant "search only ever explores
+positions reached via `generate_moves`'s own legal-move filter, which
+guarantees this can't happen" holds for any position that actually
+originates from `Position::start_pos()`/`generate_with_seed()` and
+legal search from there. It only breaks when an illegal FEN is handed
+in directly via `position fen ...`.
+
+**Why this still matters enough to record, even though it's not a
+live-play bug**: UCI is an external-facing protocol — a GUI bug, a
+corrupted saved position, hand-testing (exactly how this was found),
+or a future engine feature that constructs FENs programmatically could
+all feed the engine something illegal, and the current behavior is a
+hard crash (panics the whole process, including mid-game) rather than
+a graceful UCI-level error. A crash mid-tournament-game from a bad
+`position fen` is a worse failure mode than almost anything else on the
+roadmap right now.
+
+**Deliberately NOT fixed in this diff** — out of scope for Phase 26
+item 3a, and a real fix deserves its own scoping rather than a rushed
+patch under an unrelated diff. Two candidate directions, not yet
+evaluated against each other: (a) validate at `from_fen` parse time
+that the side not to move isn't in check, rejecting the FEN outright
+with a UCI error rather than silently accepting it; (b) defensively
+guard move generation/application against ever treating the enemy
+king's square as a legal capture target, so even a genuinely malformed
+position degrades to "no capture available there" instead of crashing.
+(a) matches how most engines actually behave (garbage FEN → reported
+error, not a crash, not silently "handled"); (b) is more defensive but
+masks bad input rather than surfacing it. **Recommend (a)** as the
+likely right call once scoped, but this needs its own session.
+
+**Action for ROADMAP.md**: added as a new item, flagged for attention
+but explicitly NOT as urgent as a real search-correctness bug would be
+(it cannot occur via legal search from any of `start_pos()`/
+`generate_with_seed()`, so it doesn't affect self-play, tournament play
+from a legal start, or any existing test in the suite) — worth fixing
+before it's ever hit by a real GUI/tool, but not blocking anything else
+in flight.
