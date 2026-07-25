@@ -1561,8 +1561,11 @@ Gokul confirmed he doesn't want that built). Two items were genuinely
 open and worth keeping on record:
 
 1. **Null-move king-exposure guard.** ⚠️ **Implemented (Session 85,
-   D75) as a runtime UCI option `NullMoveKingGuard`, default `false` —
-   NOT yet SPRT-style tested, NOT yet trusted as a default.** Checked
+   D75) as a runtime UCI option `NullMoveKingGuard`, default `false`.
+   First A/B result in (Session 85, D76): 20 games, A (guard on)
+   scored 67.5%, +127 Elo — promising but n=20 is not enough to
+   promote to default (see D76's reasoning). NEXT STEP: a 100+-game
+   confirmation run, fresh seed, before any default flip.** Checked
    `search/alpha_beta.rs`'s
    `can_null_move` condition directly — current guards are the
    standard set (not PV, not in check, sufficient depth, `static_eval
@@ -1575,11 +1578,7 @@ open and worth keeping on record:
    the king is reliably still safe this early. Real and specific, but
    **unproven** — would need its own isolated SPRT-style test (fixed
    games, same time control, with/without the guard) before trusting
-   it, not a blind add. **Next step:** run that A/B via
-   `uci_match_runner.yml` (`engine_a_uci_options="setoption name
-   NullMoveKingGuard value true"` vs. `engine_b_uci_options=""`, same
-   binary both sides) once the 3 changed files are committed and CI is
-   green.
+   it, not a blind add.
 2. **Deeper/more adversarial perft coverage.** `tests/perft.rs` already
    has Pet-Dragon-specific tests (`generate_with_seed` across 20 seeds)
    but only to depth 1-2 with loose "reasonable range" assertions, not

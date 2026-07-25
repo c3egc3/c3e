@@ -2998,3 +2998,46 @@ edition2024 dev-dependency) noted in every prior session's decisions
 that touched test code. **Not yet SPRT-style A/B tested** — that's the
 explicit next step before this guard is trusted for anything beyond
 "compiles and doesn't regress existing tests," per Phase 26's own bar.
+
+
+## D76 — NullMoveKingGuard First A/B Result: Promising but n=20 Is Not Enough to Promote to Default (Session 85, follow-up)
+
+**Result**: Gokul ran the `uci_match_runner.yml` A/B exactly as
+recommended in D75 — Engine A (`main`, `NullMoveKingGuard value true`)
+vs. Engine B (`main`, default `false`), 20 games, 100ms/move, seed
+21000. **A scored 12-5-3 (67.5%), +127 Elo over B.**
+
+**Why this is NOT being treated as confirmation, despite the size of the
+number**: D48's own stated reasoning for why the CI regression gate uses
+a 35% floor rather than a tight one applies here directly and even more
+strongly — "at n=20 games, sampling noise alone is large enough that a
+strong regression (tens of Elo) can still occasionally land near 50%."
+The same logic runs in reverse: at n=20, a genuinely neutral change can
+land at 67.5% by variance alone. +127 Elo from 20 games has a
+wide-enough confidence interval that this result is consistent with
+anything from a real, meaningful improvement down to noise. This is
+qualitatively different from D48's regression gate (which only needs to
+catch clearly broken changes, tolerating false negatives) — promoting a
+pruning heuristic to default-on for real games is the opposite
+asymmetry: a false positive here means shipping an unproven,
+str­ength-affecting change based on noise.
+
+**Decision: do not flip `NullMoveKingGuard`'s default. Recommend a
+larger confirmation run** — same workflow, `pre_tuning_ref`/
+`post_tuning_ref` both `main`, same `engine_a_uci_options`/
+`engine_b_uci_options` split, but `num_games` raised to 100+ (matching
+the "precision Elo measurement" scale D48 already distinguishes from
+its own lightweight 20-game gate) and a fresh `seed_start` (game set
+must differ from seed 21000, or the second run just replays the same 20
+games and adds no new information). If a 100+-game run still shows a
+clearly positive score (meaningfully above the noise band a null result
+would produce), promote the option's default to `true` in a follow-up
+diff and note it as a genuine strength gain in ROADMAP.md Phase 26. If
+it regresses toward ~50%, the honest conclusion is that the first result
+was noise, and the option stays off-by-default indefinitely (or the
+≤1/≤2 thresholds get revisited before a second attempt) — either
+outcome is a real answer, which is the entire point of not skipping this
+step.
+
+**Status**: `NullMoveKingGuard` remains default `false` in `main`. No
+code change from this entry — decision-only, pending the larger run.

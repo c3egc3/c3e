@@ -50,6 +50,16 @@ Most recent session at TOP.
 
 **Decisions made:** D75 — see DECISIONS.md.
 
+**Follow-up (same session, after Gokul confirmed commit + green CI):**
+ran the recommended `uci_match_runner.yml` A/B (20 games, seed 21000,
+`NullMoveKingGuard value true` vs. default). Result: A scored 12-5-3
+(67.5%), +127 Elo. **D76 — not treated as confirmation**: n=20 carries
+too much sampling noise (same reasoning D48 already established for why
+the CI regression gate's threshold is loose, applied in reverse here)
+to promote a strength-affecting default off a single 20-game run.
+Recommended a 100+-game confirmation run at a fresh seed before any
+default change. `NullMoveKingGuard` stays default `false` in `main`.
+
 **Not done this session:**
 - **Not yet committed to `main`** — three complete files
   (`src/search/mod.rs`, `src/search/alpha_beta.rs`, `src/main.rs`)
@@ -66,12 +76,12 @@ Most recent session at TOP.
   existing sibling patterns (`Contempt`, `Skill Level`) rather than
   compiled locally. `cargo test` in CI is the real verification.
 
-**Next session start point:** confirm with Gokul that the 3 files are
-committed and CI is green, then either (a) trigger the
-`NullMoveKingGuard` A/B via `uci_match_runner.yml` and record the result
-in DECISIONS.md as a follow-up entry, or (b) if Gokul wants to work on
-something else first, ask — no default next task, same as Session 84
-ended.
+**Next session start point:** trigger `uci_match_runner.yml` for the
+100+-game `NullMoveKingGuard` confirmation run (D76) — same option
+split as the first run, `num_games=100+`, fresh `seed_start` (not
+21000). Report the result back for a D77 decision (promote to default,
+revisit thresholds, or park it). If Gokul wants to work on something
+else first, ask — no other default next task.
 
 ---
 
