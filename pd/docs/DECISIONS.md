@@ -3326,3 +3326,53 @@ but explicitly NOT as urgent as a real search-correctness bug would be
 from a legal start, or any existing test in the suite) — worth fixing
 before it's ever hit by a real GUI/tool, but not blocking anything else
 in flight.
+
+
+## D82 — Corrected Item 3a to Ship Gated Off, Matching Item 1's Own Established Discipline (Session 85, cont.)
+
+**Problem**: D80 shipped `correction_history_nonpawn` always-on, with no
+kill switch — inconsistent with D75's own discipline for item 1
+(`NullMoveKingGuard`): an unvalidated, strength-affecting change ships
+gated off by default, gets its own isolated SPRT-style A/B via a
+runtime UCI option, and only then is a default flip even considered.
+Surfaced when scoping how item 3a's own SPRT test would actually run —
+there was no toggle to A/B against, only a choice between adding one
+now or comparing against a pinned pre-3a commit ref.
+
+**Decision: add the toggle now, retroactively bringing item 3a in line
+with item 1's pattern**, rather than use a pinned-ref comparison for
+this one test and leave item 3a permanently switch-less. New
+`SearchInfo::nonpawn_correction_enabled: bool` (default `false`), UCI
+`NonPawnCorrectionHistory` (`type check default false`), threaded
+through `EngineState`/`cmd_setoption`/`cmd_go` exactly mirroring
+`NullMoveKingGuard`. Both the `.apply()` and the `.update()` call sites
+in `alpha_beta.rs` are now gated on this flag — when off, neither is
+reached, and `correction_history_nonpawn` stays completely untouched
+(verified directly: `off -> corr = 0`, `on -> corr = 21` against the
+same D80 hanging-queen test position, via the same probe-crate method).
+
+**Why this is the right general pattern going forward, not just a
+one-off fix**: every Phase 26 item so far that affects search/eval
+strength (items 1, 3a, and presumably 3b/3c to come) benefits from a
+runtime kill switch for the same two reasons D75 established — it lets
+`uci_match_runner.yml` A/B the exact same binary with one `setoption`
+difference (no rebuild, no feature-flag matrix), and it means "ships
+but turns out not to help" degrades to "leave the default off
+forever" rather than requiring a revert diff. Recording this as the
+default expectation for future Phase 26-style additions, not just
+something to remember case by case.
+
+**Tests updated/added**: `alpha_beta.rs` — the D80 wiring test now
+explicitly sets `nonpawn_correction_enabled = true` (it would otherwise
+silently test nothing, since the table is untouched by default);
+new `test_nonpawn_correction_defaults_to_false` and
+`test_nonpawn_correction_off_leaves_table_untouched`. `main.rs` — new
+`NonPawnCorrectionHistory` option trio mirroring
+`NullMoveKingGuard`'s three tests exactly (default-false, parses
+true/false, `cmd_go` wiring reaches the actual search thread's
+`SearchInfo`).
+
+**Verification**: full standalone build + probe run before shipping,
+same method as D79/D80 — confirmed the default-off case leaves the
+table at exactly 0 and the explicit-on case reproduces D80's original
+result (`corr = 21`) on the identical test position.

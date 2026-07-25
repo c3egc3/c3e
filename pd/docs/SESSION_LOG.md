@@ -132,6 +132,21 @@ for a future scoped session; fixed my own test position (king moved
 off the problem diagonal) rather than the underlying gap, which is
 explicitly out of scope for this diff.
 
+**Sixth follow-up (D82, gating fix):** asked which toggle strategy to
+use for item 3a's upcoming SPRT test (temporary UCI option vs. pinned
+pre-3a commit ref). In answering, realized item 3a had shipped
+always-on with no kill switch at all — inconsistent with item 1's own
+established discipline (unvalidated strength-affecting change ships
+gated off, gets its own SPRT-style A/B via a runtime option, default
+flip only considered after). Added `nonpawn_correction_enabled` /
+UCI `NonPawnCorrectionHistory` (default false), gating both the
+`.apply()` and `.update()` call sites — verified via the same
+probe-crate method as D79/D80 (`off -> corr = 0`, `on -> corr = 21` on
+the same test position). Updated the existing wiring test to
+explicitly enable the flag (it would otherwise silently test nothing)
+and added default/gating-specific tests in both `alpha_beta.rs` and
+`main.rs`.
+
 **Not done this session:**
 - **Not yet committed to `main`** — three complete files
   (`src/search/mod.rs`, `src/search/alpha_beta.rs`, `src/main.rs`)
@@ -155,13 +170,16 @@ explicitly out of scope for this diff.
 - Items 3b/3c (continuation-based correction; extension-margin use of
   the signal) not started.
 
-**Next session start point:** Phase 26 item 3a is implemented and unit
-tested, awaiting commit + CI confirmation, then its own SPRT-style A/B
-(same pattern as items 1/2 — `uci_match_runner.yml`, one binary, option
-on vs. default). After that: item 3b, then 3c, as separate diffs. Item
-4 (illegal-FEN crash, D81) is unscheduled but flagged — worth a
-dedicated session before it's ever hit by a real GUI/tool, not blocking
-anything else.
+**Next session start point:** Phase 26 item 3a is implemented, unit
+tested, and now gated behind `NonPawnCorrectionHistory` (default
+false, D82) — ready for commit + CI confirmation, then its own
+SPRT-style A/B via `uci_match_runner.yml`
+(`engine_a_uci_options="setoption name NonPawnCorrectionHistory value
+true"` vs. `engine_b_uci_options=""`, same binary both sides — same
+recipe as items 1/2). Gokul's chosen next step after that: item 3b
+(continuation-based correction, indexed by recent move pairs) as the
+next separate diff. Item 4 (illegal-FEN crash, D81) remains
+unscheduled but flagged.
 
 ---
 
