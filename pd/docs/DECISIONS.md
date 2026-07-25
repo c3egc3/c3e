@@ -3376,3 +3376,64 @@ true/false, `cmd_go` wiring reaches the actual search thread's
 same method as D79/D80 — confirmed the default-off case leaves the
 table at exactly 0 and the explicit-on case reproduces D80's original
 result (`corr = 21`) on the identical test position.
+
+
+## D83 — Phase 26 Item 4 Fixed: from_fen Now Rejects Illegal Positions (Session 85, cont.)
+
+**Fix**: `Position::from_fen` now validates, before returning `Ok`, that
+(a) each color has exactly one king, and (b) the side NOT to move is
+not in check. Both return a `FenError` instead of building a `Position`
+that would later panic. `FenError::KingNotFound(Color)` already existed
+as a declared variant but had never actually been constructed anywhere
+— dead validation, now wired up. New `FenError::OpponentInCheck(Color)`
+covers the actual D81 crash class.
+
+**Why this is the right fix** (per D81's own two candidate directions):
+chose (a) — reject at parse time — over (b) — defensively guard move
+generation against ever capturing a king. Parse-time rejection matches
+how engines normally handle malformed input (a UCI-level error, not a
+crash, not silent acceptance) and surfaces the actual problem (bad
+input) rather than papering over it inside search.
+
+**Verified two ways before shipping, not just by construction:**
+1. Directly confirmed both original D81 crash FENs now return
+   `Err(OpponentInCheck(Black))` instead of parsing successfully and
+   later panicking — via the same standalone probe-crate method as
+   D79/D80/D82.
+2. **Swept the entire existing test suite for collateral damage.**
+   This validation applies to every `from_fen` call in the codebase,
+   not just the UCI-facing path — extracted all 98 FEN-shaped string
+   literals from `src/` and `tests/` via grep and ran every one through
+   the new validation. Found 5 pre-existing test FENs that were
+   themselves illegal positions of the exact same class D81 flagged
+   (opponent already in check when not to move) — the same mistake I'd
+   made myself in D80's own first draft, now caught systematically
+   instead of one at a time:
+   - `movegen/pawns.rs::test_promotion` and
+     `make_unmake.rs::test_make_unmake_promotion_position` (same FEN,
+     two files): black king on d8, sitting on the promoting pawn's own
+     capture diagonal — moved to h8.
+   - `eval/open_lines.rs`, three tests (open file, 7th rank, connected
+     rooks): each had the black king sitting directly on the open
+     file/rank being tested, which is exactly what put it in check —
+     moved off that file/rank in each case, preserving what each test
+     actually measures.
+   - `nnue/inference.rs::test_evaluate_nnue_clamp_enforced`: a 16-queen
+     maximal-material-imbalance stress position where literally every
+     square on ranks 1-6 sits under an unobstructed file attack from
+     the queen wall directly above — the black king couldn't be placed
+     anywhere without a blocker. Relocated to d1 (the only file/
+     diagonal combination that exits the board before reaching rank
+     7/8) plus one blocking pawn on d2 for the remaining file threat.
+   All 5 verified fixed via the same probe sweep — 98/98 FENs now parse
+   successfully (the only other 3 "rejections" in the sweep were
+   grep-regex artifacts: a UCI command-line string and two lichess-JSON
+   test fixtures, never actually passed to `from_fen` directly —
+   confirmed by inspecting each call site).
+
+**New tests** in `position/mod.rs`: side-to-move-in-check still
+accepted (this is normal and must not be rejected); the exact D81 FEN
+now rejected with the correct error variant; a missing-king FEN
+rejected; a duplicate-king FEN rejected.
+
+**Phase 26 item 4: closed.**

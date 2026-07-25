@@ -1635,25 +1635,23 @@ open and worth keeping on record:
      recent move pairs).
    - 3c. Not started — use the correction signal to adjust
      singular/double/triple extension margins, not just static eval.
-4. ⚠️ **NEW (Session 85, D81) — engine crashes on an illegal input FEN
-   where the side not to move is already in check.** Found (not
-   caused by, and not fixed as part of) the item 3a work above, while
-   probe-verifying a test position. Root cause fully diagnosed: an
-   illegal `position fen ...` (opponent's king already in check when
-   it's not their move — an unreachable state from any legal game)
-   lets move generation offer a pseudo-legal "capture" of the enemy
-   king, which then crashes the next `in_check` call when it can't
-   find a king. **Cannot occur via legal search from
-   `start_pos()`/`generate_with_seed()`** — doesn't affect self-play,
-   tournament games from a legal start, or any existing test — but a
-   crash from a malformed external UCI `position fen` command (bad
-   GUI, corrupted state, hand-testing) is a worse failure mode than
-   almost anything else currently open. Needs its own scoping session:
-   likely fix is validating FEN legality at parse time and rejecting
-   with a UCI-level error rather than crashing (see D81 for the
-   rejected/candidate alternative of defensively guarding move
-   generation instead, and why parse-time validation is the likely
-   better call).
+4. ✅ **CLOSED (Session 85, D83) — engine crashed on an illegal input
+   FEN where the side not to move is already in check.** Found
+   (Session 85, D81) while probe-verifying an item 3a test position;
+   fixed same session (D83). `Position::from_fen` now rejects (a) any
+   FEN missing exactly one king per color (`FenError::KingNotFound` —
+   existed as a declared variant since before this session but was
+   never actually wired up) and (b) any FEN where the side not to move
+   is in check (new `FenError::OpponentInCheck`), instead of building
+   a `Position` that would later panic. Verified via a full sweep of
+   every FEN literal in the existing codebase (98 found via grep) —
+   caught and fixed 5 pre-existing test FENs that were themselves
+   illegal positions of the same class, previously accepted only
+   because nothing validated it. **Cannot occur via legal search from
+   `start_pos()`/`generate_with_seed()`** — never affected self-play or
+   tournament games from a legal start — but a malformed external UCI
+   `position fen` command now gets a graceful UCI-level error instead
+   of crashing the process.
 
 **Explicitly NOT adopted, with reasoning on record so this doesn't get
 re-litigated without new information:**

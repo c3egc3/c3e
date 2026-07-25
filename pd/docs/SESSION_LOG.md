@@ -147,6 +147,32 @@ explicitly enable the flag (it would otherwise silently test nothing)
 and added default/gating-specific tests in both `alpha_beta.rs` and
 `main.rs`.
 
+**Seventh follow-up (Phase 26 item 4, D83):** Gokul asked to pick up
+item 4 (the D81 crash) next instead of continuing to item 3b. Fixed
+`Position::from_fen` to validate — before returning `Ok` — that each
+color has exactly one king (`FenError::KingNotFound`, a variant that
+existed but was never actually wired up before this) and that the side
+not to move isn't in check (new `FenError::OpponentInCheck`). Per D81's
+own recommendation, chose parse-time rejection over defensively
+guarding move generation.
+
+Before shipping, swept the whole codebase for collateral damage: this
+validation applies to every `from_fen` call, not just the UCI path.
+Extracted all 98 FEN literals from `src/`/`tests/` via grep and ran
+each through the new validation via the probe crate. Found 5
+pre-existing test FENs that were themselves illegal (same class as
+D81, and the same mistake I'd made myself in D80's first draft) — two
+in `pawns.rs`/`make_unmake.rs` (same FEN, king on the pawn's own
+capture diagonal), three in `open_lines.rs` (king sitting directly on
+the open file/rank each test was measuring), one in `nnue/inference.rs`
+(a 16-queen stress position where every square on ranks 1-6 was
+attacked — needed relocation plus a blocking pawn, not just relocation
+alone). Fixed all 5, re-swept — 98/98 now pass; confirmed the 3
+remaining "rejections" from the first sweep were grep artifacts (a UCI
+command string and lichess JSON fixtures, never real `from_fen` calls).
+Added 4 new tests directly on the validation itself. **Phase 26 item 4
+closed.**
+
 **Not done this session:**
 - **Not yet committed to `main`** — three complete files
   (`src/search/mod.rs`, `src/search/alpha_beta.rs`, `src/main.rs`)
@@ -171,15 +197,15 @@ and added default/gating-specific tests in both `alpha_beta.rs` and
   the signal) not started.
 
 **Next session start point:** Phase 26 item 3a is implemented, unit
-tested, and now gated behind `NonPawnCorrectionHistory` (default
-false, D82) — ready for commit + CI confirmation, then its own
-SPRT-style A/B via `uci_match_runner.yml`
-(`engine_a_uci_options="setoption name NonPawnCorrectionHistory value
-true"` vs. `engine_b_uci_options=""`, same binary both sides — same
-recipe as items 1/2). Gokul's chosen next step after that: item 3b
-(continuation-based correction, indexed by recent move pairs) as the
-next separate diff. Item 4 (illegal-FEN crash, D81) remains
-unscheduled but flagged.
+tested, and gated behind `NonPawnCorrectionHistory` (default false,
+D82) — ready for commit + CI confirmation, then its own SPRT-style A/B
+via `uci_match_runner.yml` (same recipe as items 1/2). Item 4
+(illegal-FEN crash) is now closed (D83) — 6 files touched this session
+for that fix alone (`position/fen.rs`, `position/mod.rs`,
+`movegen/pawns.rs`, `tests/make_unmake.rs`, `eval/open_lines.rs`,
+`nnue/inference.rs`), all delivered this turn. Gokul's chosen next
+step after 3a's SPRT test: item 3b (continuation-based correction) as
+the next separate diff.
 
 ---
 
