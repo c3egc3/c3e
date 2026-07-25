@@ -1583,15 +1583,27 @@ open and worth keeping on record:
    **unproven** — would need its own isolated SPRT-style test (fixed
    games, same time control, with/without the guard) before trusting
    it, not a blind add.
-2. **Deeper/more adversarial perft coverage.** `tests/perft.rs` already
+2. ✅ **Deeper/more adversarial perft coverage — CLOSED (Session 85,
+   D78).** `tests/perft.rs` already
    has Pet-Dragon-specific tests (`generate_with_seed` across 20 seeds)
    but only to depth 1-2 with loose "reasonable range" assertions, not
    deep exact-value verification or deliberately constructed
    adversarial setups (rank-1 double-step immediately followed by en
-   passant, castling blocked by an intervening piece on an unusual
-   rook file). Worth strengthening given the position space size, but
+   passant, castling blocked by an intervening piece ~~on an unusual
+   rook file~~ — **correction, D78: castling requires the rook on its
+   standard a1/h1/a8/h8 square, king is hardcoded e1/e8; there is no
+   "unusual rook file" case. The real case is a standard-square rook
+   with some other random piece blocking the path, which is what
+   D78's tests cover.**). Worth strengthening given the position space size, but
    this is test-suite hardening, not a strength lever — low urgency
-   unless a real bug surfaces.
+   unless a real bug surfaces. **4 new hand-verified perft tests added
+   (D78) covering both flagged mechanics through multiple plies of
+   real make/unmake + zobrist + legality. NOT closed: converting the
+   20-seed random-position range checks to exact values — no
+   independent perft oracle exists for arbitrary Pet Dragon
+   arrangements, and hand-enumerating full-board random positions
+   isn't tractable; this is an inherent limitation of testing a custom
+   variant, not a follow-up task.**
 3. **Expand correction history beyond a single pawn-hash table.**
    Surfaced by comparing against Stockfish 18 (current stable,
    confirmed via its own release notes and source) — Pet Dragon already

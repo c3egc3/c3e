@@ -67,6 +67,27 @@ tested, no measurable effect, parked off."** Option stays in the code
 (harmless, off by default) in case different thresholds are worth
 revisiting later, but no further tuning scheduled now.
 
+**Third follow-up (Phase 26 item 2, D78):** picked up deeper/adversarial
+perft coverage next. Read `tests/perft.rs`, `movegen/pawns.rs`, and
+`movegen/castling.rs` in full before writing anything. Found — and
+corrected — a wrong premise in the original item wording: castling
+requires the rook on a *standard* a1/h1/a8/h8 square (king hardcoded
+e1/e8), so "unusual rook file" isn't a real case; the actual
+adversarial case is a standard-square rook blocked by some other
+randomly-placed piece. Added 4 new hand-verified perft tests to
+`tests/perft.rs`: rank-1-double-push→en-passant (perft(1)=5,
+perft(2)=32, hand-enumerated in the test comments) and
+castling-blocked-by-intervening-piece (perft(1)=16, perft(2)=78,
+including a tricky rook-move-that-opens-check branch). Both reuse
+already-verified positions from `pawns.rs`/`castling.rs`'s own unit
+tests rather than novel FENs, and both are designed to discriminate a
+specific plausible bug (hardcoded EP rank; blocked-path miscount) —
+explained in each test's comment. **D78 — Phase 26 item 2 closed** on
+the achievable scope; explicitly did NOT attempt exact-value conversion
+of the 20-seed random-position range checks (no independent oracle for
+arbitrary random Pet Dragon arrangements — an inherent limitation, not
+a follow-up task).
+
 **Not done this session:**
 - **Not yet committed to `main`** — three complete files
   (`src/search/mod.rs`, `src/search/alpha_beta.rs`, `src/main.rs`)
@@ -83,10 +104,11 @@ revisiting later, but no further tuning scheduled now.
   existing sibling patterns (`Contempt`, `Skill Level`) rather than
   compiled locally. `cargo test` in CI is the real verification.
 
-**Next session start point:** Phase 26 item 1 is closed. Ask Gokul what
-to work on — Phase 26 items 2 (deeper perft coverage) or 3 (expanded
-correction history) are the remaining recorded candidates, or something
-else entirely. No default next task.
+**Next session start point:** Phase 26 items 1 and 2 are both closed.
+Item 3 (expand correction history beyond pawn-hash) is the only
+remaining recorded Phase 26 candidate — needs its own scoping pass
+before implementation per its own note. Ask Gokul what to work on; no
+default next task.
 
 ---
 

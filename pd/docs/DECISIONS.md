@@ -3073,3 +3073,69 @@ be worth further tuning budget right now.
 **Phase 26 item 1: closed as "implemented, tested, no measurable effect,
 parked off."** Items 2 (deeper perft coverage) and 3 (expanded
 correction history) remain open on Phase 26.
+
+
+## D78 — Phase 26 Item 2: Adversarial Perft Tests Added; Corrected a Wrong Premise in the Original Item Wording (Session 85, cont.)
+
+**What was added**: 4 new hand-verified `tests/perft.rs` tests closing
+the specific gap Phase 26 item 2 flagged — existing perft coverage was
+either standard-chess positions (external known-correct values apply)
+or loose depth-1/2 range checks on random Pet Dragon seeds (no exact
+values, since no independent oracle exists for arbitrary random
+starts). Neither carried Pet Dragon's two genuinely custom mechanics —
+rank-1 double-push/en-passant interaction, and castling-path blocking —
+through multiple plies of real make/unmake + zobrist + legality round
+tripping; `movegen/pawns.rs` and `movegen/castling.rs` already
+unit-test both mechanics, but only as single-ply move-list checks.
+
+- `test_perft_rank1_double_push_en_passant_depth1/2`: reuses the exact
+  position from `pawns.rs::test_en_passant_after_rank1_double_push`
+  (White pawn recorded-start e1, Black pawn d3). Hand-counted
+  perft(1)=5, perft(2)=32, with the branch-by-branch count in the test
+  comment. This specifically discriminates a hardcoded-rank en-passant
+  bug: if the target were wrongly computed as e3 (rank-2-to-4
+  assumption) instead of e2 (the square actually passed through), d3
+  couldn't diagonally reach e3 at all, the capture would silently
+  vanish, and the total would read 31, not 32.
+- `test_perft_castling_blocked_by_intervening_piece_depth1/2`: reuses
+  the exact position from
+  `castling.rs::test_castling_blocked_by_piece` (King e1, Knight f1,
+  Rook h1). Hand-counted perft(1)=16, perft(2)=78 — the depth-2 count
+  includes a rook move to h8 that opens a check along the now-clear 8th
+  rank, which was the trickiest branch to hand-verify and is called out
+  explicitly in the test comment.
+
+**Correction to the original Phase 26 item 2 wording**: the roadmap
+entry described the castling case as "blocked by an intervening piece
+on an unusual rook file." Re-checked `castling.rs` directly before
+writing anything (mandatory read-before-write) — Pet Dragon's king is
+hardcoded to e1/e8, and castling rights only exist at all if the rook
+also happens to land on its standard a1/h1/a8/h8 square (confirmed both
+in the module's own doc comment and in `CastlingRights` detection at
+setup). There is no "unusual rook file" case — that premise appears to
+be inherited from a Chess960-style assumption already rejected
+elsewhere in this project's history. The real adversarial case, and the
+one actually worth testing, is a *standard*-square rook with some other
+randomly-placed piece sitting in the path between it and the king —
+which is what the new tests cover, using the already-existing
+`castling.rs` test position rather than a novel one.
+
+**What's intentionally NOT done, and why**: did not attempt to convert
+the existing "reasonable range" tests on the 20 random Pet Dragon seeds
+(`test_pet_dragon_perft_depth1_reasonable`,
+`test_pet_dragon_perft_depth2_reasonable`) into exact-value assertions.
+Doing so would require either (a) an independent perft oracle for
+arbitrary random Pet Dragon arrangements, which doesn't exist, or (b)
+hand-enumerating each of 20 essentially-full-board random positions,
+which is not tractable by hand without unacceptable risk of the
+hand-count itself being wrong (unlike the two sparse, few-piece
+positions above, which were small enough to fully and carefully
+enumerate). This is a genuine, structural limitation of testing a
+custom variant with no external reference implementation, not something
+this session could close — flagging it here rather than silently
+leaving it implicit.
+
+**Phase 26 item 2: closed** on the scope that's actually achievable
+(deep, hand-verified adversarial-position coverage for both flagged
+custom mechanics). The random-seed range-check limitation above is
+inherent, not a follow-up task.
