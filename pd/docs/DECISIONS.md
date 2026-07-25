@@ -3139,3 +3139,49 @@ leaving it implicit.
 (deep, hand-verified adversarial-position coverage for both flagged
 custom mechanics). The random-seed range-check limitation above is
 inherent, not a follow-up task.
+
+
+## D79 — Bug Fix: Wrong Expected Value in D78's Castling-Blocked Perft Test (Session 85, cont.)
+
+**Cause**: D78's `test_perft_castling_blocked_by_intervening_piece_depth2`
+asserted `perft(2) == 78`, based on a hand count that correctly worked
+out the Rh8 branch (rook attacks the fully open 8th rank, giving
+check, Black's king has exactly 3 legal replies) but wrongly assumed
+the Rh7 branch was unaffecting — the hand count didn't consider that a
+rook doesn't need to reach the king's actual square/rank to restrict
+its mobility, only the ranks the king could move *to*. A rook on h7
+attacks along the fully open 7th rank (nothing between h7 and a7),
+hitting d7, e7, and f7 — three of Black's five candidate king squares —
+without itself giving check (e8 is on rank 8, untouched by a rook on
+h7). CI caught it immediately: `cargo test` reported `left: 75, right:
+78`.
+
+**Fix**: rebuilt the actual crate standalone (Ubuntu's packaged
+`rustc`/`cargo` 1.75, avoiding the known dev-dependency/edition2024
+wall by depending on `pet_dragon` as an ordinary path dependency from a
+throwaway probe crate — dev-dependencies of a dependency are never
+pulled in by a downstream crate, so `criterion` never enters the
+build), and ran the file's own already-existing `perft_divide` helper
+directly against the exact failing FEN. Output showed `h1h7: 2` (not
+5), `h1h8: 3` (matches the original hand count), everything else 5 —
+summing to 75. Corrected the test's expected value to 75 and rewrote
+the comment to include the Rh7 branch's rank-7 restriction.
+
+**Why this is correct**: verified against the actual engine's own move
+generator and legality filter running the real position, not a second
+round of hand-guessing — the same class of error (an incomplete manual
+branch enumeration) can't repeat itself when the number comes from
+executing the code being tested rather than reasoning about it a
+second time by hand.
+
+**Process note for future sessions**: this is a useful precedent —
+when a hand-verified perft test's expected value is in doubt (either
+because CI disagrees, or before ever committing a new one), building
+the crate standalone via `apt-get install rustc cargo` (Ubuntu's
+packaged 1.75, already known to work for `cargo build --lib`) and
+running `perft_divide` from a throwaway path-dependency probe crate is
+faster and more reliable than a second hand-enumeration attempt, and
+sidesteps the `cargo test`/criterion edition2024 wall entirely since
+`cargo build`/`cargo run` never touch a dependency's dev-dependencies.
+Worth using this method for the *next* new hand-verified perft test
+too, rather than shipping one straight from hand-arithmetic.

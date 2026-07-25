@@ -88,6 +88,21 @@ of the 20-seed random-position range checks (no independent oracle for
 arbitrary random Pet Dragon arrangements — an inherent limitation, not
 a follow-up task).
 
+**Fourth follow-up (CI-caught bug, D79):** Gokul committed and CI
+failed — `test_perft_castling_blocked_by_intervening_piece_depth2`:
+`left: 75, right: 78`. Root cause: my hand count missed that the Rh7
+branch (not just Rh8) restricts Black's king, since a rook on h7 opens
+the 7th rank and hits d7/e7/f7 without itself giving check. Rather than
+re-guess by hand a second time, built the crate standalone (`apt-get
+install rustc cargo` — Ubuntu's packaged 1.75, sidesteps the known
+dev-dependency/edition2024 wall since `cargo build`/`run` never touch a
+dependency's dev-dependencies) and ran the file's own existing
+`perft_divide` helper against the exact FEN from a throwaway
+path-dependency probe crate. Confirmed 75 is correct (`h1h7: 2`, not
+5), fixed the test's expected value and comment. **D79** also records
+this as the preferred method for verifying future hand-written perft
+tests before shipping them, instead of hand-arithmetic alone.
+
 **Not done this session:**
 - **Not yet committed to `main`** — three complete files
   (`src/search/mod.rs`, `src/search/alpha_beta.rs`, `src/main.rs`)
