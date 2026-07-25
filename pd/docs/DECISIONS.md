@@ -3437,3 +3437,28 @@ now rejected with the correct error variant; a missing-king FEN
 rejected; a duplicate-king FEN rejected.
 
 **Phase 26 item 4: closed.**
+
+
+## D84 — NonPawnCorrectionHistory First A/B Result: Promising but n=20 Is Not Enough to Promote to Default (Session 85, cont.)
+
+**Result**: `uci_match_runner` A/B — Engine A (`main`,
+`NonPawnCorrectionHistory value true`) vs. Engine B (`main`, default
+`false`), 20 games, 100ms/move, seed 40000. **A scored 10-6-4 (60.0%),
++70.4 Elo over B.**
+
+**Same reasoning as D76 (item 1's first look), applied again**: at
+n=20, sampling noise alone is large enough that a genuinely neutral
+change can land at 60% by variance, just as a real +70 Elo change could
+easily land near 50% in a different 20-game sample. This result is
+consistent with anything from a real, modest improvement down to pure
+noise — not distinguishable at this sample size. D77 already
+demonstrated this isn't hypothetical for this exact project: item 1's
+20-game +127 Elo first look fully evaporated to +3.5 Elo at 200 games.
+
+**Decision: do not flip `NonPawnCorrectionHistory`'s default. Recommend
+a 100+-game confirmation run**, fresh seed (not 40000), same option
+split, before trusting this one way or the other — identical protocol
+to D76→D77. `NonPawnCorrectionHistory` remains default `false` in
+`main`.
+
+**Status**: no code change. Decision-only, pending the larger run.
