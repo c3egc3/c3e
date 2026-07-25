@@ -3462,3 +3462,46 @@ to D76→D77. `NonPawnCorrectionHistory` remains default `false` in
 `main`.
 
 **Status**: no code change. Decision-only, pending the larger run.
+
+
+## D85 — NonPawnCorrectionHistory Confirmation Run: No Benefit, Slight Negative Lean. Parked Off (Session 85, cont.)
+
+**Result**: 200-game confirmation run (fresh seed, same option split as
+D84) — A (non-pawn correction on) 62 wins, B (off) 73 wins, 65 draws.
+**47.2%, -19.1 Elo.**
+
+**Conclusion**: D84's own predicted outcome — the 20-game +70 Elo first
+look was noise, same pattern as item 1 (D76→D77). Worth being precise
+about what this result actually says: -19.1 Elo at 200 games is not
+strongly distinguishable from zero (well within the noise band D48's
+own reasoning already established for samples this size), so this is
+NOT good evidence the feature actively hurts. But it is clearly not
+evidence it helps either — the point estimate leans negative rather
+than flat, which is a slightly different shape than item 1's dead-flat
++3.5 Elo result, though not different enough to draw a stronger
+conclusion from a single 200-game run.
+
+**Decision: park it, same treatment as item 1.**
+`NonPawnCorrectionHistory` stays default `false`. Not worth a third,
+larger confirmation run right now — the pattern across both item 1 and
+item 3a this session (promising 20-game look → flat-to-negative
+200-game result) is consistent enough with a project already at a
+skill level where the *current, simplest form* of these ideas doesn't
+move the needle, rather than either idea being wrong in principle. A
+plausible explanation specific to 3a: non-pawn material placement may
+already be well-captured by existing HCE terms (piece-square tables,
+mobility, threats — Phase 24's own additions), leaving less genuine
+error for a correction table indexed on piece placement to catch,
+unlike pawn structure (which HCE handles more coarsely and where the
+original correction table has an established, real effect).
+
+**Phase 26 item 3a: closed as "implemented, tested, no measurable
+benefit (mild negative lean, not statistically distinct from zero),
+parked off."** Option stays in the code (harmless, off by default).
+Given this and item 1's identical outcome, **items 3b and 3c
+(continuation-based correction; extension-margin use of the signal)
+are now a genuinely open question** rather than an assumed next step —
+worth deciding explicitly whether to keep pursuing this family of
+ideas or move attention elsewhere (Phase 16 NNUE is still the
+larger-scale option on the table), rather than continuing on momentum
+alone.

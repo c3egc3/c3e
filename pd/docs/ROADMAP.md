@@ -1621,18 +1621,18 @@ open and worth keeping on record:
    isolated CI-verified diff + eventual SPRT-style validation, not be
    bundled into one large change. **Gokul opted to do all three
    sub-items, as sequential isolated diffs rather than one bundle:**
-   - 3a. ⏳ **Non-pawn-material correction table — implemented, unit
-     tested, and gated behind UCI `NonPawnCorrectionHistory` (default
-     `false`) as of D82. NOT yet SPRT-tested.** New
-     `SearchInfo::correction_history_nonpawn`, indexed by a new
-     `pruning::nonpawn_hash()` (knights/bishops/rooks/queens, both
-     colors — excludes pawns and kings), applied additively alongside
-     the existing pawn-hash table when the option is on. Shipped
-     always-on initially (D80); corrected to default-off + toggle
-     (D82) to match item 1's own established discipline before its
-     SPRT test runs.
-   - 3b. Not started — continuation-based correction (indexed by
-     recent move pairs).
+   - 3a. ✅ **CLOSED (Session 85, D80/D82/D85) — non-pawn-material
+     correction table implemented, tested, gated behind
+     `NonPawnCorrectionHistory` (default false). SPRT result: 20-game
+     first look +70 Elo (D84, flagged as likely noise); 200-game
+     confirmation -19.1 Elo (D85, flat-to-negative, not statistically
+     distinct from zero). No measurable benefit — parked off, same
+     outcome and treatment as item 1.**
+   - 3b. ⏸️ Continuation-based correction (indexed by recent move
+     pairs) — given items 1 and 3a both landed flat/negative on
+     confirmation this session, whether to keep pursuing this family
+     of ideas vs. redirect elsewhere (e.g. Phase 16 NNUE) is now an
+     open question, not an assumed next step.
    - 3c. Not started — use the correction signal to adjust
      singular/double/triple extension margins, not just static eval.
 4. ✅ **CLOSED (Session 85, D83) — engine crashed on an illegal input
