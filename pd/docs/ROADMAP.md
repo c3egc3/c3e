@@ -1560,12 +1560,16 @@ king is hardcoded to e1/e8, confirmed directly in `movegen/castling.rs`;
 Gokul confirmed he doesn't want that built). Two items were genuinely
 open and worth keeping on record:
 
-1. **Null-move king-exposure guard.** ⚠️ **Implemented (Session 85,
-   D75) as a runtime UCI option `NullMoveKingGuard`, default `false`.
-   First A/B result in (Session 85, D76): 20 games, A (guard on)
-   scored 67.5%, +127 Elo — promising but n=20 is not enough to
-   promote to default (see D76's reasoning). NEXT STEP: a 100+-game
-   confirmation run, fresh seed, before any default flip.** Checked
+1. ✅ **Null-move king-exposure guard — CLOSED (Session 85, D75/D76/D77):
+   implemented, tested, no measurable effect at current thresholds,
+   parked off by default.** `NullMoveKingGuard` UCI option exists
+   (default `false`, zero cost when off), mechanism stays in the code.
+   20-game first look: +127 Elo (D76 — flagged as noise, n too small
+   to trust). 200-game confirmation: +3.5 Elo, 50.5% (D77 — flat,
+   confirms the first result was noise). Not worth further tuning
+   budget right now — Pet Dragon's existing zugzwang guard
+   (`has_non_pawn_material`) already covers the cases that matter most.
+   Checked
    `search/alpha_beta.rs`'s
    `can_null_move` condition directly — current guards are the
    standard set (not PV, not in check, sufficient depth, `static_eval

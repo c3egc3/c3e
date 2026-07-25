@@ -3041,3 +3041,35 @@ step.
 
 **Status**: `NullMoveKingGuard` remains default `false` in `main`. No
 code change from this entry — decision-only, pending the larger run.
+
+
+## D77 — NullMoveKingGuard Confirmation Run: Flat at Scale, First Result Was Noise. Parked Off (Session 85, follow-up)
+
+**Result**: 200-game confirmation run (fresh seed 30000, same option
+split as D76's 20-game run) — A (guard on) 74 wins, B (guard off) 72
+wins, 54 draws. **50.5%, +3.5 Elo.** Flat, well inside noise for a
+200-game sample.
+
+**Conclusion**: D76's own predicted outcome. The 20-game +127 Elo result
+was sampling variance, not a real effect. At the current thresholds
+(skip null-move at ≤1 safe king-ring square, reduce `r` by 1 at ≤2),
+`NullMoveKingGuard` has no measurable strength impact — positive or
+negative — in self-play.
+
+**Decision: park it. `NullMoveKingGuard` stays default `false`,
+mechanism stays in the code (harmless, zero-cost when off, already
+merged and tested).** Not reverting/removing the option — it's a real,
+specific idea from external-advice review (Phase 26) that turned out
+not to matter *at these thresholds*, which is a legitimate, useful
+result, not a failed implementation. Re-litigating with different
+thresholds (e.g. only triggering at 0 safe squares, or scaling the
+reduction cut by exactly how few squares remain rather than a flat ≤1/≤2
+cutoff) is possible future work, but not scheduled — Pet Dragon's
+zugzwang guard already covers the cases that matter most, and this
+result suggests king-ring exposure isn't an independent enough signal
+from what `has_non_pawn_material` and normal search already handle to
+be worth further tuning budget right now.
+
+**Phase 26 item 1: closed as "implemented, tested, no measurable effect,
+parked off."** Items 2 (deeper perft coverage) and 3 (expanded
+correction history) remain open on Phase 26.

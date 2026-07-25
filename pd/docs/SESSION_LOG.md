@@ -60,6 +60,13 @@ to promote a strength-affecting default off a single 20-game run.
 Recommended a 100+-game confirmation run at a fresh seed before any
 default change. `NullMoveKingGuard` stays default `false` in `main`.
 
+**Second follow-up (200-game confirmation, seed 30000):** 74-72-54,
+50.5%, +3.5 Elo — flat, confirms D76's suspicion that the 20-game
+result was noise. **D77 — Phase 26 item 1 closed as "implemented,
+tested, no measurable effect, parked off."** Option stays in the code
+(harmless, off by default) in case different thresholds are worth
+revisiting later, but no further tuning scheduled now.
+
 **Not done this session:**
 - **Not yet committed to `main`** — three complete files
   (`src/search/mod.rs`, `src/search/alpha_beta.rs`, `src/main.rs`)
@@ -76,12 +83,10 @@ default change. `NullMoveKingGuard` stays default `false` in `main`.
   existing sibling patterns (`Contempt`, `Skill Level`) rather than
   compiled locally. `cargo test` in CI is the real verification.
 
-**Next session start point:** trigger `uci_match_runner.yml` for the
-100+-game `NullMoveKingGuard` confirmation run (D76) — same option
-split as the first run, `num_games=100+`, fresh `seed_start` (not
-21000). Report the result back for a D77 decision (promote to default,
-revisit thresholds, or park it). If Gokul wants to work on something
-else first, ask — no other default next task.
+**Next session start point:** Phase 26 item 1 is closed. Ask Gokul what
+to work on — Phase 26 items 2 (deeper perft coverage) or 3 (expanded
+correction history) are the remaining recorded candidates, or something
+else entirely. No default next task.
 
 ---
 
