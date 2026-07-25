@@ -2917,3 +2917,84 @@ just the bug.
 
 **Status:** fix applied, not yet confirmed committed/CI-green as of
 this entry.
+
+
+## D75 — Null-Move King-Exposure Guard Implemented as a Runtime UCI Option, Not a Compile-Time Flag (Session 85)
+
+**Decision**: Implemented ROADMAP Phase 26 item 1 (null-move
+king-exposure guard) as a new `SearchInfo::null_move_king_guard: bool`
+field, default `false`, exposed as a UCI option `NullMoveKingGuard`
+(`type check default false`) — plumbed through `EngineState` →
+`cmd_uci`/`cmd_setoption`/`cmd_go` in exactly the same shape as the
+existing `Contempt` option (persistent session setting, threaded into
+both `main_info` and every helper thread's `h_info` in `cmd_go`).
+
+**The guard itself**: a new `king_safe_square_count(pos, color) -> u32`
+helper in `alpha_beta.rs`, next to the existing `has_non_pawn_material`
+zugzwang guard. Counts squares in the king's ring (`king_attacks`) that
+are neither occupied by the king's own side nor attacked by the enemy
+(reusing `Position::is_attacked`, already used for check detection).
+When `null_move_king_guard` is `false` (default), this is never called —
+`king_safe_squares` is `None` and `can_null_move`'s extra condition
+short-circuits via `Option::map_or(true, ...)`, so default engine
+behavior is byte-identical to before this option existed, same
+"strictly additive" contract D48's regression gate already established
+for `Contempt`/`Skill Level`. When `true`: ≤1 safe square skips
+null-move for that node entirely; ≤2 reduces the adaptive reduction `r`
+by 1, floored at 1 (never fully cancels the reduction to 0, which would
+make the null-move search redundant with a normal search at the same
+effective depth).
+
+**Why a runtime UCI option, not a Cargo feature flag or a hardcoded
+threshold**: ROADMAP Phase 26 explicitly flags this item as "real and
+specific, but unproven — would need its own isolated SPRT-style test
+(fixed games, same time control, with/without the guard) before
+trusting it, not a blind add." D48 already built exactly the
+infrastructure this needs: `uci_match_runner.rs` accepts independent
+`engine_a_uci_options`/`engine_b_uci_options` strings, sent as
+`setoption` lines once per engine before the match. A runtime option
+means the SAME compiled binary serves as both sides of the A/B test —
+Engine A with `setoption name NullMoveKingGuard value true`, Engine B
+with it left at default `false` — via one `uci_match_runner.yml` manual
+dispatch, no second build variant, no feature-flag matrix in `build.yml`
+to maintain. A Cargo feature flag would have required building and
+distributing two separate binaries just to compare them, for a change
+whose entire premise is "unproven, needs isolated testing" — the
+runtime-option path gets that isolated test for free from existing CI
+plumbing.
+
+**Why the thresholds are ≤1 (skip) / ≤2 (reduce), not something else**:
+Chosen as a reasonable starting point consistent with the roadmap's own
+framing ("more conservative... or disable... when the king has few safe
+squares") — 8 is the max ring size for a non-edge king, so ≤2 is a
+meaningfully constrained king (a quarter or less of maximum mobility)
+while ≤1 is a near-worst-case (the king is boxed in with at most one
+escape). **Not tuned, not validated against real games** — this is
+exactly the kind of specific-but-unproven number Phase 26 flagged as
+needing SPRT-style verification before being trusted. If the eventual
+A/B test shows no effect or a negative one, the fix is either
+re-threshold or revert `null_move_king_guard`'s default posture (it
+already defaults off, so "revert" here just means never flipping the
+option on for real games) — not a structural rework, since the whole
+mechanism sits behind one already-off-by-default flag.
+
+**Rejected alternative — folding this into the existing zugzwang guard's
+condition unconditionally (no option at all)**: rejected for the same
+reason a feature flag was rejected — an SPRT-unverified change to a core
+pruning heuristic that runs on nearly every node would directly
+contradict Phase 26's own stated bar for trusting this idea, and D48's
+regression gate (20 games, 35% threshold) is explicitly a coarse smoke
+check, not the kind of precision comparison this specific,
+sign-uncertain heuristic change needs before being unconditionally live.
+
+**Verification status**: all three touched files
+(`src/search/mod.rs`, `src/search/alpha_beta.rs`, `src/main.rs`) have
+new unit tests (default-off state, `king_safe_square_count` correctness
+on three constructed FENs, `cmd_go` wiring proof mirroring
+`test_cmd_go_applies_contempt_to_search`'s pattern) but were reasoned
+through by hand against the same sibling-pattern (`Contempt`) rather
+than compiled locally — same toolchain wall (sandbox rustc 1.75 vs. an
+edition2024 dev-dependency) noted in every prior session's decisions
+that touched test code. **Not yet SPRT-style A/B tested** — that's the
+explicit next step before this guard is trusted for anything beyond
+"compiles and doesn't regress existing tests," per Phase 26's own bar.

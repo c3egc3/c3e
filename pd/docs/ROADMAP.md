@@ -1560,7 +1560,10 @@ king is hardcoded to e1/e8, confirmed directly in `movegen/castling.rs`;
 Gokul confirmed he doesn't want that built). Two items were genuinely
 open and worth keeping on record:
 
-1. **Null-move king-exposure guard.** Checked `search/alpha_beta.rs`'s
+1. **Null-move king-exposure guard.** ⚠️ **Implemented (Session 85,
+   D75) as a runtime UCI option `NullMoveKingGuard`, default `false` —
+   NOT yet SPRT-style tested, NOT yet trusted as a default.** Checked
+   `search/alpha_beta.rs`'s
    `can_null_move` condition directly — current guards are the
    standard set (not PV, not in check, sufficient depth, `static_eval
    >= beta`, has-non-pawn-material zugzwang guard, no consecutive
@@ -1572,7 +1575,11 @@ open and worth keeping on record:
    the king is reliably still safe this early. Real and specific, but
    **unproven** — would need its own isolated SPRT-style test (fixed
    games, same time control, with/without the guard) before trusting
-   it, not a blind add.
+   it, not a blind add. **Next step:** run that A/B via
+   `uci_match_runner.yml` (`engine_a_uci_options="setoption name
+   NullMoveKingGuard value true"` vs. `engine_b_uci_options=""`, same
+   binary both sides) once the 3 changed files are committed and CI is
+   green.
 2. **Deeper/more adversarial perft coverage.** `tests/perft.rs` already
    has Pet-Dragon-specific tests (`generate_with_seed` across 20 seeds)
    but only to depth 1-2 with loose "reasonable range" assertions, not

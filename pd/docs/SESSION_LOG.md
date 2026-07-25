@@ -7,6 +7,74 @@ Most recent session at TOP.
 
 ---
 
+---
+
+## Session 85 — 2026-07-25 (Phase 26 item 1: null-move king-exposure guard implemented as a runtime UCI option — D75; not yet SPRT-tested or committed)
+
+**Built/done:**
+
+1. Asked Gokul which parked item to pick up; chose **Phase 26 item 1**
+   (null-move king-exposure guard) over the other two candidates
+   (correction-history expansion, deeper perft coverage).
+
+2. Read `search/alpha_beta.rs`'s existing `can_null_move` guard set in
+   full before writing anything (mandatory read-before-write) — confirmed
+   ROADMAP's description was accurate: standard guards only (not PV, not
+   in check, sufficient depth, `static_eval >= beta`, zugzwang guard via
+   `has_non_pawn_material`, no consecutive nulls), nothing king-safety
+   specific.
+
+3. **D75 — implemented the guard as a runtime UCI option
+   (`NullMoveKingGuard`, default `false`), not a compile-time change.**
+   New `king_safe_square_count(pos, color)` helper in `alpha_beta.rs`
+   (counts king-ring squares that are unoccupied-by-own and
+   unattacked-by-enemy, reusing the existing `Position::is_attacked`).
+   When the option is off (default), the guard computes nothing and
+   changes nothing — byte-identical to pre-Phase-26 null-move behavior.
+   When on: ≤1 safe square skips null-move entirely, ≤2 reduces the
+   adaptive reduction `r` by 1 (floored at 1). Threaded through
+   `SearchInfo` → `EngineState` → `cmd_uci`/`cmd_setoption`/`cmd_go`,
+   exactly mirroring the existing `Contempt` plumbing end-to-end.
+   Full reasoning, including why this is a runtime option rather than a
+   Cargo feature flag, in DECISIONS.md D75.
+
+4. Added test coverage across all three touched files: `search/mod.rs`
+   (default-false), `alpha_beta.rs` (`king_safe_square_count` correctness
+   on three constructed FENs — open-center king, corner-boxed king with
+   own pawns excluding ring squares, rook-attacked ring square excluded;
+   plus guard-off and guard-on search-still-completes sanity checks),
+   `main.rs` (option default/parse, and a `cmd_go`-wiring proof test in
+   the same style as `test_cmd_go_applies_contempt_to_search` — checks
+   the actual `SearchInfo` the search thread used, not just
+   `EngineState`'s copy of the setting).
+
+**Decisions made:** D75 — see DECISIONS.md.
+
+**Not done this session:**
+- **Not yet committed to `main`** — three complete files
+  (`src/search/mod.rs`, `src/search/alpha_beta.rs`, `src/main.rs`)
+  delivered for Gokul to download and push.
+- **Not yet SPRT-style A/B tested.** The whole point of the runtime-option
+  design is to let this run via `uci_match_runner.yml` with
+  `engine_a_uci_options="setoption name NullMoveKingGuard value true"` vs.
+  `engine_b_uci_options=""` (same binary, both sides) — Gokul needs to
+  trigger that manually before this guard is trusted for anything beyond
+  "compiles and doesn't break existing tests."
+- Local compile/test verification hit the same known toolchain wall as
+  every previous session (sandbox rustc 1.75 vs. edition2024
+  dev-dependency) — reasoned through by hand and cross-checked against
+  existing sibling patterns (`Contempt`, `Skill Level`) rather than
+  compiled locally. `cargo test` in CI is the real verification.
+
+**Next session start point:** confirm with Gokul that the 3 files are
+committed and CI is green, then either (a) trigger the
+`NullMoveKingGuard` A/B via `uci_match_runner.yml` and record the result
+in DECISIONS.md as a follow-up entry, or (b) if Gokul wants to work on
+something else first, ask — no default next task, same as Session 84
+ended.
+
+---
+
 ## Session 84 — 2026-07-22/23 (Rank-battery bug fix; Phase 23.4 design closed — D67; Threats-term gap found — D68; Phase 25 completed, applied, and CI-corrected — D69/D70; Phase 23.4 fully built and CI-confirmed — D71/D72; Phase 24 item 4 (Threats term) implemented — D73)
 
 **Built/done, in order:**
