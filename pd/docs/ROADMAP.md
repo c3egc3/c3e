@@ -1741,6 +1741,84 @@ This supersedes Session 82's "540 passed, 0 failed" total.
 
 ---
 
+## Phase 27 — External Stockfish Benchmark Regression Investigation ⏳ IN PROGRESS (Session 86)
+
+**Trigger:** Gokul supplied `engine-bench-log-2026-07-26-13-10-23.txt` —
+3 games, Pet Dragon (White, Skill 20 = uncapped) vs. Stockfish (Black,
+Skill 10), 100ms/move, both from the standard classical start FEN.
+**Result: 0-3, all checkmates against Pet Dragon.** This is the first
+recorded data point of Pet Dragon vs. real external Stockfish at any
+skill level — every prior strength claim in this repo (Phase 14/17/20/25
+Elo numbers) is Pet-Dragon-vs-itself or Pet-Dragon-vs-pinned-ref, never
+vs. a real independent engine. Treat this as new, real signal, not
+noise to explain away.
+
+**Analysis done this session (Claude, via local `python-chess` replay
+of the raw move lists — read-only, no repo changes):**
+- All 3 games are legal, end in genuine checkmates (not parser/UCI bugs).
+- Material tracked ply-by-ply in all 3 games shows the **same shape**:
+  roughly level material through the opening/early-middlegame, then a
+  **sudden, large, one-sided material collapse late in the game**
+  (Match 1: even until ~ply130, -9 by ply150; Match 2: even until
+  ~ply60, -15 by ply90; Match 3: collapses earlier and more repeatedly).
+  Three-for-three same shape is a real pattern, not sampling noise.
+- This looks like a **tactical blindness / hanging-piece problem that
+  gets worse as games go long / material thins**, not a slow eval
+  miscalibration (a miscalibrated eval would drift, not suddenly drop a
+  rook+ worth of material in ~10-20 plies).
+- All 3 games start from the **standard classical FEN**, so whatever's
+  wrong is in generic search/eval code, not Pet Dragon variant-specific
+  logic (`pawn_starts`, dynamic castling, etc.).
+
+**Leading hypothesis (unconfirmed — needs bisection, not a guess to
+ship a fix against):** three search techniques landed in Phase 23 with
+their Elo impact explicitly flagged `⚠️ not yet measured against a real
+match` — 23.2 (thread-differentiated Lazy SMP, D49), 23.6 (singular
+extension multi-cut + negative extension, D59), 23.7 (Late Move Pruning,
+D60). All three are **on by default**, unlike the Phase 26 experimental
+options (NullMoveKingGuard etc., which are off by default and already
+ruled out by real SPRT data). Any of the three could plausibly cause
+exactly this failure mode: LMP/multi-cut/negative-extension all prune
+or shortcut real lines outright rather than just reducing them, and if
+any threshold is miscalibrated it would look like "plays fine until a
+long, thinning-material position exposes the over-pruning," not a
+crash or an obviously-wrong eval sign. **This has not been verified by
+reading source for a concrete bug — it's the most likely suspect class
+based on what's documented as unmeasured, and needs to be confirmed or
+ruled out empirically, the same way every other strength question in
+this repo has been (SPRT-style A/B via `uci_match_runner.rs`), not
+patched on suspicion.**
+
+**Investigation plan, staged (mobile/Actions-only, no live debugging):**
+1. **Isolate time pressure as a variable.** Re-run the same Pet-Dragon-
+   vs-Stockfish bench (or an equivalent) at a slower time control
+   (e.g. 1000ms/move) to see if the same late-game collapse shape
+   still appears. If it disappears at slower time controls, this is a
+   time-management/depth-starvation issue, not the Phase 23 pruning
+   hypothesis above — different fix path entirely.
+2. **Isolate Lazy SMP.** Re-run with `Threads=1` (no helper threads) to
+   rule out/in 23.2's thread-differentiated parameters and any TT
+   pollution from helper threads bleeding into the main search under a
+   very short time budget.
+3. **Bisect 23.6/23.7 via pinned-ref `uci_match_runner.rs`** (same
+   tool/methodology as Phase 17.8's D36 pre/post-tuning match and
+   Phase 26's SPRT-style validations) — one binary at the commit
+   immediately before D59/D60 landed vs. current `main`, same time
+   control as whichever step above best reproduces the collapse. This
+   directly measures whether 23.6/23.7 net-helped or net-hurt in a way
+   the internal-only Phase 23 testing never checked.
+4. **Once isolated to a specific technique/commit range**, read that
+   specific code path in full against the actual collapse positions
+   (extract the FEN a few plies before each game's material collapse
+   point from this session's replay) before writing any fix — same
+   read-before-write discipline as every other session in this repo.
+
+**Not yet started** — step 1 needs a fresh bench run from Gokul (this
+session's uploaded log is the only data in hand). Next session should
+start there.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|
