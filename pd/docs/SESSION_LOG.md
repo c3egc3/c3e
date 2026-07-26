@@ -9,7 +9,105 @@ Most recent session at TOP.
 
 ---
 
-## Session 86 — 2026-07-26 (Phase 27 opened: external-Stockfish bench regression investigation; D90 diagnostic toggles shipped, not yet CI-confirmed)
+## Session 87 — 2026-07-26, cont. (Phase 27: found + fixed why Session 86's D91 toggles were unreachable from the browser pit tool; D92 WASM toggles + vs.html UI shipped, not yet CI/manually confirmed)
+
+**Built/done:**
+
+1. Gokul ran config (a) from ROADMAP Phase 27 (both D91 toggles left at
+   default `true`, i.e. unchanged production behavior) via
+   `web/pit/vs.html`, 1000ms/move, Skill 20 vs. Stockfish Skill 10.
+   Result: **2 draws (threefold repetition) + 1 loss** — a real
+   improvement over the previous 6-for-6 losses across Sessions 85-86.
+   Replayed all 3 games via `python-chess` (read-only, same method as
+   prior sessions): the loss still shows the same late-game material-
+   collapse shape (level to ~ply60, then -10 by ply80, checkmate) —
+   improvement in outcome, but the underlying pattern Phase 27 exists to
+   investigate is still present.
+
+2. Gokul reported not knowing how to run configs (b)/(c) — `vs.html` is
+   direct engine-vs-engine play, no UCI console. Read
+   `github.com/g-c-3/pet-dragon/blob/main/web/pit/vs.html` (via
+   `raw.githubusercontent.com`, full file) to find out why, rather than
+   assuming it was a usability gap on Gokul's end.
+
+3. **Root cause found:** `vs.html` calls Pet Dragon via
+   `search_from_fen_with_eval(fen, movetime, skill)`, a single-shot WASM
+   function exported directly from `lib.rs` — there is no UCI stdin/
+   stdout loop in the browser at all. Confirmed via grep that this is
+   the *only* Pet Dragon entry point either web page
+   (`web/index.html`/`web/pit/vs.html`) ever calls; plain
+   `search_from_fen` (non-eval) isn't called from any web page currently.
+   D91's `LMPEnabled`/`SingularMultiCutEnabled` UCI options only exist
+   on the native `main.rs` `cmd_setoption`/`cmd_go` path, which neither
+   web page touches — **D91's toggles were genuinely unreachable from
+   the only tool Gokul uses for this investigation**, not a Gokul-side
+   issue.
+
+4. **D92 — implemented the WASM-side equivalent.** Read `lib.rs` in
+   full (mandatory read-before-write) — confirmed both
+   `search_from_fen`/`search_from_fen_with_eval` build a fresh
+   `SearchInfo::new()` per call with only `skill_level` overridden.
+   Added two module-global `AtomicBool`s (`LMP_ENABLED`/
+   `SINGULAR_MULTICUT_ENABLED`, both default `true`) plus two new
+   `#[wasm_bindgen]` exports (`set_lmp_enabled`/
+   `set_singular_multicut_enabled`) that store into them; both search
+   functions now read the atomics into each fresh `SearchInfo`. Chose
+   this over adding parameters to `search_from_fen_with_eval` itself —
+   that would require updating `web/index.html`'s call site in lockstep
+   (it also calls this function) and wasm-bindgen turns a missing JS
+   arg into `false` for a `bool` param, not the type's "default," which
+   would have silently disabled both techniques for
+   `web/index.html`'s real-user-facing play page the moment its call
+   site fell one parameter behind — a setter function keeps the
+   never-call-it path providably identical to before.
+
+5. Read `web/pit/vs.html` in full before editing (mandatory read-
+   before-write) — added a new "Pet Dragon diagnostics (Phase 27)"
+   card (two checkboxes, both checked by default), imported the two new
+   wasm-bindgen exports, applied the checkbox state once at boot and
+   live on `change` (guarded by `dragonReady` so a click during the
+   boot race is a no-op), froze both checkboxes while `match.running`
+   (same rule already applied to engine/skill/movetime), and recorded
+   the toggle state into `currentGameMeta`/`matchLog`/the exported log
+   text so a downloaded bench log is self-describing about which A/B
+   config produced it.
+
+6. **Numbering correction:** Session 86's toggle-mechanism entry was
+   mislabeled `D90` in both `DECISIONS.md` and `ROADMAP.md`, colliding
+   with Session 85's pre-existing `D90 — CorrectionExtension` entry.
+   Caught before anything was committed; renumbered to `D91` throughout
+   (`main.rs`/`search/mod.rs`/`search/alpha_beta.rs`, `ROADMAP.md`,
+   this file's Session 86 entry — Session 85's actual D90 references at
+   lines 347/368 left untouched, they're correct). This session's new
+   work is `D92`.
+
+**Bugs fixed:** none in the engine itself yet — still diagnostic
+infrastructure, plus a self-inflicted decision-numbering collision
+(caught and corrected before commit, see item 6).
+
+**Decisions made:** D92 (above); D91 renumbered from its Session-86
+mislabeling.
+
+⚠️ **Not yet CI-confirmed or manually loaded** — no local `cargo`/
+`wasm-pack` in this session's sandbox, and `vs.html` imports live from
+the deployed GitHub Pages build, so the new exports don't exist in the
+browser until CI redeploys. Hand-reviewed only (brace/paren/div-tag
+balance checked programmatically on `lib.rs` and `vs.html`, new element
+IDs confirmed unique, `dragonReady` declaration-order checked against
+the new listener registration).
+
+**Next session start point:** Gokul commits all 5 changed files
+(`src/search/mod.rs`, `src/search/alpha_beta.rs`, `src/main.rs` from
+Session 86; `src/lib.rs`, `web/pit/vs.html` from this session), confirms
+CI passes including the Pages redeploy, then manually loads
+`web/pit/vs.html` once to confirm the new diagnostics card actually
+renders and works before trusting any A/B result from it. Then run the
+three configs (both default / LMP off / SingularMultiCut off) and send
+the logs — per ROADMAP.md Phase 27's Session 87 update.
+
+---
+
+## Session 86 — 2026-07-26 (Phase 27 opened: external-Stockfish bench regression investigation; D91 diagnostic toggles shipped, not yet CI-confirmed)
 
 **Built/done:**
 
@@ -42,7 +140,7 @@ Most recent session at TOP.
    in these single-thread benches at all — **23.2 provisionally ruled
    out**, narrowing to 23.6 (D59) and 23.7 (D60).
 
-5. **D90 — implemented two runtime UCI diagnostic toggles**,
+5. **D91 — implemented two runtime UCI diagnostic toggles**,
    `LMPEnabled` and `SingularMultiCutEnabled`, both **default `true`**
    (byte-identical to current production behavior — inverse-default
    pattern from the Phase 26 `NullMoveKingGuard` family, since D59/D60
@@ -59,12 +157,12 @@ Most recent session at TOP.
    (default-true assertions + off-still-searches-safely checks, both
    `SearchInfo`- and `EngineState`-level, mirroring the existing
    `null_move_king_guard`/`correction_extension_enabled` test pattern).
-   Full reasoning in DECISIONS.md D90.
+   Full reasoning in DECISIONS.md D91.
 
 **Bugs fixed:** none yet — this session is diagnostic infrastructure,
 not a fix. No root cause confirmed.
 
-**Decisions made:** D90 (above).
+**Decisions made:** D91 (above).
 
 ⚠️ **Not yet CI-confirmed to compile/pass** — no local `cargo` in this
 session's sandbox. Reviewed by hand (brace/paren balance checked

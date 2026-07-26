@@ -3788,7 +3788,7 @@ either start scoping that, or take a step back and look at what
 actually move HCE-level strength before committing to the NNUE
 project's scale.
 
-## D90 — Phase 27: LMPEnabled / SingularMultiCutEnabled Diagnostic Toggles (Session 86)
+## D91 — Phase 27: LMPEnabled / SingularMultiCutEnabled Diagnostic Toggles (Session 86)
 
 Gokul supplied two external bench logs (100ms/move, then 1000ms/move)
 of Pet Dragon (Skill 20, uncapped) vs. real Stockfish (Skill 10, then
@@ -3863,3 +3863,93 @@ Engine Bench matchup with each toggle flipped off in turn (three
 configs: both on/default, LMP off, SingularMultiCut off) to see which
 one — if either — makes the late-game collapse disappear, before any
 further code change is made against this regression.
+
+## D92 — Phase 27: WASM-Side Diagnostic Toggles for the Browser Pit Tool (Session 87)
+
+Gokul ran D91's diagnostic-toggle config (a) — both `LMPEnabled`/
+`SingularMultiCutEnabled` left at default `true`, i.e. unchanged
+production behavior — via `web/pit/vs.html`, 1000ms/move, Skill 20 vs.
+Stockfish Skill 10: **2 draws (threefold repetition) + 1 loss**, a real
+improvement over the previous 6-for-6 losses, though replaying the loss
+(`python-chess`, material tracked ply-by-ply, same method as prior
+sessions) shows the same late-game collapse shape in that one game
+(level to ~ply60, then -10 by ply80, checkmate) — the underlying issue
+Phase 27 opened to investigate is still present, just not deciding
+every game outright at this combination of settings/opponent skill.
+
+Gokul then reported not knowing how to actually run configs (b)/(c) —
+`vs.html` has no UCI console, just direct engine-vs-engine play. Reading
+`web/pit/vs.html` in full explained why: it calls Pet Dragon via
+`search_from_fen_with_eval(fen, movetime, skill)`, a single-shot WASM
+function exported straight from `lib.rs` — there is no UCI stdin/stdout
+loop in the browser at all. D91's `LMPEnabled`/`SingularMultiCutEnabled`
+options only exist on the native UCI path (`main.rs`'s
+`cmd_setoption`/`cmd_go`), which this page never touches. **D91's
+toggles were unreachable from the only tool Gokul actually uses for
+this investigation** — a real gap, not a Gokul-side usability question.
+
+**Fix:** added the WASM-side equivalent, following the same shape
+`vs.html`'s own Stockfish wrapper already uses for its `Skill Level`
+option (`StockfishEngine.setSkill()` — a small stateful setter called
+before each move that only sends the UCI command when the value
+actually changed):
+- Two new module-global `AtomicBool`s in `lib.rs`
+  (`LMP_ENABLED`/`SINGULAR_MULTICUT_ENABLED`, both `::new(true)`) plus
+  two new `#[wasm_bindgen]` exports, `set_lmp_enabled(bool)` /
+  `set_singular_multicut_enabled(bool)`, that store into them.
+- Both `search_from_fen` and `search_from_fen_with_eval` now read these
+  atomics into each fresh `SearchInfo`'s `lmp_enabled`/
+  `singular_multicut_enabled` fields (previously left at `SearchInfo::
+  new()`'s own default `true`, which is why nothing needed to change
+  for anyone who never calls the new setters — `web/index.html`, the
+  real-user-facing play page, doesn't and isn't affected).
+- `web/pit/vs.html`: new "Pet Dragon diagnostics (Phase 27)" card, two
+  checkboxes (`LMP enabled (D60)`, `Singular multi-cut enabled (D59)`),
+  both checked by default. Applied once at boot (right after
+  `wasm_main()`) and live on every `change` event (guarded by
+  `dragonReady` so a click during the boot race is a no-op rather than
+  throwing into an uninitialized WASM instance — `boot()`'s own
+  post-ready application already covers that case). Frozen while
+  `match.running`, exactly the same rule `sideInputs[side].engine/
+  skill/movetime` already follow, to stop a single game from silently
+  mixing moves searched with the toggle on and off.
+- The exported bench log now records `Pet Dragon diagnostics:
+  LMPEnabled=..., SingularMultiCutEnabled=...` per match (captured into
+  `currentGameMeta` at the same point white/black configs are snapshot,
+  same "settings in effect when the game's first move was requested"
+  timing) — a downloaded log is now self-describing about which A/B
+  config produced it, so a future session (or Claude) doesn't have to
+  ask which config a given log came from.
+
+Chose module-global atomics over adding parameters to
+`search_from_fen_with_eval` itself: the latter would have forced
+updating every call site across both `web/index.html` and
+`web/pit/vs.html` in lockstep with the exact same new parameter count
+and order, and wasm-bindgen's JS↔Rust `bool` marshalling turns a missing
+JS argument into `false`, not the type's "default" — silently flipping
+`web/index.html`'s real-user-facing play page to both techniques
+*disabled* the moment its call site fell out of sync with the new
+signature, with no compiler error to catch it (JS, not Rust, on that
+side of the boundary). A separate setter function makes the default
+path (never call it) provably identical to before these functions
+existed, and only `vs.html` opts in.
+
+Numbering note: this session's earlier draft mislabeled the toggle-
+mechanism entry above as "D90," which collided with Session 85's
+already-existing `D90 — CorrectionExtension` entry. Corrected to D91
+(the toggle mechanism itself, `main.rs`/`search/mod.rs`/
+`search/alpha_beta.rs`) and D92 (this entry, the WASM/`vs.html` half)
+before anything was committed — no duplicate D90 exists in the
+committed history.
+
+⚠️ Same caveat as D91 — no local `cargo`/`wasm-pack` in this session's
+sandbox, so this is hand-reviewed (brace/paren/div-tag balance checked
+programmatically across `lib.rs` and `vs.html`, every new element ID
+confirmed unique, `dragonReady` declaration order checked against the
+new listener registration's position in the file) rather than compiled.
+First real check is CI + a manual page load, not `cargo test`.
+
+⚠️ Still diagnostic infrastructure only. Next step unchanged from D91:
+run the three configs (both default, LMP off, SingularMultiCut off) via
+`vs.html` now that it's actually possible, and see which one — if
+either — removes the late-game collapse.

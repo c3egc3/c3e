@@ -1827,13 +1827,13 @@ benches — **23.2 is provisionally ruled out**, narrowing the live
 suspects to 23.6 (D59, singular multi-cut/negative extension) and 23.7
 (D60, Late Move Pruning).
 
-**D90 — shipped this session:** two runtime UCI diagnostic toggles,
+**D91 — shipped this session:** two runtime UCI diagnostic toggles,
 `LMPEnabled` and `SingularMultiCutEnabled`, both default `true`
 (byte-identical to current production behavior). Setting either
 `false` via `setoption` reverts *only* that one D59/D60 addition,
 letting the same already-deployed binary be A/B'd against Stockfish
 via the existing Engine Bench tool without a rebuild. Full detail in
-DECISIONS.md D90. Six new tests added; not yet CI-confirmed (no local
+DECISIONS.md D91. Six new tests added; not yet CI-confirmed (no local
 `cargo` available this session — reviewed by hand, brace/paren-balance
 checked programmatically).
 
@@ -1857,6 +1857,53 @@ checked programmatically).
    elsewhere (generic eval, TT, or something not yet suspected) and
    this session's hypothesis was wrong — don't force-fit a fix onto D59/
    D60 in that case.
+
+---
+
+**Update (Session 87):** Gokul ran config (a) (both toggles default)
+via `web/pit/vs.html` — the browser pit tool, not raw UCI — 1000ms/move,
+Skill 20 vs. Stockfish Skill 10: **2 draws (repetition) + 1 loss**, a
+real improvement over the previous 6-for-6, though the one loss still
+shows the same late-game material-collapse shape on replay. Gokul then
+reported no way to actually run configs (b)/(c): `vs.html` calls Pet
+Dragon via a direct one-shot WASM function
+(`search_from_fen_with_eval`), not the native UCI `setoption` path
+`main.rs` (D91, see below) was wired through — **D91's toggles were
+unreachable from the only tool Gokul actually uses for this
+investigation**, a real gap, not a usability question. Fixed via
+**D92**: two WASM-side `AtomicBool` toggles + `set_lmp_enabled()`/
+`set_singular_multicut_enabled()` exports in `lib.rs`, plus a new "Pet
+Dragon diagnostics" checkbox card in `vs.html` that calls them and
+records the config into every exported bench log going forward. Full
+detail in DECISIONS.md D92.
+
+**Numbering correction:** the diagnostic-toggle mechanism from Session
+86 was originally mislabeled `D90` in this file and in `DECISIONS.md`,
+colliding with Session 85's existing `D90 — CorrectionExtension` entry.
+Corrected throughout to **D91** (the `main.rs`/`SearchInfo` mechanism)
+and **D92** (this session's WASM/`vs.html` half) before any of it was
+committed.
+
+**Not yet done — next session should start here:**
+1. Gokul commits all 5 changed files this time: `src/search/mod.rs`,
+   `src/search/alpha_beta.rs`, `src/main.rs` (Session 86/D91),
+   `src/lib.rs`, `web/pit/vs.html` (Session 87/D92) — and confirms CI
+   passes, including the WASM/Pages deploy workflow (`vs.html` imports
+   live from `g-c-3.github.io/pet-dragon/pkg/pet_dragon.js`, so the new
+   `set_lmp_enabled`/`set_singular_multicut_enabled` exports only exist
+   in the browser once that redeploys).
+2. Load `web/pit/vs.html` once manually and confirm the new "Pet Dragon
+   diagnostics" card actually renders and the checkboxes are wired
+   (this session couldn't compile or load the page — hand-reviewed
+   only, see D92's caveat) before trusting any A/B result from it.
+3. Run the same three configs from step 2 above, now actually possible
+   via the checkboxes: (a) both on/default — control, (b) LMP
+   unchecked, (c) SingularMultiCut unchecked. 2-3 games per config.
+4. Whichever config removes the late-game collapse identifies the
+   responsible technique — then read that code path in full against
+   the actual collapse positions before writing a fix, same discipline
+   as always. If neither changes the pattern, the bug is elsewhere and
+   this hypothesis was wrong.
 
 ---
 
