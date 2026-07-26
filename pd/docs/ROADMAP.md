@@ -1907,6 +1907,48 @@ committed.
 
 ---
 
+**Update (Session 88):** Gokul ran configs (b) and (c). **Neither
+ablation supports the D59/D60 hypothesis** — (b) `LMPEnabled=false`
+scored 1 draw + 2 losses, (c) `SingularMultiCutEnabled=false` scored 2
+losses + 1 draw, both numerically worse than Session 87's control (2
+draws + 1 loss), and the same late-game collapse shape appeared in
+losses under both ablations. One loss under config (c) is a striking
+data point: Pet Dragon was **+1 material** and still got checkmated 8
+plies later — looks like king-safety/mate-blindness, not a
+material-losing blunder. n=3-per-config is too small to be conclusive
+either way, but there's no positive signal for D59/D60 after two
+independent ablations, and burning more of Gokul's time on further
+single-technique guesses isn't the efficient next move. Full detail in
+DECISIONS.md D93 (this session's entry is D93, not D90 — see the
+numbering-correction note below).
+
+**Also shipped (Session 88, no hypothesis attached):** the exported
+bench log now includes each move's own White-relative eval —
+`e2e4(+35)`, `f2f4(mate-3)`, etc. — pulled from data `vs.html` already
+computed for its eval bar but previously discarded before export. Next
+bench run will show whether Pet Dragon's own eval already predicted the
+losing outcome well before the material collapse (an `eval/` problem)
+or stayed confidently positive right up to the blunder (a `search/`
+horizon-effect problem) — a much stronger signal than another ablation
+round.
+
+**Not yet done — next session should start here:**
+1. Gokul commits `web/pit/vs.html` (Session 88's eval-logging addition,
+   on top of Session 87's diagnostics card — same file, no conflict) and
+   confirms the Pages redeploy.
+2. Run one more bench (any config, control is fine) with the new
+   eval-logging build.
+3. Read the per-move eval trajectory directly against the material
+   trajectory already established for these positions. If eval predicts
+   the collapse in advance, look at `eval/` (likely `king_safety.rs`
+   given the +1-material-but-still-mated data point above); if eval
+   stays confidently positive right up to the blunder, look at
+   `search/` (quiescence search depth, or a horizon effect not caught by
+   the current extensions). Only then read the relevant code in full
+   against the actual positions before writing a fix.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|

@@ -3953,3 +3953,72 @@ First real check is CI + a manual page load, not `cargo test`.
 run the three configs (both default, LMP off, SingularMultiCut off) via
 `vs.html` now that it's actually possible, and see which one — if
 either — removes the late-game collapse.
+
+## D93 — Phase 27: D59/D60 Ablation Results (Negative/Inconclusive) + Per-Move Eval Now Logged (Session 88)
+
+Gokul ran the two remaining configs from D91/D92's plan via `vs.html`,
+1000ms/move, Skill 20 vs. Stockfish Skill 10, 3 games each:
+
+- **(b) `LMPEnabled=false`, `SingularMultiCutEnabled=true`:** 1 draw
+  (repetition, but only after collapsing to -5 material first) + 2
+  losses (checkmate). Replay (`python-chess`, material tracked
+  ply-by-ply, same method as every prior session) shows the same shape
+  in both losses: level to ~ply50-60, then a fast collapse (-12 by
+  ply90 in one game, -17 by ply78 in the other, checkmate shortly
+  after).
+- **(c) `LMPEnabled=true`, `SingularMultiCutEnabled=false`:** 2 losses +
+  1 draw. One loss is the most striking result of any bench so far —
+  Pet Dragon reached **+1 material** by ply90 and still walked into
+  checkmate 8 plies later, which looks like a pure king-safety/mate-
+  blindness failure rather than a material-losing blunder. The other
+  loss shows the familiar shape (level to ~ply50, -10 by ply70,
+  checkmate). The draw in this config is the cleanest game of any bench
+  yet — stays +1/+2 material the whole way, no collapse at all.
+
+**Assessment: this data does not support the D59/D60 hypothesis.**
+Compared to Session 87's control (a) (2 draws + 1 loss, both toggles at
+default), *both* single-technique ablations scored numerically worse
+(1 draw + 2 losses each), and the late-game collapse shape still
+appears in losses under both ablations. If either D59's multi-cut/
+negative-extension or D60's LMP were the primary cause, disabling it
+should have measurably reduced or removed the pattern; instead it
+persisted in every configuration tested so far, control included. This
+is n=3-per-config — nowhere near enough to statistically rule the
+techniques in or out on its own — but there is no positive signal here
+either, and continuing to guess at more single-technique ablations
+without a better source of evidence isn't a good use of Gokul's time
+running these by hand.
+
+**Also shipped this session (no hypothesis attached, purely
+diagnostic):** both `search_from_fen`/`search_from_fen_with_eval` have
+returned a White-relative eval alongside the move since before Phase 27
+started (that's what feeds `vs.html`'s eval bar,
+`toWhiteRelativeEval`/`parsePetDragonResult`) — `match.history` already
+carried it per move, but the **exported bench log discarded it**,
+printing only the bare UCI move list. Fixed: `recordMatchLogEntry` now
+carries `{uci, eval}` pairs instead of bare strings, and `buildLogText`
+prints each move as `e2e4(+35)` / `f2f4(mate-3)` etc. This is a
+strictly additive change to the log *format* (still one line per game,
+still starts with the same `Moves (N plies` prefix) — no other code
+path reads `matchLog[i].moves` as bare strings (checked via grep before
+editing), so nothing else needed updating.
+
+**Why this matters for next steps:** every session so far has had to
+locate the collapse externally, after the fact, via `python-chess`
+material tracking on the raw move list — with zero visibility into
+what Pet Dragon's own search *thought* was happening at the time. With
+eval now logged per move, the next bench run will show whether Pet
+Dragon's own eval already predicted the losing outcome well in advance
+(a evaluation-function problem — it "knows" the position is bad but
+has no better move, or doesn't realize how bad) or stayed confidently
+positive right up to the blunder (a search-blindness problem — a real
+tactic it never saw coming, single/handful-of-ply horizon effect). That
+distinction points to a completely different part of the codebase to
+investigate next (`eval/` vs. `search/`) and is a much stronger signal
+than another round of single-technique ablation guesses.
+
+**Not yet done:** no new hypothesis proposed this session. Next step is
+simply to get one more bench run (any config — control is fine, no
+need to keep varying D91's toggles right now) with the new eval-logging
+build, then read the eval trajectory directly against the material
+trajectory already established, before deciding where to look next.

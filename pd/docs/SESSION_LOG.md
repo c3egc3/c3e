@@ -9,6 +9,71 @@ Most recent session at TOP.
 
 ---
 
+## Session 88 — 2026-07-27 (Phase 27: D59/D60 ablation results negative/inconclusive; per-move eval now logged for next round)
+
+**Built/done:**
+
+1. Gokul ran configs (b) and (c) from ROADMAP Phase 27 via `vs.html`,
+   1000ms/move, Skill 20 vs. Stockfish Skill 10, 3 games each:
+   - (b) `LMPEnabled=false`, `SingularMultiCutEnabled=true`: 1 draw + 2
+     losses.
+   - (c) `LMPEnabled=true`, `SingularMultiCutEnabled=false`: 2 losses +
+     1 draw.
+   Replayed all 6 games via `python-chess` (read-only, same method as
+   every prior session), material tracked ply-by-ply.
+
+2. **Result: neither ablation supports the D59/D60 hypothesis.** Both
+   configs scored numerically worse than Session 87's control (2 draws
+   + 1 loss), and the same late-game collapse shape (level material,
+   then a fast one-sided drop) still appeared in losses under both. One
+   loss under config (c) is a new, sharper data point: Pet Dragon was
+   **+1 material** at ply90 and still walked into checkmate 8 plies
+   later — that looks like king-safety/mate-blindness specifically, not
+   a material-losing blunder. n=3-per-config is too small to be
+   conclusive, but two independent ablations gave zero positive signal
+   for D59/D60, so continuing to guess at more single-technique
+   ablations isn't the efficient next move.
+
+3. **Shipped, no hypothesis attached — per-move eval logging.** Noticed
+   `search_from_fen_with_eval` already returns a White-relative eval
+   alongside every move (that's what feeds `vs.html`'s eval bar) and
+   `match.history` already carried it per move in memory — but the
+   *exported* bench log discarded it, printing only bare UCI tokens.
+   Read `web/pit/vs.html` fresh (mandatory read-before-write; confirmed
+   via grep that `matchLog[i].moves` has exactly one reader,
+   `buildLogText`, so the shape change was safe) and changed
+   `recordMatchLogEntry` to carry `{uci, eval}` pairs, `buildLogText` to
+   print `e2e4(+35)` / `f2f4(mate-3)` style tokens. Strictly additive to
+   the log format — no other consumer of the exported text file exists
+   yet to break.
+
+4. Rationale for eval logging over another ablation: every session so
+   far has had to reconstruct the collapse externally, after the fact,
+   from the bare move list, with zero visibility into what Pet Dragon's
+   own search actually believed at the time. Whether next session's eval
+   trajectory predicts the collapse in advance (points at `eval/`) or
+   stays confidently positive right up to the blunder (points at
+   `search/`, horizon effect) is a real branch point for where to look
+   next — a stronger signal than another blind ablation round.
+
+**Bugs fixed:** none — still narrowing the investigation, no root cause
+identified yet.
+
+**Decisions made:** D93 (ablation results + eval-logging addition —
+DECISIONS.md numbering continues correctly from Session 87's D91/D92,
+no collision this time).
+
+**Next session start point:** Gokul commits `web/pit/vs.html` (this
+session's eval-logging change, layered on Session 87's diagnostics
+card — same file), confirms the Pages redeploy, runs one more bench
+(any config, control is fine — no need to keep varying D91's toggles),
+and sends the log. Read the per-move eval trajectory against the
+already-established material trajectory for those games before deciding
+whether to look at `eval/` or `search/` next, per ROADMAP.md Phase 27's
+Session 88 update.
+
+---
+
 ## Session 87 — 2026-07-26, cont. (Phase 27: found + fixed why Session 86's D91 toggles were unreachable from the browser pit tool; D92 WASM toggles + vs.html UI shipped, not yet CI/manually confirmed)
 
 **Built/done:**
