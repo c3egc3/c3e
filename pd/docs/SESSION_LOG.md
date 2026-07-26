@@ -253,6 +253,38 @@ verification method on any new diff with test code before presenting
 it as ready** — do not rely on the probe method alone for that
 purpose anymore.
 
+**Twelfth follow-up (Phase 26 item 3c, D89):** Gokul chose to build 3c
+despite the flat/negative pattern in items 1/3a/3b. Read the existing
+singular-extension block in full — confirmed the roadmap's original
+"singular/double/triple extension margins" wording doesn't quite match
+the actual code (Pet Dragon has one extension level via
+`tt_move_extension`, not distinct double/triple stages) and scoped
+around what's actually there. Reduces the singular margin (base 2) by
+up to 1 when the base pawn-hash correction table shows a large
+historical eval error for the current position — deliberately reads
+only that one source, not the two parked-off ones. Extracted the
+reduction arithmetic into a pure `singular_margin_reduction()`
+function for direct unit testing. **First diff this session verified
+under the full D87 standard from the start** (not probe-then-fix-
+after-CI-fails): built debug-profile deps, compiled real test binaries
+for the lib, the `main.rs` binary (needed `CARGO_PKG_VERSION` supplied
+manually — bypassing Cargo means bypassing its build-script variable
+injection too), and all 4 integration test files. 633 real tests,
+all green, before ever presenting the diff.
+
+**Not done this session:**
+- Item 3c not yet committed or SPRT-tested.
+
+**Next session start point:** commit the 4 files
+(`src/search/pruning.rs`, `src/search/mod.rs`,
+`src/search/alpha_beta.rs`, `src/main.rs`), confirm CI green, then run
+item 3c's SPRT test (same recipe as items 1/3a/3b —
+`uci_match_runner.yml`, `engine_a_uci_options="setoption name
+CorrectionExtension value true"`, fresh seed). This is the last
+untested idea from the Session 83 external-advice review — whatever
+the result, that's a natural point to revisit direction (continue
+mining this idea source vs. Phase 16 NNUE vs. something else).
+
 ---
 
 ## Session 84 — 2026-07-22/23 (Rank-battery bug fix; Phase 23.4 design closed — D67; Threats-term gap found — D68; Phase 25 completed, applied, and CI-corrected — D69/D70; Phase 23.4 fully built and CI-confirmed — D71/D72; Phase 24 item 4 (Threats term) implemented — D73)

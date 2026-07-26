@@ -3672,3 +3672,55 @@ or is this a natural point to stop pushing on this particular idea
 source and redirect toward something with a different profile (Phase
 16 NNUE, or a fresh look at what's actually driving Pet Dragon's
 current playing strength)?
+
+
+## D89 — Phase 26 Item 3c: Correction-Scaled Singular Extension Margin, Verified via the D87 Method Before Shipping (Session 85, cont.)
+
+**What was added**: the singular-extension margin in `alpha_beta.rs`
+(base value 2, unconditional since Phase 13.3/D59) can now be reduced
+by up to 1 when `info.correction_extension_enabled` is true (UCI
+`CorrectionExtension`, default `false`) and the current position's
+*base pawn-hash* correction-history magnitude exceeds 300 — a smaller
+margin raises `singular_beta` closer to `tt_score`, making the
+verification search more likely to confirm singularity and extend.
+Rationale: search depth compensates for eval unreliability, so be more
+willing to extend the TT move specifically at position types where
+eval has a real history of needing correction. Genuinely different
+mechanism than items 3a/3b — this affects search-depth allocation via
+the existing singular-extension machinery, not eval correction itself.
+
+**Deliberately scoped to only the base pawn-hash table**, not the two
+parked-off sources (`correction_history_nonpawn`/
+`correction_history_continuation`, D85/D88) — using a signal already
+known to correlate with real eval error (the original Phase 13.2
+table, established positive), not ones SPRT-tested this session and
+shown to have no effect.
+
+**Extracted the margin-reduction arithmetic into a pure, directly-
+testable function** (`pruning::singular_margin_reduction(corr_mag) ->
+i32`) rather than inlining it in `alpha_beta.rs` — same rationale as
+`king_safe_square_count`/`continuation_hash` living in `pruning.rs`:
+isolates the actual decision logic from the search-loop plumbing
+around it, so it can be unit-tested directly (threshold boundary,
+cap behavior) without needing a full search to exercise every case.
+
+**Verification — first diff built under the new D87 standard, not the
+probe method**: compiled and ran the actual `cargo test` equivalent —
+`cargo build --lib` (plain debug profile, unwind panics) then `rustc
+--test` directly against `src/lib.rs`, `src/main.rs` (needed
+`CARGO_PKG_VERSION` etc. supplied manually via env vars, since we're
+bypassing Cargo's own build-script variable injection along with its
+dependency resolution), and all 4 `tests/*.rs` integration files.
+**All green: 470 lib tests, 61 `main.rs`-binary tests, 62 integration
+tests (19+22+21, `node_count.rs`'s 5 remain `#[ignore]`d benchmarks) —
+633 real tests total, zero probe-replica approximation.** This is the
+first Phase 26 diff shipped without relying on the probe method as the
+final check, closing the gap D87 identified.
+
+**Not yet done**: no SPRT-style A/B test — needed before this is
+trusted as more than "compiles and passes the real test suite," same
+bar as every other Phase 26 item. Given items 1, 3a, and 3b all landed
+flat-to-negative, this one's result (whichever direction) is worth
+paying close attention to as a data point on whether the "correction
+signal" family of ideas has any real signal left in it for Pet Dragon
+at its current strength.

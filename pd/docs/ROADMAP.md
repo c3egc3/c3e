@@ -1634,12 +1634,17 @@ open and worth keeping on record:
      -34.9 Elo at n=20, -22.6 Elo at n=200 (D88) — consistent negative
      direction across both samples, unlike items 1/3a's flip-flopping
      20-game results. Parked off.**
-   - 3c. ⏸️ Extension margins from the correction signal — the last
-     untested idea from the Session 83 external-advice review. Items
-     1, 3a, and 3b have all now landed flat-to-negative on SPRT —
-     worth an explicit discussion on whether to continue this idea
-     source or redirect (Phase 16 NNUE) before building it, rather
-     than continuing on momentum.
+   - 3c. ⏳ **Extension margins from the correction signal —
+     implemented, tested (verified via the real compiled test suite,
+     D87 method — 633 tests green), gated behind UCI
+     `CorrectionExtension` (default false). NOT yet SPRT-tested
+     (Session 85, D89).** Singular-extension margin (base 2, Phase
+     13.3/D59) reduced by up to 1 when the base pawn-hash correction
+     table shows a large historical eval error for the current
+     position — deliberately reads only that source, not the two
+     parked-off ones (D85/D88). Margin-reduction arithmetic extracted
+     into `pruning::singular_margin_reduction()` for direct unit
+     testing.
    - 3c. Not started — use the correction signal to adjust
      singular/double/triple extension margins, not just static eval.
 4. ✅ **CLOSED (Session 85, D83) — engine crashed on an illegal input
