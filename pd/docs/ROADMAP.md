@@ -1813,9 +1813,50 @@ patched on suspicion.**
    point from this session's replay) before writing any fix — same
    read-before-write discipline as every other session in this repo.
 
-**Not yet started** — step 1 needs a fresh bench run from Gokul (this
-session's uploaded log is the only data in hand). Next session should
-start there.
+**Update (Session 86):** Gokul supplied a second bench log — same
+matchup, **1000ms/move instead of 100ms**, Stockfish Skill 9. Same
+result: 0-3, all checkmates against Pet Dragon, and the exact same
+material-collapse shape (level early, then a sudden late-game
+one-sided collapse) in all 3 games. **This rules out plain time
+pressure as the primary cause of step 1** — the pattern persists at
+10x the time budget, so it's a genuine search/eval behavior, not just
+depth starvation. Also: `EngineState::new()` defaults `threads: 1`, so
+unless Gokul's bench tool explicitly raises `Threads`, 23.2's
+thread-differentiated Lazy SMP code never executes at all in these
+benches — **23.2 is provisionally ruled out**, narrowing the live
+suspects to 23.6 (D59, singular multi-cut/negative extension) and 23.7
+(D60, Late Move Pruning).
+
+**D90 — shipped this session:** two runtime UCI diagnostic toggles,
+`LMPEnabled` and `SingularMultiCutEnabled`, both default `true`
+(byte-identical to current production behavior). Setting either
+`false` via `setoption` reverts *only* that one D59/D60 addition,
+letting the same already-deployed binary be A/B'd against Stockfish
+via the existing Engine Bench tool without a rebuild. Full detail in
+DECISIONS.md D90. Six new tests added; not yet CI-confirmed (no local
+`cargo` available this session — reviewed by hand, brace/paren-balance
+checked programmatically).
+
+**Not yet done — next session should start here:**
+1. Gokul commits the 3 changed files (`src/search/mod.rs`,
+   `src/search/alpha_beta.rs`, `src/main.rs`) and confirms CI (cargo
+   test + build) passes.
+2. Once deployed, run the same Engine Bench matchup (Skill 20 vs.
+   Stockfish, whatever movetime reproduces the collapse most reliably —
+   1000ms/move worked in Session 86) in **three configs**: (a) both
+   toggles left at default `true` (control — confirm the collapse still
+   reproduces on this exact build), (b) `LMPEnabled=false`, (c)
+   `SingularMultiCutEnabled=false`. 2-3 games per config is enough to
+   see if the shape changes.
+3. Whichever config (if either) removes the late-game collapse
+   identifies the responsible technique. Only then read that specific
+   code path in full against the actual collapse positions (extract the
+   FEN a few plies before the collapse point in one of these games)
+   before writing an actual fix — same read-before-write discipline as
+   always. If *neither* toggle changes the pattern, the bug is
+   elsewhere (generic eval, TT, or something not yet suspected) and
+   this session's hypothesis was wrong — don't force-fit a fix onto D59/
+   D60 in that case.
 
 ---
 

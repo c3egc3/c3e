@@ -3787,3 +3787,79 @@ either start scoping that, or take a step back and look at what
 *other* signal sources (not just correction-history variants) might
 actually move HCE-level strength before committing to the NNUE
 project's scale.
+
+## D90 — Phase 27: LMPEnabled / SingularMultiCutEnabled Diagnostic Toggles (Session 86)
+
+Gokul supplied two external bench logs (100ms/move, then 1000ms/move)
+of Pet Dragon (Skill 20, uncapped) vs. real Stockfish (Skill 10, then
+Skill 9) from the standard classical FEN — 6 games, 6 losses, all
+checkmates against Pet Dragon. Claude-side `python-chess` replay of the
+raw move lists (read-only, no repo changes) found the same shape in
+every game: material stays roughly level through the opening/early
+middlegame, then collapses hard and fast late-game (Match examples:
+even until ~ply130 then -9 by ply150; even until ~ply60 then -15 by
+ply90) — a tactical-blindness pattern that gets worse as material
+thins, not a slow eval drift. The pattern held at both 100ms and
+1000ms/move, ruling out plain time pressure as the primary cause: this
+is the first real evidence any Elo-affecting regression exists,
+gathered from outside this repo's internal-only validation loop for
+the first time (see ROADMAP.md Phase 27 for the full writeup).
+
+Two techniques are the leading (still unconfirmed) suspects: D59
+(singular extension family: multi-cut + negative extension) and D60
+(Late Move Pruning), both from Session 82, both explicitly flagged
+`⚠️ not yet Elo-measured against a real match` at the time and never
+followed up on. Both are on by default. D49/23.2 (thread-differentiated
+Lazy SMP, also flagged unmeasured) is ruled out for *this* bench data
+specifically — `EngineState::new()`'s default `threads: 1` means no
+helper threads spawn at all unless Gokul's bench tool explicitly raises
+`Threads`, so 23.2's thread-identity code never executes in a
+single-thread run.
+
+**Implementation:** two new runtime UCI options,
+`LMPEnabled`/`SingularMultiCutEnabled`, both **default `true`** —
+unlike every prior Phase 26 diagnostic option (`NullMoveKingGuard` etc.,
+which default `false` because those are new/unproven techniques shipped
+off), D59/D60 are *already* default-on production behavior, so `true`
+is the byte-identical-to-current default. Setting either to `false` via
+`setoption` reverts that one technique only:
+- `LMPEnabled=false`: `alpha_beta.rs`'s move loop never calls
+  `pruning::should_apply_lmp` — D60 never fires.
+- `SingularMultiCutEnabled=false`: only the two D59 additions on top of
+  Phase 13.3/D16's original base singular extension are skipped (the
+  multi-cut early-return and the negative-extension branch). The base
+  `score < singular_beta → tt_move_extension = 1` branch is untouched —
+  that's Phase 13.3's separately-validated behavior, not part of what
+  D59/this investigation covers.
+
+Same threading pattern end-to-end as every prior option in this family
+(`SearchInfo` → `EngineState` → `cmd_uci`/`cmd_setoption`/`cmd_go`,
+including both the main thread's and every helper thread's `SearchInfo`
+in the Lazy SMP spawn loop) — no new pattern introduced. Chose runtime
+options over a pinned-ref rebuild specifically so the *same* WASM binary
+already deployed can be A/B'd against Stockfish via the existing Engine
+Bench tool with a `setoption` call, no rebuild/redeploy needed before
+the next bench run.
+
+Six new tests: `SearchInfo`-level default-true assertions and
+off-still-searches-safely checks for both toggles in `alpha_beta.rs`
+(mirroring `null_move_king_guard`'s and `correction_extension_enabled`'s
+existing test pattern), plus `EngineState`-level default/parses/
+cmd_go-applies tests for both in `main.rs` (mirroring
+`test_correction_extension_option_*`). No existing test asserts on
+LMP/singular-multicut firing at all (confirmed via grep before writing),
+so this carries no risk of changing previously-tested behavior when both
+toggles are left at their default `true`.
+
+⚠️ Not yet CI-confirmed to compile/pass (no local `cargo` in this
+session's sandbox — reviewed by hand: brace/paren balance checked
+programmatically, and every edited call site double-checked against the
+existing `info: &mut SearchInfo` binding already in scope at that point
+in the function). First CI run on this commit is the real check.
+
+⚠️ This is diagnostic infrastructure only — it does not fix anything by
+itself. Next step (not done this session): have Gokul re-run the same
+Engine Bench matchup with each toggle flipped off in turn (three
+configs: both on/default, LMP off, SingularMultiCut off) to see which
+one — if either — makes the late-game collapse disappear, before any
+further code change is made against this regression.

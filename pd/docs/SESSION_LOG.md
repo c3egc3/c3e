@@ -9,6 +9,78 @@ Most recent session at TOP.
 
 ---
 
+## Session 86 — 2026-07-26 (Phase 27 opened: external-Stockfish bench regression investigation; D90 diagnostic toggles shipped, not yet CI-confirmed)
+
+**Built/done:**
+
+1. Gokul uploaded a bench log: Pet Dragon (Skill 20) vs. real Stockfish
+   (Skill 10), 100ms/move, 3 games, 0-3 (all checkmates against Pet
+   Dragon). First-ever Pet-Dragon-vs-real-external-engine data point in
+   this repo's history — everything previously measured was Pet Dragon
+   vs. itself or vs. a pinned earlier build of itself.
+
+2. Replayed all 3 games via local `python-chess` (read-only, no repo
+   changes) — confirmed all legal, all genuine checkmates. Tracked
+   material ply-by-ply: all 3 games show the same shape — level
+   material through the opening/early middlegame, then a sudden, large,
+   one-sided collapse late-game. Three-for-three same shape = real
+   pattern, not noise.
+
+3. Opened **Phase 27** in ROADMAP.md with this finding, a leading
+   hypothesis (the three Phase 23 techniques flagged
+   `⚠️ not yet Elo-measured` — 23.2 Lazy SMP/D49, 23.6 singular
+   multi-cut/negative-ext/D59, 23.7 LMP/D60 — since all three are on by
+   default and internal-only testing never checked their real-match
+   impact), and a staged empirical investigation plan.
+
+4. Gokul supplied a **second bench log**: same matchup, 1000ms/move
+   instead of 100ms, Skill 9 Stockfish, 3 games, 0-3, same collapse
+   shape. Replayed and material-tracked the same way. **This rules out
+   plain time pressure** as the primary cause — the pattern survives a
+   10x time-budget increase. Also noted `EngineState::new()` defaults
+   `threads: 1`, so 23.2's thread-differentiated code doesn't execute
+   in these single-thread benches at all — **23.2 provisionally ruled
+   out**, narrowing to 23.6 (D59) and 23.7 (D60).
+
+5. **D90 — implemented two runtime UCI diagnostic toggles**,
+   `LMPEnabled` and `SingularMultiCutEnabled`, both **default `true`**
+   (byte-identical to current production behavior — inverse-default
+   pattern from the Phase 26 `NullMoveKingGuard` family, since D59/D60
+   are already shipped default-on, not new/opt-in). Read
+   `search/pruning.rs`, `search/alpha_beta.rs`'s LMP call site and
+   singular-extension block, `search/mod.rs`'s `SearchInfo`, and
+   `main.rs`'s full UCI option/cmd_setoption/cmd_go plumbing in full
+   before writing anything (mandatory read-before-write). Gated LMP's
+   call site and *only* D59's two new branches (multi-cut early-return,
+   negative extension) — Phase 13.3/D16's original base singular
+   extension branch is untouched by the new toggle. Same end-to-end
+   threading pattern as every prior option in this family (main thread
+   + every Lazy SMP helper thread's `SearchInfo`). Six new tests added
+   (default-true assertions + off-still-searches-safely checks, both
+   `SearchInfo`- and `EngineState`-level, mirroring the existing
+   `null_move_king_guard`/`correction_extension_enabled` test pattern).
+   Full reasoning in DECISIONS.md D90.
+
+**Bugs fixed:** none yet — this session is diagnostic infrastructure,
+not a fix. No root cause confirmed.
+
+**Decisions made:** D90 (above).
+
+⚠️ **Not yet CI-confirmed to compile/pass** — no local `cargo` in this
+session's sandbox. Reviewed by hand (brace/paren balance checked
+programmatically across all 3 files; every edited call site
+double-checked against the existing `info`/`state` bindings already in
+scope). First real check is CI on Gokul's commit.
+
+**Next session start point:** Gokul commits `src/search/mod.rs`,
+`src/search/alpha_beta.rs`, `src/main.rs`; confirm CI passes. Then run
+the same Engine Bench matchup in 3 configs (both toggles default, LMP
+off, SingularMultiCut off) and send the logs — that identifies which
+(if either) technique is responsible, per ROADMAP.md Phase 27's
+numbered next-steps list.
+
+---
+
 ## Session 85 — 2026-07-25 (Phase 26 item 1: null-move king-exposure guard implemented as a runtime UCI option — D75; not yet SPRT-tested or committed)
 
 **Built/done:**
