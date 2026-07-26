@@ -226,24 +226,32 @@ production logic correct in every prior diff this session, but was
 structurally blind to bugs living only in test code, which is exactly
 what slipped through 3 times in a row here.
 
-**Not done this session:**
-- Phase 26 item 3b (now bug-fixed) not yet re-committed or confirmed
-  green.
-- Item 3b not yet SPRT-tested — same bar as every other item.
-- Item 3c (extension-margin use of the correction signal) not started.
+**Eleventh follow-up (item 3b SPRT results, D88):** both the 20-game
+(seed 48000) and 200-game (seed 50000) results came in together —
+-34.9 Elo and -22.6 Elo respectively. Unlike items 1/3a, these agree
+with each other (both negative, similar magnitude) rather than
+flip-flopping, which is a cleaner signal even though the 200-game
+point estimate alone is still within a plausible noise band. **Phase
+26 item 3b closed, parked off** — no larger confirmation run needed
+given the consistency. Named the pattern directly: items 1, 3a, and 3b
+— every SPRT-tested idea from the Session 83 external-advice review —
+have now landed flat-to-negative. Flagged item 3c (the last untested
+idea from that review) as worth an explicit discussion before building,
+not an assumed next step.
 
-**Next session start point:** commit the 2 corrected files
-(`src/search/pruning.rs`, `src/search/alpha_beta.rs` — `mod.rs`/
-`main.rs` were unaffected by the bugs, already correct from the prior
-turn), confirm CI green, then either run item 3b's SPRT test (same
-recipe as items 1/3a — `uci_match_runner.yml`,
-`engine_a_uci_options="setoption name ContinuationCorrectionHistory
-value true"`, fresh seed) or move to item 3c if Gokul wants to finish
-implementing before testing either. **Use the D87 direct-rustc
+**Not done this session:**
+- Item 3c not started, and now explicitly flagged as a decision point
+  rather than a queued task.
+- Phase 16 (NNUE) scoping not started — the standing alternative if
+  Gokul wants to redirect.
+
+**Next session start point:** ask Gokul directly: continue to item 3c
+despite the pattern, or redirect (Phase 16 NNUE scoping, or something
+else)? No default — this is a genuine open decision per D88, not
+something to proceed on assumption. **Use the D87 direct-rustc
 verification method on any new diff with test code before presenting
 it as ready** — do not rely on the probe method alone for that
 purpose anymore.
-No default — ask if unclear.
 
 ---
 

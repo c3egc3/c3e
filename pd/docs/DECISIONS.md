@@ -3632,3 +3632,43 @@ remains useful for exploring/confirming specific behavior interactively,
 but "verified via probe" alone is no longer sufficient grounds to claim
 a diff is tested — the direct-`rustc --test` method is now the bar,
 since it is the actual test suite, not an approximation of it.
+
+
+## D88 — ContinuationCorrectionHistory: Consistent Negative Result Across Both Sample Sizes. Parked Off (Session 85, cont.)
+
+**Results**: 20-game first look (seed 48000) — A (continuation
+correction on) 7-9-4, 45.0%, -34.9 Elo. 200-game confirmation (seed
+50000) — 66-79-55, 46.8%, -22.6 Elo.
+
+**Different shape than items 1 and 3a**: those both showed a
+promising positive result at n=20 that evaporated (or went slightly
+negative) at n=200 — a classic small-sample noise pattern. This one is
+different: **both samples agree**, landing within a few Elo of each
+other and on the same (negative) side. That's more informative than
+either result alone — still not enough to call this a confirmed,
+significant regression (the 200-game point estimate is still within
+a plausible noise band for this sample size), but there's no ambiguity
+here the way there was for items 1/3a: nothing about this result
+suggests "wait for a bigger sample, it might flip."
+
+**Decision: park it, same treatment as items 1 and 3a.**
+`ContinuationCorrectionHistory` stays default `false`. Not running a
+larger confirmation — the consistent-direction result across both
+samples already answers the question this session's SPRT protocol was
+built to answer, more cleanly than either prior item did.
+
+**Phase 26 item 3b: closed as "implemented, tested, consistent mild
+negative signal across two independent samples, parked off."**
+
+**Pattern worth naming directly, now three items deep**: items 1, 3a,
+and 3b — every strength-affecting idea from the Session 83
+external-advice review that's actually been SPRT-tested this session —
+have all landed at flat-to-negative. Item 3c (extension margins from
+the correction signal) is the last untested idea from that same
+review. Worth an explicit conversation before building it: is there
+a specific reason to expect 3c to behave differently (it's a genuinely
+different mechanism — search-depth allocation, not eval correction),
+or is this a natural point to stop pushing on this particular idea
+source and redirect toward something with a different profile (Phase
+16 NNUE, or a fresh look at what's actually driving Pet Dragon's
+current playing strength)?

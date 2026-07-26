@@ -1628,16 +1628,18 @@ open and worth keeping on record:
      confirmation -19.1 Elo (D85, flat-to-negative, not statistically
      distinct from zero). No measurable benefit — parked off, same
      outcome and treatment as item 1.**
-   - 3b. ⏳ **Continuation-based correction — implemented, unit tested,
-     gated behind UCI `ContinuationCorrectionHistory` (default
-     `false`) from the start (Session 85, D86). NOT yet SPRT-tested.**
-     New `SearchInfo::correction_history_continuation`, indexed by new
-     `pruning::continuation_hash()` — last two real moves' squares
-     (from/to each), read from `pos.history` rather than a new
-     function parameter (avoids touching `alpha_beta`'s public
-     signature or its 8 internal recursive call sites). Deliberately
-     position- and piece-independent, unlike move ordering's own
-     `cont_hist`.
+   - 3b. ✅ **CLOSED (Session 85, D86/D87/D88) — continuation-based
+     correction implemented, tested, gated behind
+     `ContinuationCorrectionHistory` (default false). SPRT result:
+     -34.9 Elo at n=20, -22.6 Elo at n=200 (D88) — consistent negative
+     direction across both samples, unlike items 1/3a's flip-flopping
+     20-game results. Parked off.**
+   - 3c. ⏸️ Extension margins from the correction signal — the last
+     untested idea from the Session 83 external-advice review. Items
+     1, 3a, and 3b have all now landed flat-to-negative on SPRT —
+     worth an explicit discussion on whether to continue this idea
+     source or redirect (Phase 16 NNUE) before building it, rather
+     than continuing on momentum.
    - 3c. Not started — use the correction signal to adjust
      singular/double/triple extension margins, not just static eval.
 4. ✅ **CLOSED (Session 85, D83) — engine crashed on an illegal input
