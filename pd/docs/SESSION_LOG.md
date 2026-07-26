@@ -203,26 +203,46 @@ gated-off via UCI `ContinuationCorrectionHistory` from the start this
 time, no D82-style retrofit needed. Verified via the same probe method
 as every prior diff this session before shipping.
 
-**Not done this session:**
-- Phase 26 item 3b not yet committed or SPRT-tested — same bar as
-  every other item before being trusted as more than "compiles and
-  passes unit tests."
-- Item 3c (extension-margin use of the correction signal) not started.
-- Local `cargo test` still hits the known toolchain wall (sandbox
-  rustc 1.75 vs. edition2024 dev-dependency in `criterion`) — every
-  diff this session was instead verified by building the crate
-  standalone (`cargo build --lib`, which skips dev-dependencies
-  entirely) and exercising the actual code via a throwaway
-  path-dependency probe crate (established D79, used continuously
-  since). `cargo test` in CI remains the authoritative check.
+**Tenth follow-up (CI failure, D87):** Gokul committed item 3b and CI
+failed with compile errors — `MoveKind::DoublePawnPush` isn't a real
+variant (correct name: `DoublePush`) and `alpha_beta.rs`'s test module
+used `MoveKind` without importing it, both purely inside
+`#[cfg(test)]` code the probe method structurally cannot compile
+(`cargo build --lib` never builds test modules at all). Fixed both,
+then found and fixed a third real bug while re-verifying: a test's own
+setup was inconsistent with the function it tested (only pushed one of
+two required synthetic history entries). **More importantly, found a
+way to actually compile and run the real test suite locally** —
+`cargo build --lib` (plain debug profile) produces dependency `.rlib`
+files with `panic=unwind` (only `[profile.release]` overrides to
+abort), which can be handed directly to `rustc --test` against
+`src/lib.rs` and each `tests/*.rs` file with explicit `--extern` flags,
+entirely bypassing Cargo's dependency resolution (and therefore
+`criterion`'s edition2024 wall, never touched). Ran the full real
+suite: 464 lib tests + 19 + 22 + 21 integration tests, all passing
+after the 3 fixes. **This replaces the probe method as the standard
+local verification step going forward** — probe verification proved
+production logic correct in every prior diff this session, but was
+structurally blind to bugs living only in test code, which is exactly
+what slipped through 3 times in a row here.
 
-**Next session start point:** commit the 4 files touched this turn
-(`src/search/pruning.rs`, `src/search/mod.rs`,
-`src/search/alpha_beta.rs`, `src/main.rs`), confirm CI green, then
-either run item 3b's SPRT test (same recipe as items 1/3a —
-`uci_match_runner.yml`, `engine_a_uci_options="setoption name
-ContinuationCorrectionHistory value true"`, fresh seed) or move to
-item 3c if Gokul wants to finish implementing before testing either.
+**Not done this session:**
+- Phase 26 item 3b (now bug-fixed) not yet re-committed or confirmed
+  green.
+- Item 3b not yet SPRT-tested — same bar as every other item.
+- Item 3c (extension-margin use of the correction signal) not started.
+
+**Next session start point:** commit the 2 corrected files
+(`src/search/pruning.rs`, `src/search/alpha_beta.rs` — `mod.rs`/
+`main.rs` were unaffected by the bugs, already correct from the prior
+turn), confirm CI green, then either run item 3b's SPRT test (same
+recipe as items 1/3a — `uci_match_runner.yml`,
+`engine_a_uci_options="setoption name ContinuationCorrectionHistory
+value true"`, fresh seed) or move to item 3c if Gokul wants to finish
+implementing before testing either. **Use the D87 direct-rustc
+verification method on any new diff with test code before presenting
+it as ready** — do not rely on the probe method alone for that
+purpose anymore.
 No default — ask if unclear.
 
 ---

@@ -3568,3 +3568,67 @@ independence test shapes as items 1 and 3a.
 trusted as more than "compiles and passes unit tests," same bar as
 every other Phase 26 item. Item 3c (extension-margin use of the
 correction signal) not started.
+
+
+## D87 — CI Caught 3 Real Bugs the Probe Method Structurally Could Not; Found a Way to Run the Real Test Suite Locally (Session 85, cont.)
+
+**Cause**: item 3b's `pruning.rs`/`alpha_beta.rs` shipped with 3 real
+bugs, all inside `#[cfg(test)]` code:
+1. `MoveKind::DoublePawnPush` — not a real variant (correct name is
+   `MoveKind::DoublePush`), used 10 times across 5 new tests in
+   `pruning.rs`.
+2. `alpha_beta.rs`'s test module used `MoveKind::Quiet` without
+   `MoveKind` ever being imported at the top of the file.
+3. A genuine test-logic bug in
+   `test_continuation_hash_matches_history_regardless_of_current_position`:
+   pushed only one of the two required synthetic `HistoryEntry` values
+   onto the comparison position, violating `continuation_hash`'s own
+   documented contract that `prev_move` must equal
+   `pos.history.last().mv` — the test's own setup was inconsistent with
+   the function it was testing.
+
+**Why the probe method (established D79, used continuously since)
+could not have caught any of these**: `cargo build --lib` — the basis
+of every "verified via probe" claim this session — does not compile
+`#[cfg(test)]` code at all, by design. The probe crate exercises real
+library code through its public API, which proves the actual
+production logic works, but it can never touch code that only exists
+inside a test module. Every one of these 3 bugs was purely inside test
+code, so probe verification was structurally blind to all of them
+despite genuinely proving the production logic correct in every prior
+diff this session.
+
+**Fix, and a real methodology upgrade**: fixed all 3 bugs directly.
+More importantly, found a way to actually compile and run the real
+test suite locally, closing this gap going forward — `cargo test`
+itself still hits the known wall (Cargo resolves the *entire*
+dependency graph, including dev-dependencies, before building
+anything, so `criterion`'s edition2024 requirement blocks even
+`cargo test --lib`). Worked around it by inspecting `Cargo.toml`'s own
+`[profile.bench-tests]` comment (`"required because cargo test needs
+unwinding to catch test panics"`) — a `cargo build --lib` (plain debug
+profile, not `--release`) produces dependency `.rlib` files with the
+default `panic=unwind` strategy, since only `[profile.release]`
+overrides it to `abort`. Those debug-profile rlibs can then be handed
+directly to `rustc --test` against `src/lib.rs` (and separately against
+each `tests/*.rs` file), with explicit `--extern` flags mirroring
+Cargo's own invocation — this **entirely bypasses Cargo's dependency
+resolution**, so `criterion` and its `edition2024` requirement are
+never touched, since we're never asking Cargo to resolve the dev-
+dependency graph at all. The result is a real, runnable test binary —
+not a hand-written replica of test logic, the actual compiled artifact
+`cargo test` would produce.
+
+Ran this against the full lib test suite and all 4 `tests/*.rs`
+integration files: **464 lib tests + 19 (`make_unmake.rs`) + 22
+(`perft.rs`) + 21 (`setup.rs`) — all passing** after the 3 fixes
+(`node_count.rs`'s 5 tests are `#[ignore]`d benchmarks, expected).
+
+**Process change for all future sessions**: this replaces, not
+supplements, the D79-established probe method as the standard local
+verification step before shipping any diff that includes new
+`#[cfg(test)]` code (which is nearly every diff). The probe method
+remains useful for exploring/confirming specific behavior interactively,
+but "verified via probe" alone is no longer sufficient grounds to claim
+a diff is tested — the direct-`rustc --test` method is now the bar,
+since it is the actual test suite, not an approximation of it.
