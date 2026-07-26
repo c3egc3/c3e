@@ -3505,3 +3505,66 @@ worth deciding explicitly whether to keep pursuing this family of
 ideas or move attention elsewhere (Phase 16 NNUE is still the
 larger-scale option on the table), rather than continuing on momentum
 alone.
+
+
+## D86 — Phase 26 Item 3b: Continuation-Based Correction History Added, Shipped Gated-Off From the Start (Session 85, cont.)
+
+**What was added**: a third, independent `CorrectionHistory` table
+(`SearchInfo::correction_history_continuation`) indexed by a new
+`pruning::continuation_hash(pos, prev_move)` — a hash of the last two
+real moves' squares (from/to for each), deliberately position- and
+piece-INDEPENDENT (unlike move ordering's own `cont_hist`, which is
+piece-conditioned and exists to score individual candidate moves, not
+to correct a node's static eval). Gated behind UCI
+`ContinuationCorrectionHistory` (default `false`) from the start this
+time — no retrofit needed, unlike item 3a (D82).
+
+**Design choice — no new parameter threading**: the roadmap's "recent
+move pairs" phrasing implies needing the last TWO moves, but
+`alpha_beta`'s existing `prev_move` parameter only carries one ply of
+history, and `alpha_beta_with_excluded` already has 8 internal
+recursive call sites plus every external caller (`main.rs`, every test)
+depending on the current public signature. Rather than add a second
+parameter and touch all of that, `continuation_hash` reads the
+second-to-last move directly from `pos.history` (`Vec<HistoryEntry>`,
+already maintained by `make_move_with_history`/`unmake_move_with_history`
+for undo purposes) — `pos.history.last().mv` is always exactly the
+existing `prev_move` parameter whenever it's non-null (every call site
+passing a real `prev_move` does so immediately after pushing that same
+move; null-move pruning's synthetic side-flip is never pushed to
+`pos.history` and always passes `Move::NULL`, so it can't be confused
+for real history). Net result: one new pure function, zero signature
+changes anywhere.
+
+**Why square-only, not piece-conditioned**: keeping `continuation_hash`
+a pure function of `pos.history`'s move squares (no board lookups)
+means it works identically regardless of what's currently on those
+squares — simpler, cheaper, and avoids the piece-tracking complexity a
+richer signal would need (the piece that made the *older* of the two
+moves may since have moved again or been captured, making "what piece
+made that move" unreliable to reconstruct from the current board
+alone, unlike the *newer* move where the piece is still findable via
+`pos.piece_on`). This is a real scope simplification versus mirroring
+`cont_hist`'s full piece-conditioning, made explicit rather than
+silently narrowed.
+
+**Verified via the standard probe method** (D79 onward): confirmed
+`continuation_hash` returns `None` at the root (no history) and `Some`
+once two real moves exist; confirmed the wiring test's exact scenario
+(hanging-queen position with two synthetically-attached history
+entries, matching real `make_move_with_history` output exactly since
+the hash never reads board state) produces a non-zero table entry
+after search, before shipping the test.
+
+**Tests added**: `pruning.rs` — 5 tests on `continuation_hash` itself
+(None at root, None with only one move, Some with two, different pairs
+hash differently, hash depends only on move-pair squares not board
+state — the last one deliberately documents the square-only design
+choice so a future change to make it piece-aware doesn't silently
+drift). `alpha_beta.rs` / `main.rs` — the same default/gating/wiring/
+independence test shapes as items 1 and 3a.
+
+**Not yet done**: no SPRT-style A/B test yet — needed before this is
+trusted as more than "compiles and passes unit tests," same bar as
+every other Phase 26 item. Item 3c (extension-margin use of the
+correction signal) not started.

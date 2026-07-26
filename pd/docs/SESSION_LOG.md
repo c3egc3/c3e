@@ -173,39 +173,57 @@ command string and lichess JSON fixtures, never real `from_fen` calls).
 Added 4 new tests directly on the validation itself. **Phase 26 item 4
 closed.**
 
-**Not done this session:**
-- **Not yet committed to `main`** — three complete files
-  (`src/search/mod.rs`, `src/search/alpha_beta.rs`, `src/main.rs`)
-  delivered for Gokul to download and push.
-- **Not yet SPRT-style A/B tested.** The whole point of the runtime-option
-  design is to let this run via `uci_match_runner.yml` with
-  `engine_a_uci_options="setoption name NullMoveKingGuard value true"` vs.
-  `engine_b_uci_options=""` (same binary, both sides) — Gokul needs to
-  trigger that manually before this guard is trusted for anything beyond
-  "compiles and doesn't break existing tests."
-- Local compile/test verification hit the same known toolchain wall as
-  every previous session (sandbox rustc 1.75 vs. edition2024
-  dev-dependency) — reasoned through by hand and cross-checked against
-  existing sibling patterns (`Contempt`, `Skill Level`) rather than
-  compiled locally. `cargo test` in CI is the real verification.
-- Phase 26 item 3a itself not yet SPRT-tested either — same bar as
-  items 1/2 before being trusted as more than "compiles and passes
-  unit tests."
-- Item 4 (D81's crash finding) not fixed — deliberately out of scope,
-  needs its own scoping session.
-- Items 3b/3c (continuation-based correction; extension-margin use of
-  the signal) not started.
+**Eighth follow-up (item 3a SPRT test):** Gokul ran the 20-game A/B
+(seed 40000) — 60.0%, +70.4 Elo. **D84**: same "not enough at n=20"
+reasoning as item 1's D76, recommended a 100+-game confirmation.
+200-game confirmation (fresh seed) came back 47.2%, -19.1 Elo. **D85**:
+flat-to-mild-negative, not statistically distinct from zero — no
+measurable benefit. **Phase 26 item 3a closed, parked off**, same
+outcome and treatment as item 1. Noted explicitly: two items in a row
+this session (item 1, item 3a) looked promising at n=20 and landed
+flat/negative at n=200 — a real pattern about the *simple form* of
+these ideas at Pet Dragon's current strength, not necessarily that
+either idea was wrong in principle.
 
-**Next session start point:** Phase 26 item 3a is implemented, unit
-tested, and gated behind `NonPawnCorrectionHistory` (default false,
-D82) — ready for commit + CI confirmation, then its own SPRT-style A/B
-via `uci_match_runner.yml` (same recipe as items 1/2). Item 4
-(illegal-FEN crash) is now closed (D83) — 6 files touched this session
-for that fix alone (`position/fen.rs`, `position/mod.rs`,
-`movegen/pawns.rs`, `tests/make_unmake.rs`, `eval/open_lines.rs`,
-`nnue/inference.rs`), all delivered this turn. Gokul's chosen next
-step after 3a's SPRT test: item 3b (continuation-based correction) as
-the next separate diff.
+**Ninth follow-up (Phase 26 item 3b, D86):** asked what's next; Gokul
+chose "3b then 3c" despite items 1/3a's flat results — a deliberate
+call to keep going rather than pivot off two null results. Read the
+existing move-ordering `cont_hist` implementation in full for
+reference. Key design decision: the roadmap's "recent move pairs"
+phrasing needs 2 plies of move history, but rather than thread a new
+parameter through `alpha_beta`'s 8 internal recursive call sites and
+every external caller, read the second-to-last move directly from
+`pos.history` (already maintained for undo) — `pos.history.last().mv`
+always exactly matches the existing `prev_move` parameter when
+non-null, verified by checking every call site. Zero signature changes
+anywhere. New `continuation_hash()` hashes only the last two moves'
+squares (position- and piece-independent, unlike `cont_hist`) — a
+deliberate scope simplification, documented as such. Shipped
+gated-off via UCI `ContinuationCorrectionHistory` from the start this
+time, no D82-style retrofit needed. Verified via the same probe method
+as every prior diff this session before shipping.
+
+**Not done this session:**
+- Phase 26 item 3b not yet committed or SPRT-tested — same bar as
+  every other item before being trusted as more than "compiles and
+  passes unit tests."
+- Item 3c (extension-margin use of the correction signal) not started.
+- Local `cargo test` still hits the known toolchain wall (sandbox
+  rustc 1.75 vs. edition2024 dev-dependency in `criterion`) — every
+  diff this session was instead verified by building the crate
+  standalone (`cargo build --lib`, which skips dev-dependencies
+  entirely) and exercising the actual code via a throwaway
+  path-dependency probe crate (established D79, used continuously
+  since). `cargo test` in CI remains the authoritative check.
+
+**Next session start point:** commit the 4 files touched this turn
+(`src/search/pruning.rs`, `src/search/mod.rs`,
+`src/search/alpha_beta.rs`, `src/main.rs`), confirm CI green, then
+either run item 3b's SPRT test (same recipe as items 1/3a —
+`uci_match_runner.yml`, `engine_a_uci_options="setoption name
+ContinuationCorrectionHistory value true"`, fresh seed) or move to
+item 3c if Gokul wants to finish implementing before testing either.
+No default — ask if unclear.
 
 ---
 
