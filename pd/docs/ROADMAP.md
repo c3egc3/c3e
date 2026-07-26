@@ -1634,17 +1634,20 @@ open and worth keeping on record:
      -34.9 Elo at n=20, -22.6 Elo at n=200 (D88) — consistent negative
      direction across both samples, unlike items 1/3a's flip-flopping
      20-game results. Parked off.**
-   - 3c. ⏳ **Extension margins from the correction signal —
-     implemented, tested (verified via the real compiled test suite,
-     D87 method — 633 tests green), gated behind UCI
-     `CorrectionExtension` (default false). NOT yet SPRT-tested
-     (Session 85, D89).** Singular-extension margin (base 2, Phase
-     13.3/D59) reduced by up to 1 when the base pawn-hash correction
-     table shows a large historical eval error for the current
-     position — deliberately reads only that source, not the two
-     parked-off ones (D85/D88). Margin-reduction arithmetic extracted
-     into `pruning::singular_margin_reduction()` for direct unit
-     testing.
+   - 3c. ✅ **CLOSED (Session 85, D89/D90) — correction-scaled
+     singular extension margin implemented, tested (633 real tests
+     green, D87 method), gated behind `CorrectionExtension` (default
+     false). SPRT result: -34.9 Elo at n=20, -40.1 Elo at n=200 (D90)
+     — the clearest negative result of any Phase 26 item this
+     session, magnitude grew rather than shrank at the larger sample.
+     Parked off.**
+
+**Phase 26: CLOSED (Session 85).** All 6 items resolved — 1 (parked
+off), 2 (test-hardening, closed), 3a/3b/3c (all parked off — four
+independent strength ideas, four flat-or-negative SPRT results), 4
+(fixed). See D90 for the closing summary and next-direction
+recommendation (Phase 16 NNUE scoping, or a fresh look at other
+signal sources before committing to NNUE's scale).
    - 3c. Not started — use the correction signal to adjust
      singular/double/triple extension margins, not just static eval.
 4. ✅ **CLOSED (Session 85, D83) — engine crashed on an illegal input

@@ -272,18 +272,32 @@ manually — bypassing Cargo means bypassing its build-script variable
 injection too), and all 4 integration test files. 633 real tests,
 all green, before ever presenting the diff.
 
-**Not done this session:**
-- Item 3c not yet committed or SPRT-tested.
+**Thirteenth follow-up (item 3c SPRT results, D90 — Phase 26 closed):**
+both results came in together — -34.9 Elo at n=20, -40.1 Elo at n=200.
+The strongest, least ambiguous negative result of any Phase 26 item
+this session: magnitude grew slightly at the larger sample rather than
+regressing toward zero. Parked off, no further confirmation needed.
+**This closes Phase 26 entirely** — all 6 items resolved (1/3a/3b/3c
+all parked off after proper SPRT testing, 2 was test-hardening with no
+strength claim, 4 was a real bug and is fixed). Four independent
+strength-affecting ideas from the Session 83 external-advice review,
+four flat-or-negative results — a real, useful answer (not a wasted
+session), delivered through a consistent, isolated, SPRT-verified
+process for each one. Recommended next direction: Phase 16 (NNUE)
+scoping, or a fresh look at other signal sources before committing to
+NNUE's scale.
 
-**Next session start point:** commit the 4 files
-(`src/search/pruning.rs`, `src/search/mod.rs`,
-`src/search/alpha_beta.rs`, `src/main.rs`), confirm CI green, then run
-item 3c's SPRT test (same recipe as items 1/3a/3b —
-`uci_match_runner.yml`, `engine_a_uci_options="setoption name
-CorrectionExtension value true"`, fresh seed). This is the last
-untested idea from the Session 83 external-advice review — whatever
-the result, that's a natural point to revisit direction (continue
-mining this idea source vs. Phase 16 NNUE vs. something else).
+**Not done this session:**
+- Nothing outstanding from Phase 26 — fully closed.
+- Phase 16 (NNUE) scoping not started.
+
+**Next session start point:** ask Gokul directly what's next now that
+Phase 26 is closed — Phase 16 (NNUE) scoping is the standing
+recommendation (D90), but this is a genuine open decision, not a
+default. If NNUE: start with reading `docs/DECISIONS.md`'s existing
+D34/D41 NNUE-parking entries and NORU's own docs before proposing a
+scoping plan — do not assume prior context carries over uninspected,
+this hasn't been touched in many sessions.
 
 ---
 

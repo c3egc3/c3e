@@ -3724,3 +3724,66 @@ flat-to-negative, this one's result (whichever direction) is worth
 paying close attention to as a data point on whether the "correction
 signal" family of ideas has any real signal left in it for Pet Dragon
 at its current strength.
+
+
+## D90 — CorrectionExtension: Strongest Negative Result of the Session, Consistent Across Both Samples. Phase 26 Closed. (Session 85, cont.)
+
+**Results**: 20-game first look (seed 51000) — A (correction
+extension on) 5-7-8, 45.0%, -34.9 Elo. 200-game confirmation (seed
+52000) — 62-85-53, 44.2%, -40.1 Elo.
+
+**The clearest negative result of any Phase 26 item this session.**
+Not only does the 200-game sample agree in direction with the 20-game
+look (same pattern as item 3b, D88) — the magnitude actually grew
+slightly rather than regressing toward zero, which is the opposite of
+what pure sampling noise would typically produce. Combined with the
+mechanism itself (shrinking the singular-extension margin at
+high-correction positions extends the TT move more often at exactly
+the positions where the engine's own historical data says static eval
+is least trustworthy) — extending a possibly-less-reliable move more
+often, on reflection, is at least as plausible a way to search
+*worse* moves for longer as it is to catch tactics eval would miss.
+The idea wasn't unreasonable to try, but the result is unambiguous.
+
+**Decision: park it. `CorrectionExtension` stays default `false`.** No
+further confirmation needed — this is the least ambiguous of the four
+results this session.
+
+**Phase 26 item 3c: closed as "implemented, tested, consistent and
+meaningful negative result across two independent samples, parked
+off."**
+
+## Phase 26 — Closed
+
+All four SPRT-testable ideas from the Session 83 external-advice
+review are now resolved:
+- Item 1 (null-move king-exposure guard): flat, parked off (D77).
+- Item 2 (adversarial perft coverage): closed, no strength claim
+  involved (test-suite hardening).
+- Item 3a (non-pawn-material correction): flat-to-negative, parked
+  off (D85).
+- Item 3b (continuation-based correction): negative, parked off
+  (D88).
+- Item 3c (correction-scaled extension margin): clearly negative,
+  parked off (D90).
+- Item 4 (illegal-FEN crash): fixed (D83).
+
+**Four independent strength-affecting ideas, four flat-or-negative
+results.** This is a real, useful outcome, not a wasted session — it
+answers a genuine question (does this whole idea family have anything
+left to offer Pet Dragon at its current strength) with a clear no,
+across a properly isolated, SPRT-verified process for each one. All
+four options remain in the code, harmless and off by default, in case
+different thresholds or a differently-tuned engine make any of them
+worth revisiting later — nothing was reverted, everything was proven
+one way and left in a known state.
+
+**Recommendation for next direction**: Phase 16 (NNUE) is the
+standing larger-scale option — a substantially bigger jump in ceiling
+than anything in the Phase 26 family, but also a much larger
+undertaking (training data, NORU integration, its own validation
+pipeline). Given this session's results, it's a reasonable point to
+either start scoping that, or take a step back and look at what
+*other* signal sources (not just correction-history variants) might
+actually move HCE-level strength before committing to the NNUE
+project's scale.
