@@ -1949,6 +1949,48 @@ round.
 
 ---
 
+**Update (Session 89):** Gokul ran 9 games (3 per config, control/LMP
+off/SingularMultiCut off) with the eval-logging build. **Sharp,
+quantitative finding:** Pet Dragon's own reported eval is *exactly* `0`
+on 16-49% of its own moves across every game sampled, while Stockfish
+(same games, same positions) reports exact `0` on 0-1% of its moves —
+this is a Pet Dragon-specific signature, not a property of these
+positions, present in every config tested across Sessions 87-89 (further
+evidence against D59/D60). One especially sharp example: Pet Dragon's
+last non-mate eval before getting checkmated in Match 1 was `0`, while
+the true position (per Black's eval one ply later) was ~-9 pawns. A
+separate, differently-shaped anomaly also appears (Match 2: Pet Dragon
+self-reports `+423` two of its own moves before getting mated) —
+possibly a second symptom of the same root cause, possibly unrelated.
+
+Read `search/iterative.rs` in full looking for the mechanism. Found a
+real sentinel-confusion bug in `score_for_result`'s selection logic
+(treats a genuinely-computed `0` the same as "not yet set") but could
+**not** confirm from static reading alone that it's what's actually
+producing the pattern in the ordinary synchronous case — flagged as a
+lead, not a confirmed cause. Instead of guessing further, shipped a
+data-gathering change: `search_from_fen_with_eval` now returns a third
+token, the deepest completed search depth for that move, additive to
+both existing callers (checked, not assumed). `vs.html` now logs it as
+`/dN` per move. Full detail in DECISIONS.md D94.
+
+**Not yet done — next session should start here:**
+1. Gokul commits `src/lib.rs` and `web/pit/vs.html` (Session 89's depth-
+   logging addition, layered on Sessions 87-88's changes to the same two
+   files) and confirms CI + Pages redeploy.
+2. Run one more bench (any config — no need to keep varying D91's
+   toggles, that line of investigation is exhausted for now).
+3. Check where the `0`-eval moves' `/dN` values cluster: **low
+   (`/d1`-`/d2`)** → time-management/search-abort issue, read
+   `search/time.rs`'s `TimeManager`/`allocate_time` next; **normal for
+   1000ms (`/d6`-`/d8`+)** → the search is doing real work but the
+   *reported* score is wrong, read `iterative.rs`'s `score_for_result`
+   expression (flagged in D94) and the aspiration-window fail-high/
+   fail-low paths in `search_with_aspiration` next. Either result
+   replaces guessing with a specific file to actually fix.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|

@@ -9,6 +9,71 @@ Most recent session at TOP.
 
 ---
 
+## Session 89 — 2026-07-27, cont. (Phase 27: exact-zero eval signature found — Pet Dragon-specific, config-independent; search depth now logged; D94)
+
+**Built/done:**
+
+1. Gokul ran 9 games via `vs.html` with the D93 eval-logging build: 3
+   control, 3 `LMPEnabled=false`, 3 `SingularMultiCutEnabled=false`, all
+   1000ms/move vs. Stockfish Skill 10. 6 losses, 3 draws total — no
+   config stands out, consistent with Session 88's conclusion that
+   D59/D60 aren't the cause.
+
+2. Parsed all 9 games' per-move eval tokens (Python regex, read-only, no
+   repo changes) and compared exact-zero rates between sides. **Finding:
+   Pet Dragon's own eval is exactly `0` on 16-49% of its own moves
+   across every game, vs. 0-1% for Stockfish playing the same games** —
+   a Pet Dragon-specific signature, present in every config tested
+   across three sessions now. Sharpest example: Pet Dragon's last
+   non-mate eval before getting checkmated in Match 1 was `0`, while the
+   true position was ~-9 pawns per Black's eval one ply later. Separately
+   noted Match 2: Pet Dragon self-reported `+423` two of its own moves
+   before getting mated — a different-shaped anomaly, possibly related,
+   possibly not.
+
+3. Read `search/iterative.rs` in full (mandatory read-before-write,
+   though nothing was changed there this session) looking for the
+   mechanism. Found `iterative_deepening()`'s `score_for_result`
+   selection expression treats a genuinely-computed `0` identically to
+   "value not yet set" — a real bug in that one expression — but could
+   not confirm from static reading alone that it's actually what
+   produces the observed pattern in the normal synchronous case (traced
+   `info.best_score`/local `best_score` through `search_at_depth`/
+   `search_with_aspiration` and they appear to already converge before
+   that check runs in the ordinary non-aborted path). Flagged as a lead
+   in DECISIONS.md D94, explicitly not claimed as confirmed — didn't
+   want to ship a fix against a guess after two straight ablation
+   sessions came back negative on a different guess.
+
+4. Instead of a third speculative code change, shipped a data-gathering
+   one: read `src/lib.rs` and both web callers'
+   (`web/index.html`/`web/pit/vs.html`) parsing of
+   `search_from_fen_with_eval`'s return string in full before touching
+   anything, confirmed both already tolerate trailing content after the
+   eval token (index.html via `indexOf(' ')`+`parseInt` truncation,
+   vs.html via `split(/\s+/)` already ignoring extra array entries) —
+   verified, not assumed. Added a third token: deepest completed
+   iterative-deepening depth for that move. `vs.html`'s
+   `parsePetDragonResult`, `match.history`, `matchLog`, and the exported
+   log text (`/dN` suffix, e.g. `g1g2(0)/d6`) now carry it through.
+
+**Bugs fixed:** none — one real bug found (the score_for_result
+sentinel-confusion in `iterative.rs`) but explicitly not fixed yet since
+its actual causal role in the observed pattern isn't confirmed.
+
+**Decisions made:** D94.
+
+**Next session start point:** Gokul commits `src/lib.rs` and
+`web/pit/vs.html` (this session's depth-logging addition, on top of
+Sessions 87-88's changes to the same two files), confirms CI + Pages
+redeploy, runs one more bench (any config), and checks where the
+`0`-eval moves' `/dN` values cluster — low depth points at
+`search/time.rs` next, normal depth points at `iterative.rs`'s
+`score_for_result` expression and the aspiration-window paths next. Per
+ROADMAP.md Phase 27's Session 89 update.
+
+---
+
 ## Session 88 — 2026-07-27 (Phase 27: D59/D60 ablation results negative/inconclusive; per-move eval now logged for next round)
 
 **Built/done:**

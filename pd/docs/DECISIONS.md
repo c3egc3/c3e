@@ -4022,3 +4022,98 @@ simply to get one more bench run (any config — control is fine, no
 need to keep varying D91's toggles right now) with the new eval-logging
 build, then read the eval trajectory directly against the material
 trajectory already established, before deciding where to look next.
+
+## D94 — Phase 27: Exact-Zero Eval Signature Found — Pet Dragon-Specific, Config-Independent — Depth Now Logged Too (Session 89)
+
+Gokul ran 9 more games via `vs.html` with the D93 eval-logging build:
+3 control (both toggles default), 3 with `LMPEnabled=false`, 3 with
+`SingularMultiCutEnabled=false`, all 1000ms/move vs. Stockfish Skill
+10. Results: 6 losses, 2 draws, 1 draw — consistent with every prior
+session, no config stands out as better or worse in any way that would
+implicate D59/D60.
+
+**The eval data (first time available) surfaces a much sharper, fully
+quantitative finding.** Parsed all 9 games' per-move eval tokens
+(`python`, regex extraction, no repo changes) and compared how often
+each side's own reported eval is **exactly** `0`:
+
+| Game | Pet Dragon (White) exact-zero rate | Stockfish (Black) exact-zero rate |
+|---|---|---|
+| Match 1 (control) | 49% (17/35), longest run 6 in a row | 0% (0/35) |
+| Match 2 (control) | 38% (10/26) | 0% (0/26) |
+| Match 3 (control) | 16% (10/64) | 0% (0/64) |
+| Match 4 (LMP off) | 19% (10/52) | 0% (0/51) |
+| Match 7 (multicut off) | 27% (21/77) | 1% (1/77) |
+
+**This is a Pet Dragon-specific signature, not a property of these
+positions.** Stockfish, playing the exact same games, essentially never
+reports its own move as dead-even (0-1%) — real chess positions are
+almost never *exactly* balanced to the centipawn, especially not 16-49%
+of the time in the same game. Pet Dragon reporting exact `0` this often,
+including immediately after captures and in positions Black's own eval
+(one ply later) shows as decisively lost for White (e.g. Match 1: `...
+c7b6(-947) g1g2(0) b6h6(mate-3)...` — Pet Dragon's own last non-mate
+eval before getting mated is `0`, while the position was actually ~-9
+pawns), is not "the position happens to be equal" — it looks like the
+search is failing to produce (or losing) a real score on a large
+fraction of moves and reporting a fallback/sentinel value instead. This
+pattern is present in **every config tested across all three sessions**
+(control, LMP off, SingularMultiCut off) — further evidence against the
+D59/D60 hypothesis, and pointing at something generic in the
+score-reporting path rather than either individual search technique.
+
+Also striking, independent of the zero-eval pattern: Match 2 shows Pet
+Dragon's own eval at `+423` (a supposedly large winning advantage) two
+of its own moves before getting checkmated — a completely different
+failure signature (confident, wrong, and not merely "stuck at 0"),
+suggesting there may be more than one thing wrong, or a shared root
+cause that manifests as both "stuck at 0" and "wildly overconfident"
+depending on exactly what state triggers it.
+
+**Investigated, not confirmed:** read `search/iterative.rs` in full.
+`SearchResult::score` is initialized to `0` at the top of
+`iterative_deepening()` (line ~95) before any iteration runs, and
+`iterative_deepening()`'s own `score_for_result` selection logic
+(`if info.best_score.abs() > 0 && info.best_score != -INFINITY {
+info.best_score } else { best_score }`) treats a genuinely-computed `0`
+identically to "not yet set" — a real 0/sentinel-confusion bug in that
+one expression. Traced both `info.best_score` and the local `best_score`
+back through `search_at_depth`/`search_with_aspiration` and could **not**
+confirm from static reading alone that this specific expression is what
+produces the observed pattern — in the ordinary synchronous, non-aborted
+case both variables appear to already converge to the same value before
+that check runs, which would make the fallback a no-op. Not ruling it
+out — multi-line reasoning about aspiration-window fail-high/fail-low
+loops and the `info.stop` early-break path is exactly the kind of thing
+that's easy to get subtly wrong by inspection — but not claiming it as
+the confirmed cause either. This needs to be settled with real data, not
+another round of code-reading speculation.
+
+**Shipped this session — the WASM search functions now report search
+depth too.** `search_from_fen_with_eval` returns a third token: deepest
+fully-completed iterative-deepening iteration for that move
+(`SearchResult::depth`). Strictly additive — checked both existing
+callers (`web/index.html`'s `raw.indexOf(' ')`+`parseInt` truncation,
+`vs.html`'s `split(/\s+/)` which already ignored extra tokens) before
+adding it; neither needed changes to keep working, verified by reading
+both files' parsing logic, not assumed. `vs.html`'s `parsePetDragonResult`
+now captures it, threaded through `match.history` → `matchLog` → the
+exported log text as a `/dN` suffix, e.g. `g1g2(0)/d6`.
+
+**Why this is the right next step over more code-reading:** depth tells
+us immediately which failure mode we're in without more guessing — a
+`0`-eval move reported at `/d1` or `/d2` means the search barely
+started (time-management/abort issue, worth reading `time.rs`/
+`TimeManager` next), while the same `0` at `/d6`-`/d8` (a normal depth
+for 1000ms) means a real search completed and the *reported* score is
+wrong even though real work happened (worth reading the
+`iterative.rs`/`alpha_beta.rs` score-plumbing next, starting from the
+`score_for_result` expression flagged above). Either answer points at a
+specific, different next file to actually fix, instead of another
+distributed A/B guess.
+
+**Not yet done:** no fix — this session is diagnostic only, and the code
+suspicion above is explicitly unconfirmed. Next step: one more bench run
+with the depth-logging build (any config), then check whether the
+`/dN` values on `0`-eval moves cluster low or normal, before touching
+`iterative.rs`.
