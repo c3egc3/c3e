@@ -9,6 +9,90 @@ Most recent session at TOP.
 
 ---
 
+## Session 90 — 2026-07-27, cont. (Phase 27: ROOT CAUSE FOUND AND FIXED — is_time_up() never set info.stop; D95; pending real-bench validation)
+
+**Built/done:**
+
+1. Gokul ran one more bench (3 games, control config, 1000ms/move) with
+   the Session 89 depth-logging build. Checked where the `0`-eval
+   moves' `/dN` values cluster, per last session's explicit plan:
+   **completely normal depths (d10-d14)**, not low/aborted ones — rules
+   out time-starvation, confirms the score-reporting lead from D94 was
+   the right one.
+
+2. Read `search/alpha_beta.rs` and `SearchInfo::is_time_up()`
+   (`search/mod.rs`) together — full read of both time-check call sites
+   and everything downstream that reads `info.stop`, mandatory
+   read-before-write, before touching anything. **Found the actual
+   mechanism, not a guess:** `is_time_up()` takes `&self` — it only ever
+   reads `self.stop`/`self.stop_flag`. Grepped for every place
+   `.stop = true` gets assigned in production code: there isn't one.
+   The only assignment anywhere is a unit test manually setting it to
+   verify the read side. Both real call sites
+   (`alpha_beta()`'s own time check, `quiescence()`'s) detected a real
+   elapsed-time timeout, returned a hardcoded `0`, and moved on without
+   ever recording that anything was cut short.
+
+3. Traced every downstream `if info.stop {...}` check in
+   `alpha_beta.rs` (four more `return 0` propagation sites, the
+   TT-store guard, the correction-history-update guard) and
+   `iterative.rs` (`iterative_deepening()`'s own
+   discard-this-depth-on-abort logic) — all of them assume `info.stop`
+   would already be `true` by the time they run. It never was, for the
+   single most common reason a search aborts (running out of its
+   per-move time budget). Confirmed `reset_for_search()` already resets
+   `self.stop = false` at the top of every search, so setting it on a
+   real timeout can't leak across moves — and confirmed the separate
+   `stop_flag` `Arc<AtomicBool>` (UCI `stop` command / ponder) stays
+   fully independent, since the fix never touches it.
+
+4. **Fixed**: `info.stop = true;` added immediately alongside the
+   `return 0;` at both real call sites — two lines each, activating
+   discard/skip logic that was already correctly written throughout the
+   codebase and simply never got triggered for this case.
+
+5. Added two new deterministic tests in `alpha_beta.rs`'s test module:
+   `test_alpha_beta_sets_stop_on_real_timeout` and
+   `test_quiescence_in_check_sets_stop_on_real_timeout` (the latter
+   using a constructed genuinely-in-check FEN to specifically exercise
+   quiescence's in-check evasion branch). Both use a `0ms` time budget
+   so `is_time_up()`'s elapsed-time branch fires on the very first
+   check, deterministically, no timing flakiness.
+
+6. Documented the full mechanism and why it explains every symptom
+   gathered across Sessions 85-90 (Pet Dragon-specific vs. Stockfish,
+   config-independent across all of D91's LMP/SingularMultiCut
+   ablations, worse in longer/more complex positions, manifests as
+   sudden late-game material collapse) in DECISIONS.md D95.
+
+**Bugs fixed:** the root cause of Phase 27's entire investigation
+(pending real-bench confirmation — see caveat below). This is the
+highest-confidence fix of the six-session investigation by a wide
+margin: a specific, readable, mechanistically-clear bug found by
+reading code, not an ablation guess.
+
+**Decisions made:** D95.
+
+⚠️ **Not yet CI-confirmed** — no local `cargo` in this session's
+sandbox, same caveat as every session since Phase 27 began.
+
+⚠️ **Phase 27 is NOT closed.** This is code-review confidence, not a
+validated fix — explicitly flagged in both DECISIONS.md D95 and
+ROADMAP.md's Phase 27 update. It also may not be the only thing wrong:
+D94's separate `+423`-then-mated-in-a-few-moves anomaly in Match 2 is a
+differently-shaped failure (a search that completes and is simply
+wrong, not one that returns a corrupted sentinel mid-search) that this
+fix doesn't obviously explain and needs checking separately.
+
+**Next session start point:** Gokul commits `src/search/alpha_beta.rs`,
+confirms CI passes (including the two new D95 tests), runs one more
+bench (any config), and checks (a) whether the exact-zero eval rate
+dropped from the 16-49% baseline in D94, and (b) whether the win/loss/
+draw record actually improved. Only close Phase 27 if both hold — per
+ROADMAP.md Phase 27's Session 90 update.
+
+---
+
 ## Session 89 — 2026-07-27, cont. (Phase 27: exact-zero eval signature found — Pet Dragon-specific, config-independent; search depth now logged; D94)
 
 **Built/done:**

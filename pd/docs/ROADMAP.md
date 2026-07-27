@@ -1991,6 +1991,50 @@ both existing callers (checked, not assumed). `vs.html` now logs it as
 
 ---
 
+**Update (Session 90) — ROOT CAUSE FOUND AND FIXED, pending real-bench
+validation:** Gokul's next bench confirmed the `0`-eval moves cluster at
+completely normal depths (d10-d14), ruling out time-starvation and
+pointing squarely at the score-reporting lead from D94. Reading
+`search/alpha_beta.rs` and `SearchInfo::is_time_up()` together found the
+actual mechanism: `is_time_up()` only ever *read* `self.stop`, and
+neither of its two real call sites (`alpha_beta()`'s own time check,
+`quiescence()`'s) ever *wrote* `info.stop = true` on a genuine
+elapsed-time timeout — they just silently returned a hardcoded `0`
+sentinel with no abort signal, so every `if info.stop {...}` discard/
+skip check already written elsewhere in the codebase (TT-store guard,
+correction-history guard, `iterative_deepening()`'s own
+discard-this-depth logic) was dead for the single most common abort
+reason there is. **Fixed**: `info.stop = true;` added alongside both
+`return 0;` sites — a two-line change per site, activating logic that
+was already correctly written and just never triggered. Full mechanism,
+data trail, and why this explains every symptom from Sessions 85-90 (Pet
+Dragon-specific, config-independent across D91's toggles, worse in
+longer games, manifests as sudden material collapse) in DECISIONS.md
+D95. Two new deterministic tests added (0ms time budget forces
+`is_time_up()`'s elapsed-time branch on the very first check).
+
+⚠️ **Phase 27 stays open — this is not confirmed fixed, only
+high-confidence.** No local `cargo` to compile-check this session (same
+caveat as every session since Phase 27 began). Next session must get a
+real post-fix bench run before this phase can close.
+
+**Not yet done — next session should start here:**
+1. Gokul commits `src/search/alpha_beta.rs` (Session 90's D95 fix) and
+   confirms CI passes, including the two new tests.
+2. Run a bench (any config, control is simplest — no more toggle
+   ablation needed) with the fixed build.
+3. Check the exported log for two things: (a) has the exact-zero eval
+   rate dropped sharply from the 16-49%-of-White's-moves baseline
+   established in D94, and (b) has the overall win/loss/draw record
+   improved from the ~0-6-3-ish record across Sessions 85-89. If both
+   are true, Phase 27 can close as resolved. If the zero-eval rate drops
+   but losses continue, or if Match 2's separate `+423`-then-mated
+   anomaly (D94) still appears, that's a distinct, second issue worth
+   its own investigation — don't assume one fix closes everything found
+   in six sessions of data.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|

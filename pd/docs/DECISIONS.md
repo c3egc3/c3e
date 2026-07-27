@@ -4117,3 +4117,126 @@ suspicion above is explicitly unconfirmed. Next step: one more bench run
 with the depth-logging build (any config), then check whether the
 `/dN` values on `0`-eval moves cluster low or normal, before touching
 `iterative.rs`.
+
+## D95 — Phase 27: Root Cause Found and Fixed — is_time_up() Never Actually Set info.stop (Session 90)
+
+Gokul ran one more bench (3 games, control config, 1000ms/move) with
+the Session 89 depth-logging build. The depth data answers last
+session's open question decisively: **`0`-eval moves cluster at
+completely normal depths (d10-d14), not low/aborted ones.** Example
+from Match 1: `f4e5(0)/d14`, `e1g1(0)/d12`, `e2c3(0)/d13`,
+`e4f4(0)/d11`, `d4d8(0)/d11` — every one of these is a nominally
+deep, fully-iterated search reporting the exact-zero sentinel found in
+D94. This rules out a time-management/depth-starvation explanation and
+confirmed D94's other lead was the right one to chase.
+
+**Root cause, found by reading `search/alpha_beta.rs` and
+`search/mod.rs::is_time_up()` together, not by guessing:**
+
+`SearchInfo::is_time_up(&self)` takes `&self` — it only ever *reads*
+`self.stop`/`self.stop_flag`; nothing in it, or anywhere else in
+production code, ever *writes* `self.stop = true` on a genuine
+elapsed-time timeout (the only place that assignment exists at all was
+a unit test manually setting it to verify the read side). Both real
+call sites of `is_time_up()` — `alpha_beta()`'s own time check and
+`quiescence()`'s — did:
+```rust
+if info.is_time_up() {
+    return 0;
+}
+```
+On a real timeout this returns a hardcoded `0` — a genuine, meaningful
+"dead equal" evaluation, not a distinguishable "aborted, discard this"
+marker — straight into the caller's alpha-beta comparison, **with no
+signal recorded anywhere that anything was cut short.** Every
+downstream `if info.stop { ... }` check already present in this
+codebase (four more `return 0` propagation sites in `alpha_beta.rs`,
+the TT-store guard, the correction-history-update guard, and — most
+importantly — `iterative_deepening()`'s `if info.stop { break; }`
+discard-this-depth logic) was written assuming `info.stop` would
+already be `true` by the time it ran. It never was, for the single most
+common reason a search aborts. The codebase already had the right
+architecture for handling this correctly; the two sites that were
+supposed to trigger it just never did.
+
+**Mechanism, matching every symptom gathered across Sessions 85-90:**
+once wall-clock time is exceeded mid-iteration, *every* node visited
+after that point — not just the first one — independently calls
+`is_time_up()`, gets `true` again (it's a live elapsed-time check, not
+a one-shot latch), and returns `0` for its own subtree, all without
+that depth's overall iteration ever being marked as aborted. The search
+keeps running (still consuming real wall-clock time visiting more
+nodes, since nothing tells it to stop), contaminating an increasing
+fraction of the tree with `0`s as it goes, and when the iteration
+finally does finish naturally, `iterative_deepening()`'s
+`if info.stop { break; }` never fires (stop was never set), so the
+contaminated result is accepted as this depth's legitimate output —
+exactly matching D94's "normal depth, wrong score" data. This also
+explains why the pattern is:
+- **Pet Dragon-specific, not Stockfish** (D94) — it's this engine's own
+  time-check bug, unrelated to the opponent.
+- **Config-independent across D91's LMP/SingularMultiCut toggles**
+  (D93/D94) — the bug is in shared time-check plumbing every config
+  path goes through identically; no wonder ablating either technique
+  never moved the needle.
+- **Worse in longer, more complex positions** — more nodes per ply
+  means a higher chance of still being mid-tree when the 1000ms budget
+  expires, so more of the tree gets contaminated.
+- **Manifests as sudden late-game material collapse** — once
+  contamination starts, any real move scoring worse than `0` can lose
+  to a corrupted `0` from a sibling/reply subtree that happened to get
+  cut short, causing the search to prefer objectively bad moves or miss
+  that a move is a blunder because the opponent's punishing reply's
+  subtree returned a falsely comfortable `0` instead of its real score.
+
+**Fix (both files' single production call sites, `search/alpha_beta.rs`
+lines ~91 and ~295):**
+```rust
+if info.is_time_up() {
+    info.stop = true;
+    return 0;
+}
+```
+Two-line change at each site. This activates the discard/skip logic
+that was already written and already correct — it doesn't add any new
+propagation logic, because none was needed; the codebase already knew
+what to do once `info.stop` was true, it just never became true.
+`reset_for_search()` already resets `self.stop = false` at the start of
+every search (confirmed by reading it before relying on this), so this
+can't leak across moves. `info.stop` and the separate `stop_flag`
+`Arc<AtomicBool>` (the UCI `stop` command / external-abort mechanism)
+remain cleanly independent — this fix only ever writes to the plain
+`bool`, never touches `stop_flag` — so there's no interaction with
+mid-game `stop`/ponder handling.
+
+**Tests added** (`search/alpha_beta.rs`): two new tests, both giving a
+`0ms` time budget so `is_time_up()`'s elapsed-time branch fires on the
+very first check (`nodes` starts at `0`, `0 & 255 == 0` is true, and
+any elapsed time is `>= 0`) —
+`test_alpha_beta_sets_stop_on_real_timeout` (the main search function's
+call site) and `test_quiescence_in_check_sets_stop_on_real_timeout`
+(the quiescence in-check-evasion call site, using a constructed
+genuinely-in-check FEN to actually exercise that specific branch). Both
+assert `info.stop` is `true` afterward — this is exactly the write-side
+behavior that was missing; `is_time_up()`'s existing test coverage in
+`search/mod.rs` already covered the read side (given `info.stop` already
+true, does it report time-up correctly) but nothing previously tested
+that a real elapsed-time timeout causes that flag to actually get set.
+
+⚠️ **Not yet CI-confirmed** — no local `cargo` in this session's
+sandbox, same caveat as every session since Phase 27 began. This is the
+highest-confidence fix of the investigation by a wide margin (a
+specific, readable mechanism, not an ablation guess), but it still
+needs a real bench run after CI/Pages redeploy to confirm the exact-zero
+eval pattern actually goes away and win rate actually improves — Phase
+27 stays open until that's confirmed, not closed on code-review
+confidence alone.
+
+⚠️ This may not be the *only* thing wrong — D94 separately flagged
+Match 2's `+423`-then-mated-in-a-few-moves anomaly as a differently-
+shaped pattern that this fix doesn't obviously explain (a search that
+completes normally but is simply badly wrong about the position is a
+different bug class than "returns a corrupted sentinel mid-search").
+Worth specifically checking whether that pattern also disappears once
+this fix is validated, or whether it's still there and needs its own
+investigation.
