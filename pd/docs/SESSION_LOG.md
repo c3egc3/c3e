@@ -9,6 +9,84 @@ Most recent session at TOP.
 
 ---
 
+## Session 93 — 2026-07-27, cont. (Phase 28 opened: TDSE first diff — verified an external design doc against real code, found and fixed one real error, shipped legality-only signal; D98)
+
+**Built/done:**
+
+1. Gokul asked to adapt `tdse-pet-dragon-adaptation.md`, a design
+   proposal for a Threat-Defusal Search Extension: prefer whichever
+   near-tied root candidate best defuses the opponent's strongest reply,
+   rather than an arbitrary tiebreak. The doc claimed to have verified
+   its API assumptions against the real repo at ~10 points across 7
+   files.
+
+2. **Did not trust that claim.** Pulled a fresh copy of the repo and
+   independently re-checked every load-bearing assumption before writing
+   anything: the null-move block's exact shape, `score_moves`/
+   `next_move` signatures, the Skill Level noise block's real shape
+   (the doc's own cited precedent) including `search_multipv_slot`'s
+   signature, `mobility_for_color()`'s privacy, `see()`/`see_value_of()`
+   signatures, `CorrectionHistory`'s shape, the bitboard attack
+   primitives, `make_move_with_history`/`unmake_move_with_history`,
+   `TranspositionTable::probe`'s return shape. All confirmed correct.
+
+3. **Found one real error the document missed**: it called
+   `threat_move.to_square()`, which doesn't exist — `Move` has plain
+   public fields `from`/`to: Square`, not accessor methods. A genuine
+   catch from doing the verification myself rather than trusting
+   "verified" as written.
+
+4. Implemented the proposal's own recommended first diff only
+   (legality-only signal, no SEE, no control-delta yet — explicit staged
+   rollout in the doc's §5): `SearchInfo::threat_defusal` (default
+   `false`, full option threading through `EngineState`/`main.rs`, same
+   shape as every prior toggle in this family); `extract_threat_move()`
+   and `defuses_threat()` in `alpha_beta.rs` (both `pub` — confirmed no
+   `pub(crate)` precedent exists anywhere in `search/`, so matched
+   `alpha_beta()`'s own full-`pub` convention instead); a new sibling
+   block in `iterative_deepening()` right after the existing Skill Level
+   noise block, reusing Phase 19's `search_multipv_slot`/
+   `info.root_exclude`, mutually exclusive with the noise block per a
+   real interaction risk the proposal itself flagged.
+
+5. One implementation deviation from the proposal, deliberately
+   conservative: rewrote its `.find()`-with-closure candidate search as
+   a plain `for` loop, since the proposal's own code used a manual loop
+   specifically to avoid a closure capturing `&mut Position` through an
+   iterator adapter — likely fine in modern Rust, but not something
+   worth risking without a local compiler to check it.
+
+6. Ten new tests across `alpha_beta.rs` (default-false;
+   `extract_threat_move` finds a hanging-rook capture on a constructed
+   FEN; `defuses_threat` correctly returns both `true` and `false` on
+   hand-built before/after positions), `main.rs` (default/parse/
+   cmd_go-wiring, mirroring the existing `SingularMultiCutEnabled` test
+   trio), and `iterative.rs` (default-off byte-identical to pre-TDSE
+   behavior; enabling it doesn't panic and still returns a legal move).
+
+**Bugs fixed:** none in the engine's existing behavior — this is new,
+default-off functionality. Did catch and fix one real error in the
+source design document before it became a real bug (item 3).
+
+**Decisions made:** D98.
+
+⚠️ **Not yet CI-confirmed** — no local `cargo` in this session's
+sandbox, same caveat as always. This diff is larger than D95's one-line
+fix; watch CI closely.
+
+⚠️ **Zero Elo validation yet.** `ThreatDefusal` ships `false` by
+default. The proposal's own rollout plan (20-game first look → 100-200
+game confirmation, same D76/D84 discipline) hasn't started.
+
+**Next session start point:** Gokul commits the 4 changed files
+(`src/search/mod.rs`, `src/search/alpha_beta.rs`,
+`src/search/iterative.rs`, `src/main.rs`), confirms CI is fully green
+(all tests, including the 10 new ones), then runs a 20-game
+`uci_match_runner` A/B (`ThreatDefusal` true vs. false) as a first look
+only — per ROADMAP.md Phase 28's numbered next steps.
+
+---
+
 ## Session 92 — 2026-07-27, cont. (PHASE 27 RESOLVED — D95 fix confirmed by real bench data; D97; first-ever win vs. real Stockfish)
 
 **Built/done:**

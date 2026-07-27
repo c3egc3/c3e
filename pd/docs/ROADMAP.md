@@ -2107,6 +2107,101 @@ didn't pan out narrowed the search.
 
 ---
 
+## Phase 28 — Threat-Defusal Search Extension (TDSE) ⏳ IN PROGRESS (Session 93)
+
+**Origin:** Gokul supplied `tdse-pet-dragon-adaptation.md`, a design doc
+proposing a new move-selection mechanism: when the root search finds
+several near-tied best moves, prefer whichever one best defuses the
+opponent's strongest reply (probed via a one-ply lookahead reusing the
+existing null-move machinery), rather than picking arbitrarily among
+near-equal options. Not a search-strength technique in the usual sense
+(it doesn't change what depth/score is reached) — a move-*selection*
+tiebreaker among moves the search already considers equivalent.
+
+**Verification before any code was written:** the doc claimed to be
+"verified against the actual file" at ~10 separate points across
+`alpha_beta.rs`, `ordering.rs`, `iterative.rs`, `mobility.rs`, `see.rs`,
+`pruning.rs`, and the bitboard module. Independently re-verified every
+one of those claims against a fresh pull of the real repo before
+trusting any of them — did not take "verified" in someone else's
+document at face value. Result: essentially every claim checked out
+exactly, including the doc's own corrections to its first draft (e.g.
+`mobility_for_color()` being private, `alpha_beta_with_excluded()`
+returning only a score not a move+PV). **One real error found that the
+doc missed**: it called `threat_move.to_square()`, which doesn't exist
+— `Move` has plain public fields `from`/`to: Square`, not accessor
+methods. Fixed during implementation. Full verification trail and the
+correction in DECISIONS.md D98.
+
+**Shipped this session — first diff only, per the doc's own staged
+rollout plan (§5):** runtime UCI option `ThreatDefusal`, default
+`false`, byte-identical behavior when off (same guarantee every prior
+D75/D91/D92 toggle makes) — threaded through `SearchInfo` → 
+`EngineState` → `cmd_uci`/`cmd_setoption`/`cmd_go` (main thread + every
+Lazy SMP helper thread), identical shape to `LMPEnabled`/
+`SingularMultiCutEnabled`. New `extract_threat_move()` in
+`alpha_beta.rs` (one-ply opponent-reply probe, deliberately *not*
+reusing the shared `info.pv`/`info.update_pv` table — see D98 for why)
+and a **legality-only** `defuses_threat()` signal — does the candidate
+move make the opponent's probed threat move no longer legal, yes/no.
+SEE-degradation and square-control signals from the original proposal
+are **deliberately not implemented yet** — each is its own isolated
+diff, validated independently, before being combined, same discipline
+Phase 26's correction-history sub-items (3a/3b/3c) already used. New
+sibling block in `iterative_deepening()` (not a hook into `alpha_beta`'s
+move loop), reusing Phase 19's `search_multipv_slot`/`info.root_exclude`
+exactly the way the existing Skill Level noise block already does —
+mutually exclusive with that block (skipped whenever
+`skill_noise_window_cp(info.skill_level) > 0`), per a real interaction
+risk the proposal itself flagged.
+
+Ten new tests across `search/mod.rs` (implicit via `SearchInfo::new()`
+default check in `alpha_beta.rs`'s test module), `search/alpha_beta.rs`
+(default-false; `extract_threat_move` correctly finds a hanging-piece
+capture on a constructed FEN; `defuses_threat` correctly returns both
+`true` and `false` on hand-built before/after positions), `main.rs`
+(option default/parse/cmd_go-wiring, mirroring
+`test_cmd_go_applies_singular_multicut_enabled_to_search`), and
+`search/iterative.rs` (default-off byte-identical to pre-TDSE behavior;
+enabling it on a real search doesn't panic and still returns a legal
+move).
+
+⚠️ **Not yet CI-confirmed** — no local `cargo` in this session's
+sandbox, same caveat as every session in this repo's history. This is a
+substantially larger diff than D95's one-line fix was — extra reason to
+watch CI closely, not assume green.
+
+⚠️ **Not yet validated for actual Elo impact at all.** This session
+shipped the option scaffold and the legality-only signal only. The
+proposal's own rollout plan (§5, steps 5-7) — CI green → commit → 20-game
+first look (not trusted alone, same D76/D84 discipline) → 100-200 game
+confirmation → only then touch the default, and only then add the
+SEE-degradation signal as its own separately-validated diff, then
+control-delta likewise — has not started. `ThreatDefusal` stays `false`
+by default until that full cycle completes.
+
+**Not yet done — next session should start here:**
+1. Gokul commits the 4 changed files (`src/search/mod.rs`,
+   `src/search/alpha_beta.rs`, `src/search/iterative.rs`, `src/main.rs`)
+   and confirms CI is fully green — all tests, including the 10 new
+   ones.
+2. Run a 20-game `uci_match_runner` A/B (`ThreatDefusal=true` vs.
+   `false`, fresh seed) as a first look only — do not promote off this
+   result alone, same as every prior first-look in this project's
+   history.
+3. If the first look isn't clearly negative, a 100-200 game confirmation
+   run before considering flipping the default. Record both results as
+   D-series entries (next available after D98).
+4. Only after the legality-only signal is independently confirmed:
+   implement the SEE-degradation signal as its own isolated diff (the
+   proposal's §3, corrected `attacker_count_on`/
+   `control_delta_on_threat_squares` helpers are new code, not free
+   reuse — flag as such), re-run the same A/B → confirm cycle. Then
+   control-delta, same pattern. Three signals, three independent
+   validations, never bundled.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|

@@ -4355,3 +4355,132 @@ SPRT-style A/B this project already has tooling for
 follow-up if Gokul wants a numeric Elo-impact estimate for the
 changelog, but it's normal ongoing strength-tracking work at this
 point, not an open regression investigation — Phase 27 closes here.
+
+## D98 — Phase 28: TDSE First Diff — Verified an External Design Doc Against Real Code, Found One Real Error, Implemented Legality-Only Signal (Session 93)
+
+Gokul supplied `tdse-pet-dragon-adaptation.md` — a design proposal for a
+Threat-Defusal Search Extension (TDSE): when the root search ends with
+several near-tied best-move candidates, prefer whichever one best
+defuses the opponent's strongest reply, instead of an arbitrary tiebreak
+among moves already judged equivalent. The doc explicitly claimed to
+have verified its API assumptions ("verified against the actual file")
+at roughly ten separate points across `alpha_beta.rs`, `ordering.rs`,
+`iterative.rs`, `mobility.rs`, `see.rs`, `pruning.rs`, and the bitboard
+module, including corrections to an implied first draft (e.g.
+`mobility_for_color()` turning out to be private,
+`alpha_beta_with_excluded()` returning only a score rather than a move
+and PV).
+
+**Did not take those claims at face value.** Pulled a fresh copy of the
+repo and independently re-checked every load-bearing claim before
+writing anything — the fact that a document *says* it was verified
+against real code is not itself verification; I have no way to know who
+wrote it or whether they actually read the current source. Checked:
+the null-move block's exact shape (`can_null_move`, `king_safe_squares`,
+`has_non_pawn_material`) — matched near-verbatim; `score_moves`/
+`next_move` signatures in `ordering.rs` — matched exactly; the Skill
+Level noise block's real shape in `iterative.rs` (the doc's cited
+precedent for "gather MultiPV candidates, then override the result") —
+matched near-verbatim, including `search_multipv_slot`'s exact
+signature; `mobility_for_color()`'s privacy — confirmed; `see()`/
+`see_value_of()` signatures — matched exactly; `CorrectionHistory`'s
+real shape and the `pawn_hash`/`nonpawn_hash` free functions — matched;
+the raw bitboard attack primitives (`knight_attacks`, `bishop_attacks`,
+`rook_attacks`, `queen_attacks`) — all present with the claimed
+signatures; `make_move_with_history`/`unmake_move_with_history`,
+`TranspositionTable::probe` returning `Option<TTEntry>` with a `.mv`
+field, plain `make_move`/`unmake_move` — all confirmed.
+
+**One real error found that the document itself missed:**
+`control_delta_on_threat_squares` (not implemented this session, but
+checked anyway since the same accessor pattern appears in the
+legality-only code) called `threat_move.to_square()`. That method
+doesn't exist anywhere in this codebase. `Move` has plain public struct
+fields `from: Square` and `to: Square` (`#[derive(... PartialEq ...)]`,
+confirmed `Copy`) — the correct access is `threat_move.to`, no method
+call. This is exactly the kind of subtle, plausible-looking-but-wrong
+detail that a document merely *asserting* verification can still get
+wrong, and it's why the read-before-write discipline applies even to
+content that arrives already claiming to have done that reading.
+
+**Implemented, first diff only, per the proposal's own staged rollout
+(§5) — legality-only signal, no SEE, no control-delta yet:**
+
+- `SearchInfo::threat_defusal: bool`, default `false` — new/unproven
+  technique, same rollout shape as D75's `null_move_king_guard` (default
+  `false`), *not* D91/D92's already-shipped-default-on pattern.
+  Threaded through `EngineState` → `cmd_uci`/`cmd_setoption`/`cmd_go`
+  (main thread and every Lazy SMP helper thread), identical plumbing to
+  every prior option in this family.
+- `extract_threat_move()` (`alpha_beta.rs`, `pub` — this codebase has no
+  `pub(crate)` precedent anywhere in `search/`, so cross-module items
+  use full `pub`, matching `alpha_beta()` itself): a self-contained
+  one-ply-ahead scan of the opponent's replies, reusing the same
+  null-move side-flip and `has_non_pawn_material` zugzwang guard the
+  real null-move probe uses, via the corrected design the proposal
+  settled on. **Deliberately does not try to recover the null-move
+  probe's own PV from `info.pv`/`info.update_pv`** — that table updates
+  on any node whose local alpha improves, not just true PV nodes, so
+  it's not safe to read mid-search as "what this one probe concluded"
+  without much more bookkeeping than the signal is worth. A fresh,
+  independent one-ply scan is simpler and can't be corrupted by
+  unrelated search activity.
+- `defuses_threat()` (`alpha_beta.rs`, `pub`): legality-only — does the
+  candidate move make the opponent's probed threat move no longer an
+  exactly-legal move afterward (same `from`/`to`/`kind`/`captured`
+  shape)? `Move` derives `PartialEq` on all four fields, so this
+  correctly distinguishes "the threat piece moved away, so capturing it
+  isn't possible anymore" from "a differently-flavored move to the same
+  square now exists" — a quiet move to a square that used to hold a
+  capturable piece is a *different* `Move` value (different `kind`/
+  `captured`), so it correctly reports `true` (defused) rather than
+  matching the old capture.
+- New sibling block at the end of `iterative_deepening()`, immediately
+  after the existing Skill Level noise block, not a hook into
+  `alpha_beta()`'s move loop — reuses Phase 19's `search_multipv_slot`/
+  `info.root_exclude` exactly the way the noise block already does.
+  **Mutually exclusive with the noise block** (skipped whenever
+  `skill_noise_window_cp(info.skill_level) > 0`) — the proposal itself
+  flagged the real risk of both blocks racing to override
+  `result.best_move` through the same `info.root_exclude` state
+  sequentially; combining them is left as a later, separately-validated
+  question rather than assumed safe.
+- Implementation deviates from the proposal in one place: rewrote the
+  proposal's `.find()`-with-closure candidate search as a plain `for`
+  loop instead. The proposal's own code used a manual loop specifically
+  to avoid a closure capturing `&mut Position` through an iterator
+  adapter — a pattern that's very likely fine in modern Rust, but
+  without a local compiler to verify it, the already-reasoned-through
+  manual loop shape is the lower-risk choice, not a shortcut.
+
+**Deliberately not implemented this session**: SEE-degradation and
+square-control signals (the proposal's §3) — genuinely new code, not a
+free reuse of anything in `mobility.rs` as an unverified first draft
+might have assumed, and each needs its own isolated diff and A/B
+validation before being combined with the others, per the same
+discipline Phase 26's correction-history sub-items (3a/3b/3c) already
+established for this project.
+
+Ten new tests: `SearchInfo` default-false (`alpha_beta.rs`'s test
+module); `extract_threat_move` finding a hanging-rook capture on a
+constructed FEN (`3qk3/8/8/3R4/8/8/8/4K3 w - - 0 1` — Black queen d8 can
+freely capture White's undefended rook on d5); `defuses_threat`
+returning `true` when the rook moves away (the exact capture is no
+longer legal) and `false` for an unrelated king move (the capture is
+still fully legal); `EngineState`-level default/parse/cmd_go-wiring
+tests in `main.rs`, mirroring `test_cmd_go_applies_
+singular_multicut_enabled_to_search` exactly; and two `iterative.rs`
+tests — default-off produces byte-identical `best_move`/`score` to a
+run without the block, and enabling it on a real search from the start
+position doesn't panic and still returns a legal move.
+
+⚠️ Not yet CI-confirmed — no local `cargo` in this session's sandbox,
+same caveat as every session in this repo. This diff is meaningfully
+larger than D95's one-line fix; watch CI closely rather than assume
+green, especially given D96 already showed once this session-history
+that a seemingly-careful edit can still slip in a real mistake.
+
+⚠️ Zero Elo validation has happened yet. `ThreatDefusal` ships `false` by
+default and stays that way until the proposal's own rollout plan
+(20-game first look, not trusted alone → 100-200 game confirmation) is
+actually run — see ROADMAP.md Phase 28 for the exact next steps.
