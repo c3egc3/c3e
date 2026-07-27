@@ -1741,7 +1741,7 @@ This supersedes Session 82's "540 passed, 0 failed" total.
 
 ---
 
-## Phase 27 — External Stockfish Benchmark Regression Investigation ⏳ IN PROGRESS (Session 86)
+## Phase 27 — External Stockfish Benchmark Regression Investigation ✅ RESOLVED (Session 86 → 92, root cause D95, fix confirmed D97)
 
 **Trigger:** Gokul supplied `engine-bench-log-2026-07-26-13-10-23.txt` —
 3 games, Pet Dragon (White, Skill 20 = uncapped) vs. Stockfish (Black,
@@ -2032,6 +2032,78 @@ real post-fix bench run before this phase can close.
    anomaly (D94) still appears, that's a distinct, second issue worth
    its own investigation — don't assume one fix closes everything found
    in six sessions of data.
+
+---
+
+**Update (Session 91):** Gokul ran CI on the D95 commit and it failed —
+one test, `test_qsearch_in_check_generates_evasions`. Cause:
+D95's `str_replace` on `quiescence()`'s time check accidentally dropped
+the pre-existing `info.nodes += 1;` line (it was only in `old_str` to
+disambiguate the match, not meant to be touched, and got silently
+swallowed since `new_str` didn't include it back). Beyond the one
+failing test, this would also have undercounted total search nodes in
+NPS/`seldepth` stats and made `is_time_up()`'s 256-node sampling gate
+fire on every quiescence node instead of every 256th — a real perf
+regression that CI's single test failure didn't directly cover but
+would have shipped alongside D95 if merged as-is. **Fixed**: restored
+the one line. `alpha_beta_with_excluded()`'s own D95 edit (the other
+call site) wasn't affected — different code shape, that line was never
+in its `old_str`. Full writeup, including the process point about
+re-reading diffs rather than just checking brace balance, in
+DECISIONS.md D96.
+
+**Not yet done — next session should start here:**
+1. Gokul commits the corrected `src/search/alpha_beta.rs` and confirms
+   CI is actually green this time — all tests, not just the one that
+   failed last round.
+2. Same as before: run a bench (any config), check whether the
+   exact-zero eval rate dropped from D94's 16-49% baseline and whether
+   the win/loss/draw record improved from Sessions 85-89. Only close
+   Phase 27 if both hold.
+
+---
+
+**Update (Session 92) — PHASE 27 RESOLVED.** Gokul confirmed CI fully
+green (476 tests, including D95's two new tests and the D96 fix), then
+ran a 3-game bench: **1 draw, 1 loss, 1 win — Pet Dragon's first
+recorded win against real Stockfish in this entire investigation.**
+Exact-zero eval rate dropped from D94's 16-49% baseline to 0-8%, and the
+handful of remaining zeros are a genuine repetition-draw at depth 19-20
+(correct behavior), not the bug. The separate `+423`-then-mated anomaly
+from D94 also didn't reappear in this sample's loss — that game's eval
+trends smoothly to `mate-2`, fully coherent. Full data and reasoning in
+DECISIONS.md D97.
+
+**Phase 27 closes here.** The confirmed root cause (D95:
+`is_time_up()` never set `info.stop`, correctly landed after D96 fixed
+a self-inflicted regression in D95's own edit) is what this
+investigation existed to find, and this bench is a clean before/after
+confirmation of it. Losing one of three games to Stockfish Skill 10 is
+normal expected variance, not a remaining-bug signal — Phase 27's goal
+was never "Pet Dragon never loses," it was "Pet Dragon's own search
+shouldn't be corrupting its scores," and that specific, confirmed
+problem is gone from this sample. n=3 is not a rigorous Elo measurement
+— if Gokul wants a real Elo-impact number for the record, that's a
+future SPRT-style A/B via `uci_match_runner.rs` (same tooling used for
+every internal Elo question in this repo), but that's normal ongoing
+strength work, not an open regression to keep chasing.
+
+**Retrospective, six sessions (85-92), for the record:** started from a
+single uploaded bench log showing 3-for-3 losses; ruled out time
+pressure (100ms vs. 1000ms, same pattern) and Lazy SMP (default
+Threads=1); built diagnostic toggles for the two techniques flagged
+"Elo impact not yet measured" at ship time (D91/D92) and ran three
+separate ablations, all negative — the real bug was never in either of
+them; added per-move eval logging (D93) and found the actual empirical
+signature (Pet Dragon-specific exact-zero eval, D94); added depth
+logging to distinguish a time-starved search from one reporting a wrong
+score, which pointed straight at the real mechanism (D94→D95); found
+and fixed the root cause by reading code, not guessing (D95); caught
+and fixed a self-inflicted regression in that same fix via CI, exactly
+as CI is supposed to work (D96); confirmed the fix with real bench data
+(D97). Every negative ablation and every diagnostic addition earned its
+place in this chain — none of it was wasted, even the results that
+didn't pan out narrowed the search.
 
 ---
 

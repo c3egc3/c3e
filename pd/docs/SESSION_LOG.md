@@ -9,6 +9,122 @@ Most recent session at TOP.
 
 ---
 
+## Session 92 — 2026-07-27, cont. (PHASE 27 RESOLVED — D95 fix confirmed by real bench data; D97; first-ever win vs. real Stockfish)
+
+**Built/done:**
+
+1. Gokul confirmed CI fully green — all 476 tests, including D95's two
+   new tests and D96's correction — before running anything, per last
+   session's explicit ask.
+
+2. Ran a 3-game bench with the fixed build (control config,
+   1000ms/move, Skill 20 vs. Stockfish Skill 10). **Result: 1 draw, 1
+   loss, 1 win — the first win Pet Dragon has recorded against real
+   Stockfish anywhere in this six-session investigation.**
+
+3. Ran the same exact-zero eval quantification used every session since
+   D94 (Python regex extraction, read-only, no repo changes) against
+   this new log. **Rate dropped from D94's 16-49% baseline to 0-8%
+   across the three games**, and the handful of remaining zeros in the
+   drawn game are the final 4 plies of a genuine threefold-repetition
+   draw at depth 19-20 — correct behavior, not the bug (the bug produced
+   `0` at normal-but-not-exhaustive depths in clearly decisive
+   positions, not in an actually-drawn high-depth shuffle).
+
+4. Checked specifically for D94's second, separately-flagged anomaly
+   (a wild positive eval spike immediately before getting mated) in this
+   bench's one loss — not present; that game's eval declines smoothly
+   and monotonically all the way to `mate-2`, fully coherent with a real
+   losing position rather than a corrupted one.
+
+5. **Closed Phase 27** in ROADMAP.md (heading marked ✅ RESOLVED) with a
+   short retrospective of the full six-session chain from Session 85's
+   original bench log through D97's confirmation — every negative
+   ablation and diagnostic addition along the way earned its place, none
+   of it was wasted even where individual hypotheses (D91/D92's LMP and
+   SingularMultiCut ablations) came back negative.
+
+**Bugs fixed:** none this session specifically (D95/D96 already shipped)
+— this session is confirmation-only, closing the investigation with
+real data rather than code-review confidence.
+
+**Decisions made:** D97 (Phase 27 resolution).
+
+**Next session start point:** no open Phase 27 work. If Gokul wants a
+rigorous Elo-impact number for the D95 fix specifically (n=3 isn't
+that), that's a future SPRT-style A/B via `uci_match_runner.rs`, same
+tooling as every other internal Elo question in this repo — normal
+ongoing strength work, not a regression to keep chasing. Check
+ROADMAP.md's other open phases/tasks for what's next.
+
+---
+
+## Session 91 — 2026-07-27, cont. (CI caught a real regression in D95's own edit: quiescence()'s node counter was accidentally deleted; D96; fixed, still pending green CI)
+
+**Built/done:**
+
+1. Gokul ran CI on the D95 commit — Gokul's own initiative, exactly the
+   workflow working as intended. Result: 475 passed, 1 failed —
+   `search::alpha_beta::tests::test_qsearch_in_check_generates_evasions`
+   panicked on `assert!(info.nodes > 0, "Must search nodes when in
+   check")`.
+
+2. Read the failing test and the exact D95 diff in `quiescence()`
+   side by side. **Found the cause**: D95's `str_replace` on
+   `quiescence()`'s time check included the pre-existing
+   `info.nodes += 1;` line in `old_str` (needed to disambiguate the
+   match against the near-identical time check in
+   `alpha_beta_with_excluded()`), but `new_str` didn't carry it back
+   through — the line was silently dropped, unrelated to the actual
+   fix being made. Checked `alpha_beta_with_excluded()`'s own D95 edit
+   too: unaffected, different code shape meant that line was never
+   part of its `old_str` in the first place.
+
+3. Traced the impact beyond the one failing assertion: with
+   `info.nodes` never incrementing inside `quiescence()`, total node
+   counts (NPS, `seldepth`-adjacent stats) would have undercounted by
+   whatever fraction of nodes run through quiescence (typically large),
+   and `is_time_up()`'s `self.nodes & 255 == 0` sampling gate would have
+   evaluated true on every single quiescence node instead of every
+   256th — a real performance regression this specific CI failure
+   didn't directly test for but would have shipped alongside D95 if
+   merged as-is.
+
+4. **Fixed**: restored `info.nodes += 1;` in its original position,
+   immediately after the new D95 time-check block. One line.
+
+5. Checked every other test that calls `quiescence()` directly (4 more
+   call sites) to confirm none of them silently depended on the broken
+   node-counting behavior in a way that would need updating alongside
+   the fix — none do; only the one test asserts on `info.nodes`.
+
+6. Documented plainly in DECISIONS.md D96, including the process point:
+   an `old_str` chosen only to disambiguate a match, rather than to
+   bound exactly the lines meant to change, can silently swallow
+   adjacent code — brace/paren balance checks (which this passed even
+   with the bug present) don't catch that; re-reading the actual diff
+   would have.
+
+**Bugs fixed:** the regression introduced by D95's own edit (this
+session). D95's actual root-cause fix from last session is unaffected
+and still believed correct — this was a mechanical editing mistake in
+how that fix was applied, not a flaw in the diagnosis.
+
+**Decisions made:** D96.
+
+⚠️ **Not yet CI-confirmed** — same caveat as every session, no local
+`cargo` in this sandbox. This one-line fix needs an actual green CI run
+before trusting it, especially right after this exact class of mistake.
+
+**Next session start point:** Gokul commits the corrected
+`src/search/alpha_beta.rs`, confirms CI is fully green this time (all
+tests, not just the one that failed), then runs a bench and checks
+whether D94's exact-zero eval rate dropped and the win/loss/draw record
+improved — per ROADMAP.md Phase 27's Session 91 update. Only close
+Phase 27 once that's confirmed.
+
+---
+
 ## Session 90 — 2026-07-27, cont. (Phase 27: ROOT CAUSE FOUND AND FIXED — is_time_up() never set info.stop; D95; pending real-bench validation)
 
 **Built/done:**

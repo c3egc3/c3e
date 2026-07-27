@@ -4240,3 +4240,118 @@ different bug class than "returns a corrupted sentinel mid-search").
 Worth specifically checking whether that pattern also disappears once
 this fix is validated, or whether it's still there and needs its own
 investigation.
+
+## D96 — CI Caught a Real Regression in D95's Own Edit: quiescence()'s `info.nodes += 1` Was Accidentally Deleted (Session 91)
+
+Gokul ran CI on the D95 commit and it failed:
+`search::alpha_beta::tests::test_qsearch_in_check_generates_evasions`
+panicked on `assert!(info.nodes > 0, "Must search nodes when in
+check")` — 475 passed, 1 failed.
+
+**Cause:** D95's edit to `quiescence()`'s time check used a `str_replace`
+whose `old_str` included the pre-existing `info.nodes += 1;` line (to
+keep the match unique against the second, near-identical time-check site
+in `alpha_beta_with_excluded()`), but the `new_str` — the new comment
+block plus the `info.stop = true;` line — didn't include it back. The
+replacement silently dropped a real, load-bearing line that had nothing
+to do with the fix. `alpha_beta_with_excluded()`'s own time check (the
+second D95 site) wasn't affected — different edit, `info.nodes += 1;`
+sits far enough below it (past an intervening `if depth <= 0 {...}`
+block) that it was never part of that `old_str` in the first place.
+
+**Impact of the dropped line, beyond the one failing test:** every
+`quiescence()` call would have left `info.nodes` completely
+un-incremented — meaning the total node counts reported in NPS
+calculations and `seldepth`-adjacent stats were undercounting by
+whatever fraction of total search nodes actually run through
+`quiescence()` (typically a large fraction, since quiescence dominates
+node counts in most positions). It would also have made
+`is_time_up()`'s own 256-node sampling gate (`self.nodes & 255 == 0`)
+evaluate `true` on *every single* quiescence call instead of every
+256th — a real performance regression (an `Instant::now()` read on
+every node instead of one every 256) that this specific CI failure
+didn't directly test for but would have shipped alongside the D95 fix
+if it had merged as-is.
+
+**Fix:** restored `info.nodes += 1;` immediately after the new
+D95 time-check block in `quiescence()`, in the same position it
+occupied before D95 touched this function. One line, no other change.
+
+**Process note, stated plainly rather than glossed over:** this was
+caught by CI exactly the way it's supposed to work — Gokul ran the
+build, a real test failed, and the failure pointed straight at the
+actual defect. This is also a concrete argument for the project's own
+stated caution about `str_replace`-based edits on this repo: an
+`old_str` chosen only to disambiguate a match, rather than to bound
+exactly the lines that should change, can silently swallow adjacent
+code that has nothing to do with the edit. Re-reading the *diff* being
+produced (not just confirming brace/paren balance, which this passed
+even with the bug present) before presenting a file would have caught
+this without needing CI to.
+
+⚠️ Same caveat as every session in this investigation: no local `cargo`
+to compile/test-check this specific one-line fix before handing it
+back. This needs a green CI run to actually confirm — not assumed fixed
+from reasoning alone, especially not after this exact class of mistake
+just happened once already this investigation.
+
+## D97 — Phase 27 RESOLVED: D95 Fix Confirmed by Real Bench Data (Session 92)
+
+Gokul confirmed CI fully green (all 476 tests, including the two new
+D95 tests and the D96 correction), then ran a 3-game bench with the
+fixed build: 1000ms/move, Skill 20 vs. Stockfish Skill 10, control
+config. **Result: 1 draw, 1 loss, 1 win** — the first win Pet Dragon has
+recorded against real Stockfish anywhere in this investigation
+(Sessions 85-92, dozens of games).
+
+**Quantitative confirmation the fix worked** (same `python`
+regex-extraction method used for every prior session's analysis, still
+read-only):
+
+| Game | White exact-zero rate |
+|---|---|
+| Match 1 (draw) | 8% (4/53) |
+| Match 2 (loss) | **0%** (0/59) |
+| Match 3 (win) | **0%** (0/40) |
+
+D94's baseline across Sessions 87-89 was 16-49%. This bench: 0-8%, and
+the 4 remaining zeros in Match 1 are not the bug — they're the final 4
+plies of a 106-ply game that ends in a genuine threefold-repetition
+draw, reported at **depth 19-20**, which is exactly what a real,
+correctly-evaluated repetition-drawn position should show. That's the
+fix working correctly, not a leftover instance of the bug (which
+produced `0` at normal-but-not-exceptional depths in clearly *decisive*
+positions, not in an actual dead-drawn shuffle at very high depth).
+
+**The other D94 anomaly is also gone from this sample.** Match 2 (the
+loss) has no `+400`-ish spike-then-immediately-mated pattern — the eval
+trends smoothly and monotonically from roughly even down through
+`-100`s, `-500`s, `-1000`s to `mate-2`, fully coherent with a real,
+gradually-deteriorating position, nothing like Session 89's Match 2
+(`a8a5(+423)` two moves before getting mated). Not proof this pattern
+can never recur (n=1 on this specific anomaly), but it's the expected
+shape if D95 was the shared root cause behind both symptoms, as D94
+speculated it might be.
+
+**Assessment: Phase 27 is resolved.** The specific, confirmed bug
+(`is_time_up()` never setting `info.stop`, D95, correctly landed after
+D96's fix to D95's own accidental node-counter deletion) is what this
+investigation set out to find, and the before/after data is about as
+clean a confirmation as three games can give: the signature metric
+(exact-zero eval rate) collapsed to near-zero, the second anomaly
+disappeared, and Pet Dragon won a game for the first time. Match 2's
+loss is not concerning on its own — losing *some* games to Stockfish
+Skill 10 at equal time controls is normal, expected variance for an
+engine at this strength, not evidence of a remaining bug; the point of
+Phase 27 was never "Pet Dragon should never lose," it was "Pet Dragon
+should not be losing *because its own search is corrupting its
+scores*," and that specific problem is gone from this sample.
+
+**Not fully proven at n=3** — genuinely closing the loop on real
+playing-strength impact (as opposed to confirming the specific bug
+signature is gone) would need a much larger sample, the kind of
+SPRT-style A/B this project already has tooling for
+(`uci_match_runner.rs`) for internal Elo questions. That's a reasonable
+follow-up if Gokul wants a numeric Elo-impact estimate for the
+changelog, but it's normal ongoing strength-tracking work at this
+point, not an open regression investigation — Phase 27 closes here.
