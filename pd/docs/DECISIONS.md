@@ -4699,3 +4699,30 @@ gets to attempt that confirmation, it doesn't skip it.
 
 Not yet CI-confirmed — no local `cargo` in this session's sandbox, same
 caveat as always.
+
+## D102 — CI Caught a Bug in D101's Own Regression Test — Missing Black King in the Test FEN (Session 97)
+
+Gokul ran `cargo test` on the D101 commit: 482 passed, 1 failed —
+`search::alpha_beta::tests::test_extract_threat_move_returns_none_when_in_check`
+panicked on `Position::from_fen(...).unwrap()`:
+`KingNotFound(Black)`.
+
+**Cause:** the test's FEN (`"4r3/8/8/8/8/8/8/4K3 w - - 0 1"`) placed a
+White king and a Black rook, but never placed a Black king anywhere —
+an oversight when hand-constructing the position, not a defect in the
+D101 guard the test exists to check. `from_fen()` correctly rejects any
+position missing a king for either color; this is exactly the kind of
+mistake that check exists to catch, and it caught it.
+
+**Fix:** added a Black king on h8 (out of the way of the check itself),
+FEN now `"4r2k/8/8/8/8/8/8/4K3 w - - 0 1"` — White's king on e1 is still
+in check from the same rook on e8 down the same clear e-file, the
+scenario the test is actually meant to exercise. Updated the
+`king_sq(Color::Black)` assertion from the no-longer-applicable `E8` to
+`H8` to match.
+
+D101's actual fix (`extract_threat_move`'s `!in_check` guard) is
+unaffected by this — the failure was entirely in the test's own setup,
+never reached the code under test. `482 passed; 1 failed` before this
+fix, all other tests including the rest of D98-D101's suite passed
+clean.

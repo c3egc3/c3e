@@ -9,6 +9,38 @@ Most recent session at TOP.
 
 ---
 
+## Session 97 — 2026-07-28, cont. (D101's own regression test had a bug — missing Black king in the test FEN; fixed; D102)
+
+**Built/done:**
+
+1. Gokul ran `cargo test` on the D101 commit: 482 passed, 1 failed —
+   `test_extract_threat_move_returns_none_when_in_check` panicked on
+   `Position::from_fen(...).unwrap()`: `KingNotFound(Black)`.
+
+2. Found the cause immediately: the test's hand-constructed FEN placed
+   a White king and a Black rook but never placed a Black king anywhere
+   — an oversight in the test itself, not in D101's actual `!in_check`
+   guard. `from_fen()` correctly rejects any position missing a king for
+   either side; it caught exactly the mistake it exists to catch.
+
+3. Fixed: added a Black king on h8, FEN now
+   `"4r2k/8/8/8/8/8/8/4K3 w - - 0 1"` — same check (rook e8 down a clear
+   e-file to White's king on e1), now a valid position. Updated the
+   `king_sq(Color::Black)` assertion from `E8` to `H8` to match.
+
+**Bugs fixed:** a bug in this session's own prior test, not in the
+engine. D101's actual fix is unaffected — the failure never reached the
+code under test.
+
+**Decisions made:** D102 (brief).
+
+**Next session start point:** unchanged from Session 96 — Gokul commits
+the corrected `src/search/alpha_beta.rs`, confirms CI is fully green
+this time, then re-runs the 200-game confirmation at the same seed
+(61000). Per ROADMAP.md Phase 28's Session 97 update.
+
+---
+
 ## Session 96 — 2026-07-28 (Phase 28: TDSE crash root-caused and fixed — missing !in_check guard; D101; not yet re-confirmed crash-free)
 
 **Built/done:**

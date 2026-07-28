@@ -2325,6 +2325,17 @@ crashes.
 
 ---
 
+**Update (Session 97):** `cargo test` on the D101 commit caught a bug in
+D101's own regression test (not the fix) — its FEN never placed a Black
+king, so `from_fen()` correctly rejected it (`KingNotFound(Black)`).
+Fixed the test FEN (added a Black king on h8), test now correctly
+exercises the same in-check scenario. 482/483 passed before this fix,
+D101's actual guard was never in question. Full note in DECISIONS.md
+D102. Same next step as above still applies: commit, confirm fully
+green CI, re-run the 200-game confirmation.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|
