@@ -2277,6 +2277,54 @@ place — not another round of guessing.**
 
 ---
 
+**Update (Session 96) — root cause found and fixed, not yet
+re-confirmed.** Gokul re-ran the 200-game confirmation with D100's
+harness fix in place. Real panic captured this time:
+`position::king_sq()`'s "King must always be on the board" — a king
+bitboard had gone empty — in Engine B (`ThreatDefusal=true`) specifically,
+14 games in, confirming this is TDSE's own bug (Engine A, same commit,
+same binary, ran the same games with default options and never
+crashed).
+
+Compared `extract_threat_move` against the real null-move block it
+explicitly claims to mirror (`alpha_beta_with_excluded`'s
+`can_null_move`) rather than guessing from the panic message alone:
+found `extract_threat_move` never checks `!in_check` before flipping
+side to move, the one guard in the real null-move condition that's
+about correctness (not pruning-effectiveness heuristics, which don't
+apply to a threat probe and were correctly left out). Flipping sides
+while the current side is in check is genuinely undefined territory for
+the move-generation/check-evasion machinery this probe hands the
+position to. **Fixed**: one guard, `if pos.in_check(pos.side_to_move) {
+return None; }`, first line of the function. New regression test
+constructs an in-check FEN and asserts both kings stay exactly in place
+afterward (not just that the function returns early — this was a
+board-corruption bug, so the test checks for that specifically). Full
+trail in DECISIONS.md D101.
+
+⚠️ **This is a well-reasoned, precedent-matching fix for a confirmed
+real deviation — not yet confirmed to be the complete fix.** D100's
+standing rule still applies: TDSE stays disqualified from any
+default-on consideration until a full 200-game run completes with zero
+crashes.
+
+**Not yet done — next session should start here:**
+1. Gokul commits `src/search/alpha_beta.rs` (this session's D101 fix +
+   new test) and confirms CI is green, including the new in-check
+   regression test.
+2. Re-run the 200-game confirmation again, same seed (61000) for
+   comparability with the two prior attempts. If it completes all 200
+   games with no crash, TDSE clears D100's crash-safety bar for the
+   first time — then, and only then, D99's original Elo question
+   (100-200 game confirmation vs. deprioritizing TDSE) becomes relevant
+   again, now with a real, uncorrupted 200-game Elo result available
+   from this same run.
+3. If it crashes again (same or different panic), same discipline as
+   this session and last: get the real panic message first, read the
+   exact line it names, don't guess.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|

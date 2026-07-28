@@ -4628,3 +4628,74 @@ can crash the engine is disqualified regardless of its Elo impact.
 
 **Not yet CI-confirmed** — no local `cargo` in this session's sandbox,
 same caveat as always, for the one-file harness fix.
+
+## D101 — Phase 28: TDSE Crash Root-Caused and Fixed — Missing `!in_check` Guard (Session 96)
+
+Gokul re-ran the 200-game confirmation (same seed, 61000) with D100's
+harness fix in place. This time the real crash was captured:
+```
+thread '<unnamed>' (4354) panicked at src/position/mod.rs:270:14:
+King must always be on the board
+```
+— `Position::king_sq()`'s own panic, meaning some color's king bitboard
+had become empty. The harness's engine-naming fix (also D100) confirmed
+it was **Engine B specifically** (`ThreatDefusal=true`), 14 games into
+the run — consistent with this being TDSE's own bug, not a pre-existing
+one (Engine A, same commit, same binary, ran the same 14+ games with
+default options and never crashed).
+
+**Root cause, found by comparing `extract_threat_move` against the real
+null-move code it explicitly claims to mirror, not by guessing from the
+panic message alone:** `alpha_beta_with_excluded()`'s own null-move
+block gates its side-to-move flip behind `can_null_move = !pv_node &&
+!in_check && depth >= MIN_DEPTH_NULL_MOVE && static_eval >= beta &&
+has_non_pawn_material(...) && prev_move != Move::NULL &&
+king_safe_squares.map_or(true, |n| n > 1)`. D98's `extract_threat_move`
+only carried over `has_non_pawn_material` — every other condition in
+that list is a pruning-*effectiveness* heuristic specific to null-move
+pruning's own purpose (not relevant to a threat probe, correctly left
+out), except **`!in_check`, which is a correctness guard, not a
+heuristic one.** Flipping side-to-move while the current side is in
+check produces a position where "whose king is under attack" and
+"whose turn it is" no longer agree — undefined territory for the normal
+move-generation/check-evasion machinery this probe then hands the
+position to. This is exactly the kind of state `alpha_beta_with_excluded`
+was never designed to receive, and searching it can select/return
+something built on invalid assumptions that later manifests as
+board-state corruption once real moves derived from it get applied.
+
+At the root of `iterative_deepening()` (where TDSE's block runs, after
+the real search already completed), the side to move being in check is
+completely ordinary — it happens whenever the last move made was a
+check. D98 never covered this case with any test, since none of the
+four constructed-FEN unit tests happened to start from an in-check
+position — the gap only showed up once TDSE ran across ~14 real games'
+worth of real positions, exactly the scale D100 already flagged unit
+tests can't substitute for.
+
+**Fix:** one guard, `if pos.in_check(pos.side_to_move) { return None;
+}`, added as the very first check in `extract_threat_move` — before
+`has_non_pawn_material`, matching the real null-move block's own
+ordering isn't required for correctness here but keeps the two
+side-by-side comparisons easy to eyeball. TDSE simply doesn't apply its
+tiebreak logic when the position is already in check; the near-tied
+candidates still get returned via the normal search result untouched.
+
+**New regression test**: constructs a FEN with White's king in check
+from a rook down a clear file, asserts `extract_threat_move` returns
+`None`, and — specifically because this was a real crash involving
+board corruption, not just a wrong-answer bug — asserts both kings are
+still exactly where they started and `side_to_move` is unchanged
+afterward, not just that the function returned early.
+
+⚠️ **This fix is well-reasoned and directly targets a confirmed,
+real deviation from working, precedent code — but it has not been
+confirmed to be the *complete* fix by an actual crash-free re-run.**
+It's possible (though not evidenced by anything found this session)
+that a second, independent issue also exists. Per D100's own standing
+rule: **TDSE remains disqualified from any default-on consideration
+until a full 200-game run completes with zero crashes** — this fix
+gets to attempt that confirmation, it doesn't skip it.
+
+Not yet CI-confirmed — no local `cargo` in this session's sandbox, same
+caveat as always.

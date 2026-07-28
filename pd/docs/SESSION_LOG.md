@@ -9,6 +9,73 @@ Most recent session at TOP.
 
 ---
 
+## Session 96 — 2026-07-28 (Phase 28: TDSE crash root-caused and fixed — missing !in_check guard; D101; not yet re-confirmed crash-free)
+
+**Built/done:**
+
+1. Gokul re-ran the 200-game confirmation (same seed, 61000) with
+   Session 95's harness fix in place. Real panic captured this time:
+   `thread '<unnamed>' (4354) panicked at src/position/mod.rs:270:14:
+   King must always be on the board` — `Position::king_sq()`'s own
+   panic, meaning a king bitboard had gone empty. The harness's
+   engine-naming fix (also Session 95) confirmed it was **Engine B**
+   (`ThreatDefusal=true`) that crashed, 14 games in — Engine A, same
+   commit/binary, ran the same games with default options and never
+   crashed, confirming this is TDSE's own bug.
+
+2. Read `Position::king_sq()` (`src/position/mod.rs:270`) to confirm
+   exactly what it panics on (an empty king bitboard for the queried
+   color), then compared `extract_threat_move` line-by-line against the
+   real null-move block it explicitly claims to mirror
+   (`alpha_beta_with_excluded`'s `can_null_move` condition) rather than
+   guessing from the panic message alone.
+
+3. **Found the gap**: the real null-move guard is `!pv_node && !in_check
+   && depth >= MIN_DEPTH_NULL_MOVE && static_eval >= beta &&
+   has_non_pawn_material(...) && prev_move != Move::NULL &&
+   king_safe_squares...`. D98's `extract_threat_move` only carried over
+   `has_non_pawn_material` — every other omitted condition is a
+   pruning-effectiveness heuristic that genuinely doesn't apply to a
+   threat probe (correctly left out), except `!in_check`, which is a
+   correctness guard: flipping side-to-move while the current side is in
+   check produces a position where "whose king is under attack" and
+   "whose turn it is" disagree, which is undefined territory for the
+   normal move-generation/check-evasion machinery this probe hands the
+   position to. None of D98's four unit tests happened to start from an
+   in-check position, so this gap only surfaced once TDSE ran across
+   real games at scale.
+
+4. **Fixed**: `if pos.in_check(pos.side_to_move) { return None; }` as
+   the first check in `extract_threat_move`. Added a regression test
+   with an in-check FEN that asserts both kings are still exactly where
+   they started afterward — not just that the function returns early,
+   since this was specifically a board-corruption bug.
+
+**Bugs fixed:** the confirmed root cause of Session 95's crash (D101).
+Explicitly flagged as not yet re-confirmed by an actual crash-free run —
+this is a well-reasoned, precedent-matching fix for a real, confirmed
+deviation, not a guaranteed complete fix.
+
+**Decisions made:** D101.
+
+⚠️ **TDSE stays disqualified from any default-on consideration** (per
+D100's standing rule) until a full 200-game run completes with zero
+crashes — this fix earns another attempt at that confirmation, it
+doesn't skip it.
+
+⚠️ **Not yet CI-confirmed** — no local `cargo` in this session's
+sandbox, same caveat as always.
+
+**Next session start point:** Gokul commits `src/search/alpha_beta.rs`
+(this session's fix + new test), confirms CI is green, then re-runs the
+200-game confirmation at the same seed (61000) one more time. Zero
+crashes clears D100's bar for the first time and makes D99's Elo
+question live again with a real, uncorrupted result from that same run.
+Another crash — same discipline: get the real message, read the exact
+line, don't guess. Per ROADMAP.md Phase 28's Session 96 update.
+
+---
+
 ## Session 95 — 2026-07-27, cont. (Phase 28: 200-game TDSE confirmation CRASHED — harness was discarding the real panic message, fixed; TDSE's own bug still unconfirmed; D100)
 
 **Built/done:**
