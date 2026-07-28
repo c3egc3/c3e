@@ -2202,6 +2202,81 @@ by default until that full cycle completes.
 
 ---
 
+**Update (Session 94):** Gokul ran the 20-game first look via the
+`uci_match_runner` mobile Actions workflow, exactly per step 2 above.
+**Result: A (control, `ThreatDefusal=false`) 3 wins, B (`ThreatDefusal=
+true`) 1 win, 16 draws — A score 55.0%, Elo diff +34.9 favoring the
+control.** Checked the statistics before reacting to the direction: with
+only 4 decisive games out of 20, the 95% CI on this result is roughly
+(45%, 65%) — **not statistically distinguishable from zero** at this
+sample size, same "don't trust n=20 alone" standard D76/D84 already
+established for this project. Full writeup in DECISIONS.md D99.
+
+**Open decision, explicitly not resolved yet — Gokul's call:** the
+point estimate leans negative, not neutral, which is a different
+situation than a genuinely flat first look. Two legitimate paths: (a)
+run the 100-200 game confirmation the plan already committed to for any
+non-clearly-negative first look, since this one's CI does include zero;
+or (b) treat the negative lean as enough signal to deprioritize TDSE for
+now without spending the larger CI budget, revisitable once the
+SEE-degradation/control-delta signals exist and might change the
+picture. `ThreatDefusal` stays `false` by default regardless of which
+path is chosen.
+
+---
+
+**Update (Session 95) — ⚠️ CRASH FOUND, more urgent than the Elo
+question above.** Gokul chose path (a) and ran the 200-game
+confirmation (seed 61000, 100ms/move). **It crashed after 14 completed
+games** — the harness's own "engine process closed stdout while waiting
+for 'bestmove'" panic, meaning one of the two child engine processes
+(almost certainly Engine B, `ThreatDefusal=true`, given this is
+brand-new code never exercised at this scale) itself panicked and
+aborted (`Cargo.toml`'s release profile uses `panic = "abort"`,
+matching the observed "Aborted (core dumped)"). **A crash matters more
+than Elo — this disqualifies TDSE from any default-on consideration
+regardless of what the Elo question resolves to**, until root-caused
+and fixed.
+
+The actual engine panic message wasn't captured anywhere in the CI
+logs — traced this to `uci_match_runner.rs` spawning child engines with
+`.stderr(Stdio::null())`, silently discarding exactly the stream a Rust
+panic prints to. **Fixed** (this session, one file): `Stdio::inherit()`
+instead, plus the panic message in `wait_for_line_starting_with` now
+names which engine (`label_a`/`label_b`) closed its stdout. No workflow
+YAML change needed — GitHub Actions already captures the harness's own
+stderr combined with stdout, `inherit()` just stops throwing away the
+child's copy of that same stream.
+
+Static review of the new TDSE code (`extract_threat_move`,
+`defuses_threat`, the `iterative.rs` sibling block) didn't find an
+obvious panic source by reading alone — checked every unwrap/index/
+overflow possibility, all clean or ruled out (see DECISIONS.md D100 for
+the full trail, including confirming `panic="abort"` explains the
+crash *symptom* without pointing at a specific line). **The real fix
+requires the real panic message from a re-run with the harness fix in
+place — not another round of guessing.**
+
+**Not yet done — next session should start here:**
+1. Gokul commits `src/bin/uci_match_runner.rs` (this session's
+   diagnostic fix) and confirms CI is green (the match-runner binary
+   itself has no new tests to add here, but confirm it still builds and
+   the existing regression-gate workflows that use it still pass).
+2. Re-run the same 200-game confirmation (same seed, 61000, for an
+   exact repro) with the fixed harness. This time the crashed engine's
+   own panic message and source location should appear directly in the
+   CI log.
+3. Read that specific line in the specific file it names, in full,
+   before writing any fix — same discipline as every other bug in this
+   project's history. Do not guess at a fix from D100's hypothesis
+   alone; confirm against the real message first.
+4. Only once the crash is fixed and re-confirmed crash-free does D99's
+   Elo question (100-200 game confirmation vs. deprioritizing TDSE)
+   become relevant again — a crashing technique isn't a candidate for
+   promotion regardless of its Elo number.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|

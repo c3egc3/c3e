@@ -9,6 +9,119 @@ Most recent session at TOP.
 
 ---
 
+## Session 95 — 2026-07-27, cont. (Phase 28: 200-game TDSE confirmation CRASHED — harness was discarding the real panic message, fixed; TDSE's own bug still unconfirmed; D100)
+
+**Built/done:**
+
+1. Gokul chose path (a) from D99's open decision and ran the 100-200
+   game confirmation: 200 games, 100ms/move, seed 61000, same A/B shape
+   (Engine A control, Engine B `ThreatDefusal=true`).
+
+2. **The run crashed after 14 completed games** — harness panic:
+   "engine process closed stdout while waiting for 'bestmove'",
+   "Aborted (core dumped)", exit code 134. Treated this as more urgent
+   than D99's Elo question — a crash means forfeiting/hanging in real
+   play regardless of strength.
+
+3. Checked every log file the run produced for any trace of the actual
+   crashed engine's own panic message — found none. Traced why: read
+   `src/bin/uci_match_runner.rs` in full (mandatory read-before-write)
+   and found `EngineProcess::spawn()` spawns child engines with
+   `.stderr(Stdio::null())` — silently discarding the exact stream a
+   Rust panic prints to. This is why only the harness's own *secondary*
+   panic (detecting the closed stdout) was ever visible, not the
+   engine's actual panic message and location.
+
+4. **Fixed the diagnostic gap before attempting to diagnose or fix the
+   actual TDSE crash** — same "get real data before guessing"
+   discipline the whole Phase 27 investigation used. Changed
+   `Stdio::null()` to `Stdio::inherit()` (confirmed no workflow YAML
+   change needed — GitHub Actions already captures the harness's own
+   stderr combined with stdout in the step log, `inherit()` just stops
+   discarding the child's copy of that stream). Added a `name` field to
+   `EngineProcess`, threaded from the already-computed `label_a`/
+   `label_b`, so a future crash's panic message says which engine died.
+
+5. Did a static review of the new Phase 28 TDSE code
+   (`extract_threat_move`, `defuses_threat`, the `iterative.rs` sibling
+   block) looking for an obvious panic source, without finding one by
+   inspection alone — checked every unwrap/expect/indexing operation
+   (all safe), confirmed `Cargo.toml`'s `panic = "abort"` release
+   profile explains the crash *symptom* observed, ruled out integer
+   overflow as a cause (`overflow-checks` not enabled in release,
+   `INFINITY = 1_000_000` nowhere near overflow range regardless),
+   confirmed `alpha_beta_with_excluded()` being called directly at
+   `ply=1` isn't skipping any hidden setup the public `alpha_beta()`
+   wrapper would otherwise do (the wrapper is a thin passthrough).
+   **Did not find the specific bug** — explicitly left as unconfirmed,
+   a hypothesis at most, not something to fix blind.
+
+**Bugs fixed:** the harness's own diagnostic gap (real panic messages
+being silently discarded). The actual TDSE crash is **not yet fixed** —
+still unconfirmed which line causes it.
+
+**Decisions made:** D100 — also explicitly states TDSE must not be
+considered for default-on under any circumstances until this crash is
+root-caused and fixed, superseding D99's Elo question in priority.
+
+⚠️ **Not yet CI-confirmed** — no local `cargo` in this session's
+sandbox, same caveat as always.
+
+**Next session start point:** Gokul commits
+`src/bin/uci_match_runner.rs`, confirms CI is green, then re-runs the
+same 200-game confirmation at the same seed (61000) for an exact repro.
+This time the crashed engine's own panic message and source location
+should appear in the CI log — read that specific line in full before
+writing any fix, do not act on this session's unconfirmed hypothesis
+alone. Per ROADMAP.md Phase 28's Session 95 update.
+
+---
+
+## Session 94 — 2026-07-27, cont. (Phase 28: TDSE 20-game first look — mild negative point estimate, not statistically distinct from zero; D99)
+
+**Built/done:**
+
+1. Gokul ran the 20-game `ThreatDefusal` A/B via the mobile GitHub
+   Actions workflow (`uci_match_runner.yml`), exactly per D98's plan:
+   same commit built twice, Engine A compiled-in defaults (control,
+   `ThreatDefusal=false`), Engine B `setoption name ThreatDefusal value
+   true`, 1000ms/move, seed 60000.
+
+2. **Result**: A (control) 3 wins, B (TDSE on) 1 win, 16 draws — A score
+   55.0%, Elo diff +34.9 favoring the control (TDSE off).
+
+3. Didn't react to the direction alone — checked the statistics first,
+   same discipline D76/D84 already established in this project for
+   small-sample first looks. With only 4 decisive games out of 20, a
+   rough 95% CI on the score (empirical per-game variance, `SE =
+   SD/√20`) comes out to roughly (45%, 65%) — **not statistically
+   distinguishable from a coin flip** at this sample size. The point
+   estimate is real and mildly discouraging, but the uncertainty band
+   is wide enough that flat or even mildly positive results are still
+   consistent with this data.
+
+4. Documented the result and an explicit, unresolved decision point in
+   DECISIONS.md D99 and ROADMAP.md's Phase 28 section: since this first
+   look doesn't meet a "clearly negative" bar in a statistically
+   rigorous sense, the original plan's own criterion says proceed to a
+   100-200 game confirmation run — but the negative lean (as opposed to
+   a genuinely flat result) makes it reasonable to instead deprioritize
+   TDSE without spending that CI budget right now. Left as Gokul's
+   choice, not resolved unilaterally.
+
+**Bugs fixed:** none — result-recording and statistical interpretation
+only, no code touched this session.
+
+**Decisions made:** D99 (result + explicitly open decision, not a
+resolution).
+
+**Next session start point:** Gokul decides between the two paths in
+ROADMAP.md Phase 28's Session 94 update — run the 100-200 game
+confirmation, or pause TDSE work for now. `ThreatDefusal` stays `false`
+by default either way, so there's no urgency driving the choice.
+
+---
+
 ## Session 93 — 2026-07-27, cont. (Phase 28 opened: TDSE first diff — verified an external design doc against real code, found and fixed one real error, shipped legality-only signal; D98)
 
 **Built/done:**

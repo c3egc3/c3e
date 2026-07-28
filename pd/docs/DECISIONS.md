@@ -4484,3 +4484,147 @@ that a seemingly-careful edit can still slip in a real mistake.
 default and stays that way until the proposal's own rollout plan
 (20-game first look, not trusted alone → 100-200 game confirmation) is
 actually run — see ROADMAP.md Phase 28 for the exact next steps.
+
+## D99 — Phase 28: TDSE 20-Game First Look — Mild Negative Point Estimate, Not Statistically Distinct From Zero (Session 94)
+
+Gokul ran the `uci_match_runner` A/B via the mobile Actions workflow,
+exactly per D98's plan: same commit (`main`) built twice, Engine A with
+compiled-in defaults (`ThreatDefusal=false`, the control), Engine B with
+`setoption name ThreatDefusal value true`. 20 games, 1000ms/move, seed
+60000.
+
+**Raw result:**
+```
+A wins: 3   B wins: 1   Draws: 16
+A score: 55.0%
+Elo diff (A vs B): +34.9
+```
+
+`ThreatDefusal=true` (Engine B) scored worse than the control — a
+point-estimate Elo loss of ~35. **Following this project's own D76/D84
+discipline exactly: a 20-game first look is not trusted alone in either
+direction, and this one needs the same "not statistically distinct from
+zero" scrutiny those entries always give a small-sample result before
+reacting to it.**
+
+Checked: with only 4 decisive games out of 20 (3 A wins, 1 B win) and 16
+draws, a rough 95% confidence interval on A's score
+(mean 55.0%, empirical SD over per-game scores, `SE = SD/√20`) comes out
+to roughly **(45%, 65%)** — comfortably straddling 50%. This result is
+**not statistically distinguishable from a coin flip** at this sample
+size. The point estimate is real and mildly discouraging, but the
+uncertainty band is wide enough that "TDSE is worse," "TDSE is neutral,"
+and even "TDSE is mildly better" are all still consistent with this
+data.
+
+**Recommendation, not a unilateral decision — this is genuinely a
+judgment call at this significance level, Gokul's to make:**
+- The ROADMAP Phase 28 plan called for a 100-200 game confirmation run
+  "if the first look isn't clearly negative." This result doesn't meet
+  a "clearly negative" bar in a statistically rigorous sense (the CI
+  includes zero), so the plan's own criterion technically says proceed
+  to confirmation.
+- That said, the point estimate is negative, not positive or flat — this
+  isn't a case like D91/D92's LMP/SingularMultiCut ablations where the
+  first look gave genuinely no signal either way. A 100-200 game
+  confirmation run costs real CI time for a technique whose first look,
+  while inconclusive, leans the wrong direction rather than a
+  neutral/promising one.
+- Both are legitimate paths: (a) run the 100-200 game confirmation
+  anyway, since the plan already committed to that threshold and a
+  mildly-negative-but-inconclusive result is exactly the ambiguous case
+  that threshold exists to resolve, or (b) treat this as enough signal to
+  deprioritize TDSE for now without spending the larger CI budget,
+  revisitable later if a different signal set (SEE-degradation,
+  control-delta) shows more promise once implemented. Left open for
+  Gokul to decide — not resolved by this entry.
+
+**No code changes this session** — diagnostic/decision-recording only,
+`ThreatDefusal` stays `false` by default either way pending that choice.
+
+## D100 — Phase 28: 200-Game Confirmation Run CRASHED — Real Bug Found in Harness's Own Diagnostics, Fixed; TDSE's Own Bug Still Unconfirmed (Session 95)
+
+Gokul chose to proceed with the 100-200 game confirmation run from
+D99's open decision — 200 games, 100ms/move, seed 61000, same
+`uci_match_runner` A/B shape (Engine A = control, Engine B =
+`ThreatDefusal=true`). **The run crashed after 14 completed games**,
+mid-game 15:
+```
+thread 'main' (3098) panicked at src/bin/uci_match_runner.rs:146:17:
+engine process closed stdout while waiting for 'bestmove'
+... Aborted (core dumped) ... Process completed with exit code 134.
+```
+**This is a more serious finding than D99's Elo question.** A crash
+means forfeiting/hanging in real play regardless of playing strength —
+more important to resolve than whether TDSE is +/- some Elo.
+
+**What this message actually tells us, and what it doesn't:** the
+panic shown is the *harness's own* secondary panic (`uci_match_
+runner.rs`'s `wait_for_line_starting_with`, detecting that a child
+engine process's stdout closed) — not the crashed engine's own panic
+message. `RUST_BACKTRACE: 1` is set for the job, but that only helps if
+the *engine's own* panic gets a chance to print, and checking
+`EngineProcess::spawn()` found it does not: the child was spawned with
+`.stderr(Stdio::null())`, silently discarding exactly the one stream
+that would have shown which engine crashed, where, and why. Confirmed
+by grepping every log file this run produced for "panic" — only the
+harness's own message appears anywhere.
+
+**Fixed the actual gap before attempting to diagnose the real crash
+further** — same "get better data before guessing" discipline this
+whole investigation (Phase 27) already used, not a first attempt to
+patch TDSE blind:
+- `EngineProcess::spawn()`'s `.stderr(Stdio::null())` → `.stderr(Stdio::
+  inherit())`. The child's stderr now flows into the harness's own
+  stderr, which GitHub Actions already captures combined with stdout in
+  the step log by default (confirmed: the harness's own stderr panic
+  message from *this* run already appeared in the captured log despite
+  going to stderr, proving the step-level capture already covers it —
+  `inherit()` just stops throwing away the child's copy of that same
+  already-captured stream). No workflow YAML change needed.
+- Added a `name: String` field to `EngineProcess`, threaded from
+  `label_a`/`label_b` (already computed at the top of `main()`) through
+  `spawn()`, and used in the `wait_for_line_starting_with` panic message
+  so a future crash says *which* of the two engines died, not just that
+  one did — previously only inferable from the last successfully
+  printed `game N/200` line.
+
+**Static review of the new Phase 28 TDSE code (`extract_threat_move`,
+`defuses_threat`, the `iterative_deepening()` sibling block) for an
+obvious panic source before concluding anything:** checked every
+`unwrap`/`expect`/indexing operation in code touched this phase.
+`tt.probe(...).map(...).unwrap_or(...)` is panic-safe. `candidates[0]`
+is always valid (the vec is seeded with one element before any
+possibility of being empty). Confirmed `Cargo.toml`'s `[profile.
+release]` sets `panic = "abort"` (explains the exact "Aborted (core
+dumped)" symptom) and does **not** set `overflow-checks` or `debug-
+assertions` true, ruling out an arithmetic-overflow panic as the cause
+(`INFINITY = 1_000_000`, nowhere near `i32::MIN`/`MAX`, so even an
+unguarded negation wouldn't overflow regardless). Confirmed
+`alpha_beta_with_excluded()` — called directly from `extract_threat_
+move` at `ply=1` rather than via the normal root entry — is exactly
+what the public `alpha_beta()` wrapper itself calls with `excluded =
+Move::NULL`, so this isn't skipping any hidden root-only setup the
+wrapper would otherwise do. **Did not find the specific panicking line
+by static reading alone** — this needs the actual captured panic
+message from a re-run, not another round of guessing.
+
+**Not yet fixed**: the actual TDSE crash. Leading, unconfirmed
+hypothesis given it's brand-new code exercised for the first time at
+real match scale (14 games / ~a few hundred positions, vs. the four
+constructed-FEN unit tests from D98): something in `extract_threat_
+move`'s one-ply probe or the candidate-gathering loop in `iterative.rs`
+hits an edge case current unit tests don't cover (a position with very
+few legal moves, an in-check root position interacting with the probe's
+side-flip, or a state left slightly inconsistent by an aborted
+`search_multipv_slot` call under D95's now-correctly-propagating
+`info.stop`). Explicitly a hypothesis, not a diagnosis — do not act on
+it without the real panic message.
+
+**⚠️ TDSE must not be considered for default-on under any
+circumstances — Elo question or not — until this crash is root-caused
+and fixed.** This supersedes D99's open Elo question; a technique that
+can crash the engine is disqualified regardless of its Elo impact.
+
+**Not yet CI-confirmed** — no local `cargo` in this session's sandbox,
+same caveat as always, for the one-file harness fix.
