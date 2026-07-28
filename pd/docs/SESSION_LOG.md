@@ -9,6 +9,50 @@ Most recent session at TOP.
 
 ---
 
+## Session 98 — 2026-07-28, cont. (Phase 28: TDSE clears the crash-safety bar — 200/200 games, zero crashes; Elo reverses to mildly positive, still not conclusive; D103)
+
+**Built/done:**
+
+1. Gokul re-ran the 200-game confirmation, same seed (61000), with
+   D101/D102's fix committed. **All 200 games completed — zero
+   crashes.** The `!in_check` guard fix is now confirmed against the
+   exact same seed/games that crashed the previous attempt at game 15 —
+   this isn't just "didn't crash on different games," it's a direct
+   repro-and-fix confirmation.
+
+2. Read the Elo result: A (control) 34 wins, B (`ThreatDefusal=true`) 42
+   wins, 124 draws — A score 48.0%, Elo diff -13.9 favoring TDSE. This
+   reverses the direction of D99's n=20 first look.
+
+3. Computed the same 95% CI check used for every small-sample result in
+   this project (empirical per-game variance, `SE = SD/√200`): roughly
+   (43.7%, 52.3%) — much tighter than D99's (45%, 65%) and now mostly on
+   the favorable side for TDSE, but still narrowly includes 50%. **Not
+   yet a statistically conclusive positive result** — read D99's earlier
+   negative-leaning result as exactly the noisy small-sample outcome its
+   own entry warned it might be, not as something this result
+   contradicts.
+
+4. Documented in DECISIONS.md D103 that this does *not* justify flipping
+   `ThreatDefusal`'s default — a CI still touching 50% is disqualifying
+   for that regardless of how encouraging the direction is — and laid
+   out two independent, non-blocking next paths: a larger confirmatory
+   run for Elo confidence, or starting the SEE-degradation signal now
+   that crash-safety is established. Left as Gokul's call which to do
+   next, same as D99's original open-decision framing.
+
+**Bugs fixed:** none this session — confirmation and result-recording
+only. D101's fix from two sessions ago is what's being confirmed here.
+
+**Decisions made:** D103.
+
+**Next session start point:** Gokul picks one of the two paths in
+ROADMAP.md Phase 28's Session 98 update — a 400+ game confirmatory run
+for Elo confidence, or starting the SEE-degradation signal as TDSE's
+next isolated diff. Neither blocks the other.
+
+---
+
 ## Session 97 — 2026-07-28, cont. (D101's own regression test had a bug — missing Black king in the test FEN; fixed; D102)
 
 **Built/done:**

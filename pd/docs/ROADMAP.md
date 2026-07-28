@@ -2336,6 +2336,38 @@ green CI, re-run the 200-game confirmation.
 
 ---
 
+**Update (Session 98) — TDSE clears the crash-safety bar; Elo picture
+now mildly positive, still not conclusive.** Gokul re-ran the 200-game
+confirmation, same seed (61000), with D101/D102 in place. **All 200
+games completed — zero crashes.** The `!in_check` fix is confirmed
+against the exact scenario that crashed the previous attempt at game 15.
+
+Elo result, same run: **A (control) 48.0%, B (`ThreatDefusal=true`)
+52.0% — Elo diff -13.9 favoring TDSE**, reversing D99's n=20 first look
+(which leaned the other way and was already flagged as noise-level).
+95% CI on this larger sample: roughly (43.7%, 52.3%) — much tighter than
+the n=20 result and now mostly on TDSE's favorable side, but still
+narrowly includes 50%, so **not yet a statistically conclusive
+positive**. Full stats and reasoning in DECISIONS.md D103.
+
+**Where Phase 28 stands:** crash-safety resolved. Elo: promising, not
+proven — the CI still touching 50% means `ThreatDefusal`'s default stays
+`false` regardless of the encouraging direction; that's not this
+session's call to relax.
+
+**Not yet done — two independent, non-blocking paths forward:**
+1. **Elo confidence**: a larger confirmatory run (400+ games, fresh
+   seed) if Gokul wants to resolve the remaining statistical ambiguity
+   before any default-flip discussion — same "don't trust a
+   near-the-noise-floor result" discipline as D76/D84.
+2. **New signal**: implement the SEE-degradation signal (the proposal's
+   §3, still not started since D98) as its own isolated diff, now that
+   the legality-only signal is confirmed crash-safe — doesn't need to
+   wait on path 1 finishing.
+Either is a reasonable next session; Gokul's call which to prioritize.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|

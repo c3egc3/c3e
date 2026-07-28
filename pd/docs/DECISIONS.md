@@ -4726,3 +4726,56 @@ unaffected by this — the failure was entirely in the test's own setup,
 never reached the code under test. `482 passed; 1 failed` before this
 fix, all other tests including the rest of D98-D101's suite passed
 clean.
+
+## D103 — Phase 28: 200-Game Re-Confirmation — Crash-Free, TDSE Clears D100's Safety Bar; Elo Picture Reverses to Mildly Positive, Still Not Conclusive (Session 98)
+
+Gokul re-ran the 200-game confirmation, same seed (61000), with D101/
+D102's fix in place. **All 200 games completed — zero crashes.** TDSE
+clears D100's crash-safety bar for the first time since Phase 28 opened.
+This is the headline result: the `!in_check` guard fix is confirmed
+correct against the exact scenario (same seed, same 200 real games,
+including whatever position at game 15 crashed the previous attempt)
+that previously crashed at game 15.
+
+**Elo result, same run:**
+```
+A wins: 34   B wins: 42   Draws: 124
+A score: 48.0%
+Elo diff (A vs B): -13.9
+```
+Engine A (control, `ThreatDefusal=false`) scored 48.0%, Engine B
+(`ThreatDefusal=true`) scored 52.0% — a **point-estimate Elo gain of
+~14 for TDSE**, reversing the direction of D99's n=20 first look
+(which had leaned ~35 Elo the other way, and was itself already flagged
+as not statistically distinct from zero at that sample size).
+
+**Statistical check, same method as D99 and every small-sample result
+in this project:** empirical per-game variance over the 200 scores
+(34×1.0, 124×0.5, 42×0.0), `SE = SD/√200` → 95% CI on A's score is
+roughly **(43.7%, 52.3%)**. This interval is *much* tighter than D99's
+(45%,65%) at n=20, and now sits almost entirely on the "B is better"
+side — but it still narrowly includes 50%, so this is **not yet a
+statistically airtight positive result**, just a substantially more
+reliable and now favorably-directed one. D99's n=20 result should be
+read as exactly the kind of noisy small-sample outcome its own entry
+already warned it might be, not as a real signal that got contradicted.
+
+**Where this leaves Phase 28:**
+- Crash-safety: resolved (D101, confirmed by this run).
+- Elo: promising, not proven. A larger confirmatory run (the project's
+  usual next step for anything this close to the noise floor — see
+  D76/D84/D91-D93's own precedents for not trusting an inconclusive CI)
+  is the honest next step before any consideration of flipping
+  `ThreatDefusal`'s default. This entry does **not** recommend flipping
+  the default — the CI including 50% is disqualifying for that on its
+  own, independent of the crash question now being resolved.
+- Given crash-safety is now established, implementing the SEE-degradation
+  signal (the proposal's §3, still not started — see D98) is reasonable
+  to pursue in parallel with gathering more Elo confidence on the
+  legality-only signal alone, rather than blocking one on the other.
+
+**Not yet done:** a larger (400+ game, fresh seed) confirmatory run if
+Gokul wants to resolve the remaining statistical ambiguity before
+deciding whether to keep investing in TDSE; otherwise, proceeding to the
+SEE-degradation signal as the next isolated diff is a reasonable
+parallel path now that the technique is confirmed safe.
