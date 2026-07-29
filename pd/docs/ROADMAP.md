@@ -71,6 +71,14 @@
       store(), probe(), probe_move()
       score_to_tt() / score_from_tt() mate score adjustment
       new_search() age increment, fill_permille() stats
+- [x] 6.1 — Bug fix (Session 102, D107): `TranspositionTable::new()`
+      sizing formula silently halved capacity at every exact
+      power-of-two Hash size (16/32/64/128/256 MB — including the
+      64 MB default). Found by external review (F-1), fixed by
+      flooring directly to the largest power of two <= raw entry
+      count instead of `next_power_of_two() / 2`. Two new regression
+      tests assert the exact expected entry count. See DECISIONS.md
+      D107.
 
 ---
 

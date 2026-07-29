@@ -9,6 +9,70 @@ Most recent session at TOP.
 
 ---
 
+## Session 102 — 2026-07-29 (Fix F-1: TT sizing bug silently halved capacity at every exact power-of-two Hash size; D107)
+
+**Built/done:**
+
+1. Acted on the external Engineering/Performance/Documentation review
+   set (uploaded 28 July 2026), which had independently confirmed F-1
+   as a genuine, undocumented defect and ranked it the top-priority
+   fix. Fetched `src/tt/mod.rs` fresh from `g-c-3/pet-dragon` (not
+   assumed from the review's quoted snippet) before touching anything.
+
+2. Confirmed the bug directly against source: `TranspositionTable::
+   new()` computed `num_entries` via `(bytes / entry_size).
+   next_power_of_two() / 2`. `next_power_of_two()` is a no-op when its
+   input is already a power of two, so the `/ 2` right after it simply
+   discards half the requested capacity — and `bytes / entry_size`
+   lands on an exact power of two at every standard Hash value
+   (16/32/64/128/256 MB), including the engine's own 64 MB default.
+   `TTEntry` is confirmed 16 bytes (matches its own doc comment), so
+   64 MB / 16 B = 4,194,304 = 2^22 exactly — the engine's default Hash
+   setting was silently running at 32 MB of real capacity, not 64 MB.
+
+3. Fixed by replacing the round-trip through `next_power_of_two()/2`
+   with a direct floor-to-largest-power-of-two computation
+   (`1usize << (usize::BITS - 1 - raw_entries.leading_zeros())`,
+   guarded for `raw_entries == 0`), keeping the existing `.max(1024)`
+   floor unchanged after that step. Behavior is unchanged for
+   non-exact-power-of-two byte counts — the old and new formulas were
+   already equivalent there; only the exact-power-of-two case (every
+   standard Hash size) was affected.
+
+4. Added two regression tests in `tt/mod.rs`:
+   `test_tt_size_exact_power_of_two_not_halved` asserts the *exact*
+   expected entry count (not just an inequality, unlike the pre-
+   existing `test_tt_size`) at 16/32/64/128/256 MB, computed from
+   `std::mem::size_of::<TTEntry>()` at run time so it can't silently
+   drift if the struct's layout ever changes size.
+   `test_tt_size_non_power_of_two_floors_correctly` confirms the
+   non-exact case (100 MB) is unaffected.
+
+5. Checked `main.rs`'s `Hash` UCI option wiring (`cmd_setoption`,
+   `tt.resize()`, `TranspositionTable::new(DEFAULT_HASH_MB)`) for any
+   code that assumed the old halved behavior — none found; the fix is
+   fully self-contained to `tt/mod.rs`.
+
+**Bugs fixed:** F-1 (TT sizing) — see DECISIONS.md D107 for full
+before/after reasoning and why it went uncaught (the pre-existing test
+only asserted `size_mb() <= 64`, an inequality the buggy half-size
+value also satisfied).
+
+**Decisions made:** D107.
+
+**Next session start point:** Gokul commits `src/tt/mod.rs` (REPLACE)
+and confirms CI is green, including the 2 new regression tests
+(482 → 484 expected library test count). Once confirmed green, move to
+F-2 (en-passant hash desync in null-move pruning, `search/
+alpha_beta.rs`) — the other confirmed, undocumented gap from the same
+review set, next in priority order per the Engineering Review's
+recommendation. Read `search/alpha_beta.rs` and `search/pruning.rs`
+(the null-move probe and `extract_threat_move`) fresh before writing
+that fix — do not assume the review's quoted line numbers are still
+current, the file has moved since (TDSE landed in between).
+
+---
+
 ## Session 101 — 2026-07-28, cont. (Phase 28: SEE-degradation Elo results land near the noise floor across two independent 200-game samples; crash-safety holds; D106)
 
 **Built/done:**

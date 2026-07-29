@@ -5018,3 +5018,52 @@ running another confirmation, since "validate mechanism, then tune"
 (D104's own stated order) has now had its mechanism-validation step
 done twice without a clear result, and tuning is the one variable in
 this technique that's never actually been touched.
+
+---
+
+## D107 — Fix TT Sizing: Floor Directly to Power-of-Two Instead of `next_power_of_two() / 2` (Session 102)
+**Decision**: `TranspositionTable::new()`'s entry-count calculation changed
+from `(bytes / entry_size).next_power_of_two() / 2` to a direct
+floor-to-largest-power-of-two-<=-raw_entries computation
+(`1usize << (usize::BITS - 1 - raw_entries.leading_zeros())`, guarded
+for `raw_entries == 0`), with the existing `.max(1024)` floor kept
+unchanged after that step.
+
+**Why**: External review (Engineering Review & Remediation Proposal,
+F-1) found the old formula silently discards half the requested TT
+capacity whenever `bytes / entry_size` is *already* an exact power of
+two — which is true at every standard Hash size a UCI GUI would ever
+send (16/32/64/128/256 MB), including the engine's own 64 MB default.
+`next_power_of_two()` is a no-op on an input that's already a power of
+two, so the subsequent `/ 2` just throws away half of it. Confirmed
+independently by this session (not just re-trusted from the proposal):
+`TTEntry` is 16 bytes (matches its own doc comment, "Packed to 16 bytes
+for cache efficiency"), so 64 MB / 16 B = 4,194,304 = 2^22 exactly —
+the pre-fix engine was running its default Hash setting at 32 MB of
+actual capacity, not 64 MB, silently. This directly costs search
+strength (more TT misses, more re-searched nodes) at zero benefit and
+was not caught by the existing `test_tt_size` test, which only asserted
+`size_mb() <= 64` — an inequality the buggy half-size value also
+satisfies.
+
+**Not found in decision/session history before this fix** — grepped
+`DECISIONS.md`/`SESSION_LOG.md` for TT sizing arithmetic prior to this
+entry; nothing discusses it. This was a genuine, undocumented bug, not
+a known trade-off (confirmed separately in the Documentation Review,
+28 July 2026).
+
+**Regression coverage added**: `test_tt_size_exact_power_of_two_not_halved`
+asserts the *exact* expected entry count (not just an inequality) at
+16/32/64/128/256 MB, computed independently from `entry_size` at test
+run time rather than hardcoded, so it can't silently drift if
+`TTEntry`'s layout ever changes size. `test_tt_size_non_power_of_two_floors_correctly`
+covers the non-exact-power-of-two case (100 MB) to confirm the fix
+didn't change behavior there — the old and new formulas were already
+equivalent whenever `raw_entries` wasn't itself an exact power of two,
+so this is a non-regression check, not a bug-catching one.
+
+**Alternatives rejected**: Keeping `next_power_of_two()/2` and special-
+casing "if already a power of two, don't halve" was considered and
+rejected as more code for the same result — a direct floor computation
+is both correct unconditionally and simpler than a round-trip through
+`next_power_of_two()` plus a conditional.
