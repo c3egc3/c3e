@@ -2422,6 +2422,46 @@ actually green.
 
 ---
 
+**Update (Session 101):** Gokul ran both the 20-game first look (seed
+62000) and the 200-game confirmation (seed 62500) for the
+SEE-degradation signal. **Zero crashes in either** — crash-safety holds
+with the added `defusal_score` machinery. Elo: n=20 leaned toward TDSE
+(-34.9, i.e. B/TDSE ahead), n=200 landed almost exactly on zero (+3.5,
+mildly favoring the control). 95% CIs: n=20 (35.4%, 54.6%), n=200 (46.3%,
+54.7%) — both comfortably straddle 50%.
+
+**Comparing all four Elo measurements from Sessions 94/98/101
+together** (legality-only n=20/n=200, SEE-degradation n=20/n=200): every
+interval overlaps every other one, including the two n=20 results
+pointing in *opposite* directions from each other. **Across two
+independent 200-game samples now, TDSE has not demonstrated a clear,
+replicated Elo effect in either direction.** D103's legality-only run
+leaned mildly positive (+13.9 favoring TDSE); this session's
+SEE-augmented run landed near-neutral (+3.5 favoring the control). If
+there's a real effect at the current weights, it's small — full data
+and reasoning in DECISIONS.md D106.
+
+**This isn't "TDSE failed," it's "TDSE hasn't earned promotion"** — same
+distinction D90 drew before closing Phase 26. Two live, non-exclusive
+explanations: the technique itself may have little real effect at this
+engine's current strength, or the three weight constants
+(`WEIGHT_ILLEGAL`/`WEIGHT_SEE`/`WEIGHT_CONTROL`) and `TDSE_MARGIN_CP`
+were never tuned — explicitly flagged as guessed starting points in
+D104 — and could be diluting a real signal.
+
+**Not yet done — Gokul's call, genuinely open:**
+1. **Deprioritize TDSE for now** — two 200-game runs without a clear win
+   is a reasonable stopping point. `ThreatDefusal` stays `false` by
+   default (already true), nothing to undo, safely revisitable later.
+2. **Or Texel-tune the weights** before another confirmation run — "
+   validate mechanism, then tune" has had its validation step done
+   twice now without resolving the question; tuning is the one lever
+   that's never been touched. This would use the existing `texel/`
+   pipeline, same as HCE terms.
+Either is reasonable; this entry doesn't pick one.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|

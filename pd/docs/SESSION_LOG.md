@@ -9,6 +9,50 @@ Most recent session at TOP.
 
 ---
 
+## Session 101 — 2026-07-28, cont. (Phase 28: SEE-degradation Elo results land near the noise floor across two independent 200-game samples; crash-safety holds; D106)
+
+**Built/done:**
+
+1. Gokul ran both the 20-game first look (seed 62000) and, without a
+   checkpoint in between, the 200-game confirmation (seed 62500) for the
+   SEE-degradation signal on the post-D105 (compile-fixed) build.
+
+2. **Zero crashes in either run.** `defusal_score`'s extra `pos.
+   make_move`/`unmake_move` pair didn't reintroduce anything like
+   D100/D101's earlier crash — crash-safety continues to hold.
+
+3. Elo: n=20 leaned toward TDSE (A score 45.0%, Elo diff -34.9 favoring
+   B); n=200 landed almost exactly neutral (A score 50.5%, Elo diff
+   +3.5 favoring A). Computed 95% CIs same as every prior result: n=20
+   (35.4%, 54.6%), n=200 (46.3%, 54.7%) — both straddle 50% comfortably.
+
+4. Laid all four Elo measurements from this investigation side by side
+   (legality-only n=20/n=200 from Sessions 94/98, SEE-degradation
+   n=20/n=200 from this session) — every interval overlaps every other
+   one, including the two n=20 results pointing in opposite directions
+   from each other. **Across two independent 200-game samples now, TDSE
+   has not demonstrated a clear, replicated Elo effect either way.**
+
+5. Framed this the same way D90 framed Phase 26's correction-history
+   result before closing that phase: not "TDSE failed," but "TDSE
+   hasn't earned promotion" — with two live, non-exclusive
+   explanations (little real effect at this engine's current strength,
+   or the never-tuned weight constants diluting a real signal) and two
+   reasonable paths forward, left explicitly open rather than decided.
+
+**Bugs fixed:** none — result-recording and cross-run comparison only.
+
+**Decisions made:** D106.
+
+**Next session start point:** Gokul's call, genuinely open — deprioritize
+TDSE for now (reasonable stopping point after two 200-game runs without
+a clear win, `ThreatDefusal` already defaults `false`, nothing to undo),
+or Texel-tune `WEIGHT_ILLEGAL`/`WEIGHT_SEE`/`WEIGHT_CONTROL`/
+`TDSE_MARGIN_CP` via the existing `texel/` pipeline before another
+confirmation run. Per ROADMAP.md Phase 28's Session 101 update.
+
+---
+
 ## Session 100 — 2026-07-28, cont. (D104's own diff had a compile error — missing Square import; fixed; D105)
 
 **Built/done:**

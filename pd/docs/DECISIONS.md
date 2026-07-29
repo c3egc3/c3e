@@ -4938,3 +4938,83 @@ unchanged.
 ⚠️ Still not CI-confirmed after this fix — no local `cargo` in this
 session's sandbox to verify the fix actually resolves it, same caveat
 as always. First real confirmation is the next CI run.
+
+## D106 — Phase 28: SEE-Degradation Elo Results — Two Runs Land Near the Noise Floor, No Clear Effect Either Way; Crash-Safety Holds (Session 101)
+
+Gokul ran both the 20-game first look (seed 62000) and, without waiting
+for a checkpoint, the 100-200 game confirmation (seed 62500) for the
+SEE-degradation signal (D104, post-D105 compile fix). **Both completed
+with zero crashes** — `defusal_score`'s extra `pos.make_move`/
+`unmake_move` pair didn't reintroduce anything like D100/D101's earlier
+crash. Crash-safety continues to hold.
+
+**Raw results:**
+```
+n=20  (seed 62000): A wins 1,  B wins 3,  draws 16  — A score 45.0%, Elo diff -34.9
+n=200 (seed 62500): A wins 38, B wins 36, draws 126 — A score 50.5%, Elo diff +3.5
+```
+(A = control/`ThreatDefusal=false`, B = SEE-degradation signal on.
+Positive Elo diff = A/control ahead; negative = B/TDSE ahead — same
+sign convention as D99/D103.)
+
+**95% CI on each, same method as every prior result:**
+```
+n=20,  SEE-degradation:  A score 45.0%  →  (35.4%, 54.6%)
+n=200, SEE-degradation:  A score 50.5%  →  (46.3%, 54.7%)
+```
+The n=200 result is about as close to a genuine null result as a
+200-game sample gets — nearly symmetric around 50%.
+
+**Comparing against D99/D103's legality-only results, all four side by
+side:**
+```
+n=20,  legality-only:     A score 55.0%  →  (45.4%, 64.6%)
+n=200, legality-only:     A score 48.0%  →  (43.7%, 52.3%)
+n=20,  SEE-degradation:   A score 45.0%  →  (35.4%, 54.6%)
+n=200, SEE-degradation:   A score 50.5%  →  (46.3%, 54.7%)
+```
+Every one of these four intervals overlaps every other one. Nothing
+here is statistically distinguishable from anything else, including
+zero. The two n=20 results even point in *opposite* directions from
+each other (legality-only leaned against TDSE at n=20, SEE-degradation
+leaned for it at n=20) — exactly the kind of noise this project's own
+"don't trust n=20" rule (D76/D84) exists to guard against, now
+demonstrated twice with opposite signs from the same underlying
+technique family.
+
+**Assessment: across two independent 200-game samples (D103's
+legality-only signal, this session's SEE-degradation-augmented signal),
+TDSE has not demonstrated a clear, replicated Elo effect in either
+direction.** D103's legality-only run leaned mildly positive (+13.9
+favoring TDSE, CI 43.7-52.3%); this session's larger-signal run landed
+almost exactly on zero (+3.5 favoring the control, CI 46.3-54.7%).
+Combined, the most honest reading is: if TDSE has a real effect at its
+current weights, it's small — plausibly within roughly ±15 Elo either
+way — not the kind of result that would justify flipping a default on
+its own merits.
+
+**This is not "TDSE failed" — it's "TDSE hasn't earned promotion,"** the
+same distinction D90 drew for Phase 26's correction-history results
+before closing that phase. Two live possibilities, not mutually
+exclusive:
+1. **The technique itself has little to no real effect** at this
+   engine's current strength — near-tied root candidates may already be
+   genuinely close enough in practice that a threat-aware tiebreak
+   rarely matters.
+2. **The weights are unvalidated guesses** — `WEIGHT_ILLEGAL=1000`,
+   `WEIGHT_SEE=4`, `WEIGHT_CONTROL=15` and `TDSE_MARGIN_CP=20` were
+   never tuned, explicitly flagged as "starting-point constants" in
+   D104. A real signal could exist but be getting diluted or
+   overridden by poorly-calibrated relative weights between the three
+   terms, or by a near-tie margin that's too wide or too narrow to
+   catch the cases where this actually matters.
+
+**Recommendation, Gokul's call, not resolved here:** (a) treat this as
+enough evidence to deprioritize TDSE for now, same as D99 originally
+offered as an option — two 200-game runs without a clear win is a
+reasonable stopping point; or (b) if there's appetite to keep going,
+Texel-tune the three weight constants and `TDSE_MARGIN_CP` before
+running another confirmation, since "validate mechanism, then tune"
+(D104's own stated order) has now had its mechanism-validation step
+done twice without a clear result, and tuning is the one variable in
+this technique that's never actually been touched.
