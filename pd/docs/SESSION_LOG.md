@@ -9,6 +9,49 @@ Most recent session at TOP.
 
 ---
 
+## Session 105 — 2026-07-29, cont. (Fix F-4: stale NNUE blend-weight doc comment in eval/mod.rs; D110)
+
+**Built/done:**
+
+1. Gokul confirmed CI green on Session 104's UCI sentinel fix. All
+   confirmed-and-actionable items from the original external review
+   set (F-1, F-2, and the Performance Review's §4.4 sentinel finding)
+   are now closed. Picked F-4 (lowest-priority remaining item) next.
+
+2. Fetched `src/eval/mod.rs` fresh and confirmed the bug directly:
+   `evaluate_blended()`'s doc comment read "D23 default 25%", while the
+   actual initializer (`NNUE_BLEND_WEIGHT_PCT` = `AtomicU32::new(0)`)
+   has been 0 since D25, with NNUE further shelved by D61. Code itself
+   was already correct — this was a comment-only staleness, matching
+   both prior reviews' characterization.
+
+3. Rewrote the comment to state the real current default (0%, pure
+   HCE) and cite D25/D61 instead of D23's superseded figure. Checked
+   the rest of the file for any other stale "25%"/"0.25" references —
+   found none; the one remaining D23 mention (on the `static` field
+   itself) is accurate background on *why* it became runtime-
+   configurable, not a stale default claim, so left unchanged.
+
+**Bugs fixed:** F-4 (stale NNUE blend-weight doc comment) — see
+DECISIONS.md D110.
+
+**Decisions made:** D110.
+
+**Next session start point:** Gokul commits `src/eval/mod.rs`
+(REPLACE) — comment-only change, no new tests, test count stays at 487.
+This closes out every item from the original three-part external
+review set (Engineering Review, Performance Review, Documentation
+Review) — F-1 through F-5 are now either fixed (F-1, F-2, F-4, the
+sentinel finding) or confirmed-intentional/no-action (F-3 per D4, F-5
+informational only). Remaining open, non-review items: the README test
+count (521 → 487 current, a separate staleness item, not one of F-1
+through F-5), and the five-mode PlayStyle proposal
+(`playstyle-proposal.md`) — re-verify its cited line numbers against
+current source first, since `alpha_beta.rs` and `types.rs` have both
+changed since it was written. Gokul's call on which to start.
+
+---
+
 ## Session 104 — 2026-07-29, cont. (Move::NULL now prints UCI standard "0000" instead of "a1a1"; D109)
 
 **Built/done:**

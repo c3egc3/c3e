@@ -303,6 +303,11 @@
 ---
 
 ## Phase 16 — NORU NNUE (Optional Enhancement) ⏳
+- [x] 16.0 — Bug fix (Session 105, D110): `eval/mod.rs`'s
+      `evaluate_blended()` doc comment still cited D23's original 25%
+      default; actual runtime default has been 0% since D25 (NNUE
+      further shelved by D61). Comment-only fix, no functional change.
+      Found by Engineering Review (F-4). See DECISIONS.md D110.
 - [x] 16.1 — Added noru = "2.2" to Cargo.toml (ordinary [dependencies],
             confirmed WASM-safe by upstream, no wasm32 exclusion needed
             unlike pyrrhic-rs).

@@ -5166,3 +5166,27 @@ Performance Review's own characterization.
 
 **Regression coverage added**: `test_move_null_uci_is_standard_sentinel`
 in `types.rs` asserts `Move::NULL.to_uci() == "0000"`.
+
+---
+
+## D110 — Fix Stale NNUE Blend-Weight Doc Comment in eval/mod.rs (Session 105)
+**Decision**: Updated `evaluate_blended()`'s doc comment from "D23
+default 25%" to accurately state the current default (0%, pure HCE),
+citing both D25 (weight dropped to 0%) and D61 (NNUE shelved for the
+future) rather than the original, now-superseded D23 figure.
+
+**Why**: Engineering Review F-4 found the doc comment still cited D23's
+original 0.25 constant, while the actual runtime default
+(`NNUE_BLEND_WEIGHT_PCT` initialized to `0`) has been 0% since D25 —
+confirmed by reading the current initializer directly, not just
+trusting the review's claim. No functional impact (the code itself was
+already correct; only the comment was stale), but worth fixing to
+avoid misleading a future contributor who reads only the doc comment.
+
+**Not a symptom of broader confusion**: the Documentation Review
+already confirmed `ENGINE_ARCHITECTURE.md` and the UCI option table
+both correctly state the 0% default — this was an isolated stale
+in-source comment, not a project-wide inconsistency.
+
+**No regression test needed** — this is a comment-only change with no
+behavioral surface to test.
