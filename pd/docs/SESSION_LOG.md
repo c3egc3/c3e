@@ -9,6 +9,90 @@ Most recent session at TOP.
 
 ---
 
+## Session 106 — 2026-07-29, cont. (Five-mode PlayStyle additive eval bonus implemented — style.rs new file, evaluate_styled() wired in, UCI option added; D111)
+
+**Built/done:**
+
+1. Gokul confirmed CI green on Session 105's F-4 fix — the entire
+   external review backlog (F-1 through F-5, plus the UCI sentinel
+   finding) is now closed. Picked up `playstyle-proposal.md` next, per
+   the queued options.
+
+2. Per the proposal's own note that `alpha_beta.rs` had shifted since
+   it was drafted, re-fetched `eval/mod.rs`, `search/alpha_beta.rs`,
+   and `main.rs` fresh before writing anything — did not trust the
+   proposal's cited line numbers or code snippets. Confirmed the
+   `evaluate()` wrapper had moved again since the proposal's last check
+   (1133 → 1169, after this session's own earlier F-2 fix added the
+   `make_null_move`/`unmake_null_move` helper earlier in the same
+   file). Also confirmed `king_safety.rs:145`'s king-zone one-liner
+   was unchanged and safe to duplicate (not import) into the new file,
+   exactly as the proposal specified.
+
+3. Implemented the proposal's Option B in full:
+   - **`src/eval/style.rs` (new file)** — `PlayStyle` atomic selector
+     (0-4), `evaluate_style()` dispatcher, and all four bonus
+     functions (Killer/Tactical/Positional/Endgame) plus shared
+     `all_piece_attacks`/`pawn_and_minor_attacks` helpers. One
+     deliberate refinement over the proposal's exact wording: Tactical
+     mode's "net of the opponent" metric was implemented as a
+     genuinely symmetric comparison (squares WE control in THEIR half
+     minus squares THEY control in OUR half), which reads more
+     naturally as a mirror than the proposal's literal phrasing.
+   - **`src/eval/mod.rs`** — `pub mod style;` + `evaluate_styled()`
+     wrapper.
+   - **`src/search/alpha_beta.rs`** — the one call-site change: `evaluate()`
+     now delegates to `evaluate_styled()` instead of `evaluate_blended()`.
+   - **`src/main.rs`** — `PlayStyle` UCI option + `"playstyle"`
+     setoption arm, mirroring `NNUEWeight`'s direct-global-set pattern
+     line-for-line (confirmed by reading that pattern fresh, not from
+     memory of the proposal's description of it).
+
+4. Caught and fixed several FEN-legality bugs in my own first-draft
+   test positions before finalizing `style.rs`'s tests — `Position::
+   from_fen` rejects both adjacent-kings and opponent-in-check
+   positions (`FenError::OpponentInCheck`), which two of my initial
+   test FENs violated (kings placed adjacent in one case, a rook/queen
+   giving literal check to the non-mover in another). Redesigned all
+   affected test positions to avoid both failure modes while still
+   testing the intended sign behavior.
+
+5. Bonus fix while `main.rs`'s NNUEWeight block was already open for
+   the PlayStyle option: found the same "D23 default 25%" staleness
+   there that F-4/D110 already fixed in `eval/mod.rs` — the original
+   Engineering Review's F-4 finding only caught the `eval/mod.rs` copy
+   of this comment, not this second one in `main.rs`. Fixed both
+   comments now say the same thing.
+
+6. Added 10 new regression tests total: 8 in `style.rs` (Balanced
+   no-op across 3 position types, out-of-range defensive fallback,
+   `set_play_style` clamping, one sign-correctness test per
+   non-Balanced mode), 1 in `eval/mod.rs` (`evaluate_styled() ==
+   evaluate_blended()` at Balanced default), 1 in `main.rs` (PlayStyle
+   setoption sets and clamps).
+
+**Bugs fixed:** none from the external review set this session — the
+"D23 default 25%" comment fixed in `main.rs` is a second instance of
+F-4's staleness pattern, not a new independent bug; folded into D111
+rather than given its own decision number since it was found and fixed
+incidentally while implementing PlayStyle, not as a targeted pass.
+
+**Decisions made:** D111 (full design writeup, including what was
+deliberately deferred).
+
+**Next session start point:** Gokul commits all four files —
+`src/eval/style.rs` (NEW), `src/eval/mod.rs` (REPLACE), `src/search/
+alpha_beta.rs` (REPLACE), `src/main.rs` (REPLACE) — and confirms CI is
+green, including the 10 new tests (487 → 497 expected library test
+count). Once confirmed green: per ROADMAP Phase 29.6, run self-play
+validation for each non-Balanced mode vs. Balanced via the existing
+selfplay GitHub Actions workflow before making any Elo claims about
+PlayStyle — none of the four modes' constants are tuned yet, and
+self-play data is the prerequisite for the eventual Texel pass (29.7).
+Gokul's call on the open spin-vs-combo UCI question (29.8, non-blocking).
+
+---
+
 ## Session 105 — 2026-07-29, cont. (Fix F-4: stale NNUE blend-weight doc comment in eval/mod.rs; D110)
 
 **Built/done:**

@@ -2490,6 +2490,49 @@ Either is reasonable; this entry doesn't pick one.
 
 ---
 
+## Phase 29 — Five-Mode PlayStyle Additive Eval Bonus ⏳ IN PROGRESS (Session 106, D111)
+- [x] 29.1 — `src/eval/style.rs` (NEW): `PlayStyle` UCI spin option
+      (0-4: Balanced/Killer/Tactical/Positional/Endgame), additive
+      bonus on top of the existing tuned eval, search itself untouched.
+      Balanced (default) is a guaranteed no-op — confirmed by
+      regression test, not just asserted. All four non-Balanced modes'
+      constants are hand-picked starting points, not yet Texel-tuned
+      (flagged explicitly in the file's module doc comment).
+- [x] 29.2 — `src/eval/mod.rs`: added `pub mod style;` and
+      `evaluate_styled()` wrapper (`evaluate_blended(pos) +
+      style::evaluate_style(pos, phase)`).
+- [x] 29.3 — `src/search/alpha_beta.rs`: `evaluate()` now delegates to
+      `evaluate_styled()` instead of `evaluate_blended()` — the one
+      call-site change this phase touches. Confirmed current line
+      number fresh (1169) rather than trusting the proposal doc's
+      stale citation (1133), which had already drifted once before
+      this session re-verified it.
+- [x] 29.4 — `src/main.rs`: `PlayStyle` UCI option declaration +
+      `"playstyle"` setoption arm, mirroring the existing `NNUEWeight`
+      direct-global-set pattern exactly. Bonus fix while this block was
+      open: `NNUEWeight`'s own doc comment had the same "D23 default
+      25%" staleness F-4/D110 already fixed in `eval/mod.rs` — fixed
+      here too.
+- [x] 29.5 — 10 new regression tests total (8 in `style.rs`, 1 in
+      `eval/mod.rs`, 1 in `main.rs`). Full breakdown in DECISIONS.md
+      D111.
+- [ ] 29.6 — Self-play validation per mode vs. Balanced (proposal §6.3)
+      — not yet run; needs actual games via the existing selfplay
+      GitHub Actions workflow. Expect and accept some Elo loss vs.
+      Balanced per mode — that's the intended tradeoff; flag for
+      re-tuning if a mode loses more than ~100 Elo or produces unsound
+      sacrifices a deeper Balanced/Stockfish check refutes cleanly.
+- [ ] 29.7 — Once self-play data exists: fold each mode's `style.rs`
+      constants through the same Texel tuning pipeline used for the
+      core eval (proposal §7.3), rather than leaving them hand-picked
+      indefinitely.
+- [ ] 29.8 — Open question, Gokul's call (proposal §8): keep
+      `PlayStyle` as a 0-4 spin (current implementation, consistent
+      with `Contempt`/`NNUEWeight`) or switch to five UCI `combo`
+      labels for GUI legibility? Not blocking — easy to change later.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|

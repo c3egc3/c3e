@@ -5190,3 +5190,97 @@ in-source comment, not a project-wide inconsistency.
 
 **No regression test needed** — this is a comment-only change with no
 behavioral surface to test.
+
+---
+
+## D111 — Five-Mode PlayStyle Additive Eval Bonus (Session 106)
+**Decision**: Implemented `playstyle-proposal.md`'s Option B in full: a
+new `eval/style.rs` module computing a small, independently-computed
+bonus for one of five runtime-selectable modes (Balanced/Killer/
+Tactical/Positional/Endgame, UCI `PlayStyle` spin 0-4), added on top of
+`evaluate_blended()` via a new `evaluate_styled()` wrapper. `PlayStyle`
+follows the exact same pattern as `NNUEWeight`: a bare `static
+AtomicU32`, set directly from `main.rs`'s `"playstyle"` setoption arm,
+`Relaxed` ordering, no `EngineState` field. Search itself (alpha-beta,
+PVS, pruning, TT, move ordering) is completely untouched — only the
+leaf evaluation changes, via one call-site swap in `search/
+alpha_beta.rs`'s `evaluate()` (now delegates to `evaluate_styled()`
+instead of `evaluate_blended()`).
+
+**Why Option B over Option A** (editing the tuned tables directly): the
+core HCE constants in `king_safety.rs`/`mobility.rs`/`pawns.rs`/
+`open_lines.rs` were fit by Texel tuning against 62,125 real positions
+(Phase 25, Session 84) — overwriting them per-mode would need a
+separate tuning run per mode before any mode is trustworthy, and would
+re-open tested-core files with existing regression tests (including
+the deliberately hand-overridden `KNIGHT_NEAR_OWN_KING_BONUS`/
+`BISHOP_NEAR_OWN_KING_BONUS` sign in `king_safety.rs`) for zero
+necessary reason. Option B's `style.rs` reads only public bitboard/
+position primitives already used elsewhere and imports nothing private
+from another eval module, so it's fully decoupled — Balanced (mode 0,
+default) is a byte-identical no-op, confirmed by a new regression test
+(`test_evaluate_styled_matches_blended_at_balanced_default`) rather
+than just asserted.
+
+**Verification before implementation**: per the proposal's own note
+that `alpha_beta.rs` had shifted since it was drafted, re-fetched
+`eval/mod.rs`, `search/alpha_beta.rs`, and `main.rs` fresh rather than
+trusting the proposal's cited line numbers. The `evaluate()` wrapper
+had moved again since the proposal's last check (1133 → **1169**,
+after Session 103's F-2 fix added the `make_null_move`/
+`unmake_null_move` helper earlier in the same file) — confirmed and
+used the current line, not the stale citation. `king_safety.rs:145`'s
+king-zone one-liner (`king_attacks(king_sq) | Bitboard::from_square
+(king_sq)`) was re-confirmed unchanged and duplicated (not imported)
+into `style.rs`, exactly as the proposal specified.
+
+**Bonus function design** (mirrors playstyle-proposal.md §4 closely,
+one deliberate refinement): Tactical mode's "net of the opponent"
+squares-controlled metric was implemented as a genuinely symmetric
+comparison — squares WE control in THEIR half, minus squares THEY
+control in OUR half (not squares they control in their own half, which
+would be a less meaningful mirror). Killer mode is deliberately
+one-sided (attacks against THEIR king only, no subtraction for danger
+to OUR OWN king) since that mirror signal already exists via
+`king_safety.rs::evaluate_king_safety()` elsewhere in `evaluate()` —
+adding it here would double-count.
+
+**All four mode constants are hand-picked starting points, not yet
+Texel-tuned** — `KILLER_ATTACKER_BONUS`, `KILLER_STORM_BONUS_PER_PAWN`,
+`TACTICAL_BONUS_PER_SQUARE`, `POSITIONAL_BONUS_PER_SQUARE`,
+`ENDGAME_BONUS_PER_UNIT` — flagged explicitly in `style.rs`'s module
+doc comment, matching how the project already tags provisional values
+(the `KNIGHT_NEAR_OWN_KING_BONUS` note in `king_safety.rs`). Per the
+proposal's rollout plan (§7), self-play validation per mode against
+Balanced is the next step before any Elo claims are made about the
+non-Balanced modes.
+
+**Bonus fix while this block was open**: `main.rs`'s `NNUEWeight` UCI
+option comment had the same staleness bug F-4/D110 fixed in
+`eval/mod.rs` ("Default matches D23's fixed constant (25%)" — actually
+0% since D25). Fixed in the same commit since the PlayStyle option
+declaration was added immediately next to it.
+
+**Regression coverage added**: 10 new tests total —
+`eval/style.rs` (8): Balanced no-op across 3 position types,
+out-of-range defensive fallback, `set_play_style` clamping, and one
+sign-correctness test per non-Balanced mode (Killer/Tactical/
+Positional/Endgame each on a hand-built attacking-vs-quiet position
+pair, per the proposal's own testing plan §6.2).
+`eval/mod.rs` (1): `evaluate_styled() == evaluate_blended()` at
+Balanced default, across 3 positions.
+`main.rs` (1): `PlayStyle` setoption sets and clamps correctly,
+mirroring existing `Hash`/`NNUEWeight` option test conventions.
+
+**Alternatives rejected**: exposing `PlayStyle` as five UCI `combo`
+labels instead of a 0-4 `spin` (open question in the proposal) — kept
+as `spin` for consistency with the engine's two other existing options
+in this category (`Contempt`, `NNUEWeight`), both spins; easy to switch
+later if a GUI-legibility need arises. Not resolved as part of this
+session — flagged as still open in the roadmap for Gokul's call.
+
+**Not yet done** (explicitly out of scope for this session, per the
+proposal's own rollout plan): self-play Elo validation per mode
+(§6.3) and the eventual Texel-tuning pass on the four modes' constants
+(§7.3) — both require actual games, not something this session can
+produce.
