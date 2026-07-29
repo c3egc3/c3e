@@ -2412,6 +2412,16 @@ from production code.
 
 ---
 
+**Update (Session 100):** CI on the D104 commit failed to compile —
+`attacker_count_on`'s `Square` parameter type was never added to
+`alpha_beta.rs`'s top-level imports (only the test module had its own).
+My mistake, not a gap balance-checking could catch. Fixed: one import
+line. No design/logic changes. Full note in DECISIONS.md D105. Same
+next steps as above still apply once this is committed and CI is
+actually green.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|

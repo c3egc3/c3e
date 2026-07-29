@@ -4895,3 +4895,46 @@ alone) → 100-200 game confirmation, watching specifically for any new
 crash this signal's extra `pos.make_move`/`unmake_move` pair in
 `defusal_score` could introduce, before any consideration of combining
 with control-delta as a third signal or touching any default.
+
+## D105 — CI Caught a Genuine Compile Error in D104's Own Diff — Missing `Square` Import (Session 100)
+
+Gokul ran CI on the D104 commit — it failed to even compile:
+```
+error[E0425]: cannot find type `Square` in this scope
+  --> src/search/alpha_beta.rs:1019:42
+   |
+1019 | fn attacker_count_on(pos: &Position, sq: Square, by_color: Color) -> u32 {
+   |                                          ^^^^^^ not found in this scope
+```
+
+**Cause, plainly: my mistake, not a static-analysis gap this time.**
+`attacker_count_on`'s signature uses `Square` directly, but D104 never
+added `Square` to `alpha_beta.rs`'s top-level imports
+(`use crate::types::{Color, Move, MoveKind, PieceKind};`) — only the
+test module has its own explicit `use crate::types::Square;`, which
+D98's earlier tests already relied on. I'd verified `Square::D8` etc.
+worked in *test* code during D98/D101 and carried that unchecked
+assumption into new *non-test* code this session without re-checking
+what's actually imported at module level outside `#[cfg(test)]`. This
+is exactly the class of mistake balance-checking (which passed cleanly
+on this file, same as it did on D96's dropped node-counter) cannot
+catch — it's not a structural error, it's a missing name in scope.
+
+**Fix**: one line —
+`use crate::types::{Color, Move, MoveKind, PieceKind, Square};`.
+
+The compiler also flagged (as a non-blocking warning, not the cause of
+the build failure) that `MoveKind` is unused at module level outside
+tests — left as-is; not this fix's concern and not something worth
+guessing about without more investigation into whether it's related to
+this session's changes or pre-existing.
+
+No design or logic changes from D104 — this is purely the missing
+import. Everything D104 documented (the two silent-failure bugs found
+and fixed in the original proposal, the `defusal_score`/
+`attacker_count_on`/`control_delta_on_threat_squares` design) stands
+unchanged.
+
+⚠️ Still not CI-confirmed after this fix — no local `cargo` in this
+session's sandbox to verify the fix actually resolves it, same caveat
+as always. First real confirmation is the next CI run.

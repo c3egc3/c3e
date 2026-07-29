@@ -9,6 +9,42 @@ Most recent session at TOP.
 
 ---
 
+## Session 100 — 2026-07-28, cont. (D104's own diff had a compile error — missing Square import; fixed; D105)
+
+**Built/done:**
+
+1. Gokul ran CI on the D104 commit — failed to compile:
+   `error[E0425]: cannot find type 'Square' in this scope` at
+   `attacker_count_on`'s signature in `alpha_beta.rs`.
+
+2. Cause: my own mistake, plainly. `Square` was only imported in the
+   test module (`use crate::types::Square;`, relied on by D98's
+   earlier tests); I never added it to the file's top-level imports
+   before using it in new non-test code (`attacker_count_on`). Carried
+   an unchecked assumption ("Square already works here, I've used it in
+   tests") into new code without verifying what's actually in scope
+   outside `#[cfg(test)]`.
+
+3. Fixed: one line — added `Square` to
+   `use crate::types::{Color, Move, MoveKind, PieceKind, Square};`.
+
+**Bugs fixed:** a genuine compile error in this session's own prior
+diff. D104's actual design and the two silent-failure bugs it found and
+fixed in the original proposal are unaffected — this was purely a
+missing import.
+
+**Decisions made:** D105.
+
+⚠️ Still not CI-confirmed after this fix — no local `cargo` in this
+session's sandbox, same caveat as always.
+
+**Next session start point:** unchanged from Session 99 — Gokul commits
+the corrected `src/search/alpha_beta.rs`, confirms CI is actually green
+this time, then runs the 20-game first look for the SEE-degradation
+signal. Per ROADMAP.md Phase 28's Session 100 update.
+
+---
+
 ## Session 99 — 2026-07-28, cont. (Phase 28: SEE-degradation signal implemented — two more real bugs found in the proposal, both fixed; D104)
 
 **Built/done:**
