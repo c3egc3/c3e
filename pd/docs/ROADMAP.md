@@ -24,6 +24,11 @@
 - [x] src/main.rs (placeholder UCI loop)
 - [x] src/types.rs — Square, File, Rank, Color, PieceKind, Piece,
       Move, MoveKind, CastlingRights, PawnStartMap
+- [x] 1.1 — Bug fix (Session 104, D109): `Move::to_uci()` printed
+      `Move::NULL` as "a1a1" (its literal from/to squares) instead of
+      the standard UCI null-move sentinel "0000", which most GUIs/
+      tooling expect. Found by Performance Review §4.4. Special-cased
+      `to_uci()` on `is_null()`. See DECISIONS.md D109.
 
 ---
 

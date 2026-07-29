@@ -5137,3 +5137,32 @@ but rejected in favor of the shared-helper version — the review's own
 extended recommendation, and the whole reason D98's reused-block gap
 existed in the first place was duplication without a shared source of
 truth.
+
+---
+
+## D109 — Move::NULL Prints as UCI Standard "0000", Not Its Literal a1a1 Squares (Session 104)
+**Decision**: Special-case `Move::to_uci()` to return `"0000"` when
+`self.is_null()` is true, instead of falling through to the normal
+from/to formatting (which produced "a1a1", since `Move::NULL` is
+defined as `from: A1, to: A1`).
+
+**Why**: Performance Review §4.4 spot-checked the already-checkmated
+position case and found the engine prints `bestmove a1a1` instead of
+the UCI-standard `bestmove 0000` sentinel most GUIs/tooling expect when
+there's no legal move to report. Root cause: `to_uci()` had no special
+case for `Move::NULL`, so it printed the literal A1→A1 squares like any
+other move. No real, legal move can ever have `from == to` (`is_null()`
+already relies on exactly this to distinguish the sentinel from real
+moves), so special-casing on it can't misfire on legitimate move
+output — confirmed by grepping the repo for existing `"a1a1"`
+references first: the only hit was `uci_match_runner.rs` asserting that
+`parse_uci_move` rejects `"a1a1"` as an illegal *inbound* move, which
+is unrelated (inbound parsing, not outbound formatting) and unaffected
+by this change.
+
+**Impact**: Low in practice — GUIs essentially never call `go` on an
+already-game-over position — but cheap and precise to fix, per the
+Performance Review's own characterization.
+
+**Regression coverage added**: `test_move_null_uci_is_standard_sentinel`
+in `types.rs` asserts `Move::NULL.to_uci() == "0000"`.

@@ -9,6 +9,51 @@ Most recent session at TOP.
 
 ---
 
+## Session 104 — 2026-07-29, cont. (Move::NULL now prints UCI standard "0000" instead of "a1a1"; D109)
+
+**Built/done:**
+
+1. Gokul confirmed CI green on Session 103's F-2 fix — both confirmed
+   review defects (F-1, F-2) now closed. Picked the small UCI sentinel
+   fix (Performance Review §4.4) as the next item from the queued
+   options.
+
+2. Fetched `src/types.rs` fresh and confirmed the bug: `to_uci()` had
+   no special case for `Move::NULL` (`from: A1, to: A1`), so it printed
+   "a1a1" instead of the standard UCI null-move sentinel "0000" that
+   most GUIs/tooling expect when there's no legal move to report
+   (checkmate/stalemate at the root).
+
+3. Checked the repo (full tarball grep, not just the files touched) for
+   any existing code relying on the old "a1a1" output string before
+   changing it — found only `uci_match_runner.rs` asserting that
+   *inbound* `parse_uci_move("a1a1")` is rejected as illegal, which is
+   unrelated (parsing GUI input, not formatting engine output) and
+   confirmed unaffected.
+
+4. Fixed by special-casing `to_uci()` on `self.is_null()`. Safe because
+   no real, legal move can ever have `from == to` — `is_null()` already
+   depends on exactly that fact elsewhere in the codebase.
+
+**Bugs fixed:** UCI null-move sentinel (Performance Review §4.4) — see
+DECISIONS.md D109.
+
+**Decisions made:** D109.
+
+**Next session start point:** Gokul commits `src/types.rs` (REPLACE)
+and confirms CI is green, including the 1 new test (486 → 487 expected
+library test count). All items from the original external review set
+are now resolved (F-1 through F-5) except the two remaining optional/
+low-priority follow-ups the reviews themselves flagged as non-blocking:
+F-4's stale `eval/mod.rs` doc comment, and the README test-count
+staleness (521 → current count). Otherwise: start the five-mode
+PlayStyle proposal (`playstyle-proposal.md`) — re-verify its cited line
+numbers against current source first, since `alpha_beta.rs` and
+`types.rs` have both changed since that proposal was written. Gokul's
+call.
+
+---
+
 ## Session 103 — 2026-07-29 (Fix F-2: en-passant/hash desync in null-move pruning, both call sites; factored shared make_null_move/unmake_null_move helper; D108)
 
 **Built/done:**
