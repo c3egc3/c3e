@@ -91,6 +91,16 @@
 - [x] 7.6 — src/search/iterative.rs — Iterative deepening + aspiration windows
 - [x] 7.7 — src/search/pruning.rs — Extensions, LMR, probcut, correction history
 - [x] 239 tests passing, Build #86 green
+- [x] 7.8 — Bug fix (Session 103, D108): null-move pruning cleared
+      `en_passant` without removing its Zobrist key from `pos.hash`,
+      duplicated in both the real null-move probe and
+      `extract_threat_move()`. Found by external review (F-2), fixed
+      by XOR-ing the ep key in/out symmetrically (mirrors
+      `make_move.rs`), and factored into shared `make_null_move()`/
+      `unmake_null_move()` helpers so both call sites share one source
+      of truth. Two new regression tests compare the incremental hash
+      against `Position::compute_hash()` (from-scratch recompute) at
+      every stage. See DECISIONS.md D108.
 
 ---
 

@@ -5067,3 +5067,73 @@ casing "if already a power of two, don't halve" was considered and
 rejected as more code for the same result — a direct floor computation
 is both correct unconditionally and simpler than a round-trip through
 `next_power_of_two()` plus a conditional.
+
+---
+
+## D108 — Fix En-Passant/Hash Desync in Null-Move Pruning; Factor the Flip into a Shared Helper (Session 103)
+**Decision**: In both the real null-move probe (`alpha_beta_with_excluded`)
+and the duplicated flip inside `extract_threat_move()`, XOR the
+en-passant key out of `pos.hash` before clearing `pos.en_passant`, and
+XOR it back in when restoring — mirroring `make_move.rs`'s own "remove
+en passant from hash" step exactly. Additionally factored the whole
+flip (side-to-move + en-passant + hash, make and unmake) into two
+shared functions, `make_null_move()`/`unmake_null_move()`, and switched
+both call sites to use them instead of inline-duplicated logic.
+
+**Why**: External review (Engineering Review & Remediation Proposal,
+F-2) found that clearing `en_passant` without removing its Zobrist key
+left `pos.hash` and `pos.en_passant` disagreeing for the rest of the
+null-move subtree — the hash kept encoding the old en-passant file
+while the field said `None`. Every TT probe/store inside that subtree
+therefore used a hash that didn't correspond to the actual logical
+position: a structural, deterministic mismatch (correlated with a
+specific related position), not the generic 64-bit collision risk the
+TT already accepts elsewhere (D4). Confirmed present in both copies by
+reading the current source fresh, not re-trusted from the review.
+
+**Not found in decision/session history before this fix** — the
+Documentation Review (28 July 2026) grepped `DECISIONS.md`/
+`SESSION_LOG.md` for `ep_key`, en-passant hashing, or any hash/state
+mismatch discussion and found nothing; this was a genuine, undocumented
+gap, not a known trade-off. Notably, D98 already documents reusing this
+exact null-move flip for `extract_threat_move()` and cross-checking
+that reused block carefully — but only for API correctness (right
+function, right signature), not for this specific hash-consistency
+defect, so the bug propagated into the new code undetected. This
+matches `VARIANT_ARCHITECTURE.md`'s own stated Zobrist principle
+("[pawn-start keys are] XOR'd in for each pawn's actual starting
+square... critical for TT correctness") — the same standard this bug
+violated for en-passant keys specifically.
+
+**Shared-helper factoring**: the Engineering Review's fix recommendation
+included factoring the null-move flip into one shared helper "so this
+class of bug can only be fixed — or reintroduced — in one place." Done
+as `make_null_move(pos) -> Option<Square>` / `unmake_null_move(pos,
+old_ep)`, both `#[inline]`, in `search/alpha_beta.rs` near the top of
+the file. Named deliberately *not* `make_move`/`unmake_move` — those
+already mean a real move elsewhere in this codebase. `extract_threat_move`'s
+`see_value_of(pos, best_move)` call (D104 — must run while
+`pos.side_to_move` still equals the threat's actual mover) still runs
+*before* the `unmake_null_move()` call at that site, preserving D104's
+ordering requirement; the helper wasn't extended to cover that call
+since it's specific to the threat-defusal signal, not to the null-move
+flip itself.
+
+**Regression coverage added**: `test_null_move_helper_keeps_hash_
+consistent_with_recompute` builds a position with an active en-passant
+square, calls `make_null_move`/`unmake_null_move` directly, and checks
+the incremental `pos.hash` against `Position::compute_hash()` (a full
+from-scratch recompute) at every stage — mid-flip and after the full
+round-trip. This is the general "recompute and compare" invariant
+check the Documentation Review recommended (§7, rec. 5), applied
+directly to this bug; it fails under the pre-fix code and passes under
+the fix. `test_null_move_helper_hash_consistent_without_en_passant`
+covers the no-active-ep case to confirm the `if let Some(ep) = ...`
+guard is a true no-op, not just untested.
+
+**Alternatives rejected**: Leaving the two call sites independently
+patched (matching the review's minimum recommendation) was considered
+but rejected in favor of the shared-helper version — the review's own
+extended recommendation, and the whole reason D98's reused-block gap
+existed in the first place was duplication without a shared source of
+truth.

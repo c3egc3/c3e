@@ -9,6 +9,83 @@ Most recent session at TOP.
 
 ---
 
+## Session 103 — 2026-07-29 (Fix F-2: en-passant/hash desync in null-move pruning, both call sites; factored shared make_null_move/unmake_null_move helper; D108)
+
+**Built/done:**
+
+1. Gokul confirmed CI green on the Session 102 commit (F-1 TT sizing
+   fix, D107) — 484/484 tests passing, matching the expected count.
+   Moved to F-2 next, per the priority order from the review set and
+   last session's own next-start note.
+
+2. Fetched `src/search/alpha_beta.rs` and `src/search/pruning.rs`
+   fresh from `g-c-3/pet-dragon` before writing anything — did not
+   trust the review's quoted line numbers or code snippets. Confirmed
+   F-2 present exactly as described in both locations: the real
+   null-move probe (~line 499 pre-fix) and the duplicated flip inside
+   `extract_threat_move()` (~line 951 pre-fix, added in Phase 28/D98).
+   Both cleared `pos.en_passant` without XOR-ing `ep_key(old_ep.file())`
+   out of `pos.hash` first — hash and field disagreed for the rest of
+   that null-move subtree, a structural mismatch (not the generic
+   64-bit collision risk the TT already accepts, D4).
+
+3. Checked `position/make_move.rs` and `position/zobrist.rs` for the
+   exact existing pattern (`if let Some(ep) = self.en_passant { self.
+   hash ^= ep_key(ep.file()); }`) rather than inventing new hashing
+   logic, and mirrored it exactly at both null-move sites, symmetric
+   on both make and unmake.
+
+4. Went further than a minimal two-site patch: factored the whole
+   null-move flip (side-to-move + en-passant + hash, make and unmake)
+   into two shared functions, `make_null_move(pos) -> Option<Square>`
+   and `unmake_null_move(pos, old_ep)`, both `#[inline]`. Both call
+   sites now use these instead of duplicated inline logic — per the
+   Engineering Review's own recommendation, and directly addressing
+   the failure mode the Documentation Review named: D98 reused this
+   block once already and only checked the reuse for API correctness,
+   not for this hash-consistency invariant, which is exactly how the
+   bug reached `extract_threat_move()` in the first place. Preserved
+   D104's ordering requirement (`see_value_of` must run while `pos.
+   side_to_move` still equals the threat's mover) — that call still
+   happens before `unmake_null_move()` at that site, unchanged.
+
+5. Added two regression tests using `Position::compute_hash()` (a
+   from-scratch recompute, already existed in `position/mod.rs`,
+   `pub fn`) — exactly the general "recompute and compare" invariant
+   check the Documentation Review recommended (§7, rec. 5), applied
+   directly to this bug rather than left as a suggestion:
+   `test_null_move_helper_keeps_hash_consistent_with_recompute` (built
+   a position with an active en-passant square via FEN, checks
+   `pos.hash == pos.compute_hash()` mid-flip and after the full
+   round-trip — fails under the pre-fix code, passes under the fix)
+   and `test_null_move_helper_hash_consistent_without_en_passant`
+   (no-op case).
+
+**Bugs fixed:** F-2 (en-passant/hash desync in null-move pruning, both
+call sites) — see DECISIONS.md D108 for full reasoning, the shared-
+helper factoring, and why it went uncaught (D98's verification method
+checks function-signature correctness, not cross-field hash/state
+invariants — named explicitly in the Documentation Review as a category
+of bug that method isn't naturally aimed at).
+
+**Decisions made:** D108.
+
+**Next session start point:** Gokul commits `src/search/alpha_beta.rs`
+(REPLACE) and confirms CI is green, including the 2 new regression
+tests (484 → 486 expected library test count). Once confirmed green,
+both F-1 and F-2 — the two confirmed, undocumented gaps from the
+external review set — are resolved; F-3/F-4/F-5 need no code action
+(F-3 already documented as intentional per D4; F-4/F-5 are low-priority
+informational items the review left as optional follow-ups, not
+blocking). Reasonable next options: the `Move::NULL` → `"0000"` UCI
+sentinel fix (Performance Review §4.4, small/precise), the stale
+`eval/mod.rs` doc-comment cleanup (F-4), or starting the five-mode
+PlayStyle proposal (`playstyle-proposal.md`) — re-verify its cited line
+numbers against current source first, since `alpha_beta.rs` changed
+again this session. Gokul's call.
+
+---
+
 ## Session 102 — 2026-07-29 (Fix F-1: TT sizing bug silently halved capacity at every exact power-of-two Hash size; D107)
 
 **Built/done:**
