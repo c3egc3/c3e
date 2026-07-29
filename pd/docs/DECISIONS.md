@@ -4779,3 +4779,119 @@ Gokul wants to resolve the remaining statistical ambiguity before
 deciding whether to keep investing in TDSE; otherwise, proceeding to the
 SEE-degradation signal as the next isolated diff is a reasonable
 parallel path now that the technique is confirmed safe.
+
+## D104 — Phase 28: SEE-Degradation Signal Implemented — Two More Real Bugs Found in the Proposal, Both Fixed (Session 99)
+
+Gokul chose the SEE-degradation path from D103's two open options.
+Implemented the proposal's §3 as its own isolated diff, on top of the
+now crash-confirmed legality-only signal (D98/D101). Verified every
+claim against the real repo before writing anything, same discipline
+as D98 — and found **two more real bugs in the proposal's own §3 code**,
+beyond the `to_square()` issue D98 already caught.
+
+**Bug 1 — `threat_see_before` computed at the wrong point in
+`extract_threat_move`.** The proposal computes it *after* restoring
+`pos.side_to_move` back to the original (our own) side:
+```rust
+pos.side_to_move = pos.side_to_move.flip();  // restore
+...
+let threat_see_before = see_value_of(pos, best_move);  // proposal's order
+```
+Read `see_value_of`'s actual implementation
+(`search/see.rs`) before trusting this: it does
+`let color = pos.side_to_move; ... pos.piece_on(from, color)` — it looks
+up "our" piece on `mv.from` using whatever `pos.side_to_move` currently
+is. `best_move` is the *opponent's* move (found during the flipped
+probe). Calling `see_value_of` after flipping back means `color` = our
+own side, `pos.piece_on(best_move.from, our_color)` finds nothing (the
+piece there belongs to the opponent), and the function's `None => return
+0` branch fires — **silently returning 0 every single time**, not a
+loud failure. Fixed: compute `threat_see_before` *before* the restore,
+while `pos.side_to_move` still correctly equals the opponent (`best_
+move`'s actual mover). Caught by a dedicated test
+(`test_extract_threat_move_computes_correct_see_before`) that asserts
+the exact expected SEE value (500, an undefended rook) rather than just
+checking non-panic — with the original ordering this test would have
+seen `0`, not 500, and failed loudly instead of the bug hiding silently
+in production.
+
+**Bug 2 — `mover_color` computed backwards in
+`control_delta_on_threat_squares`.** The proposal:
+```rust
+let mover_color = pos.side_to_move.flip(); // "threat move was made by
+                                            // the opponent"
+```
+This function is called from `defusal_score` *after* `pos.make_move
+(candidate)` has already been applied — at that point `pos.side_to_move`
+already correctly equals the threat's owner (the opponent, since it's
+genuinely their turn next after our candidate move). The proposal's
+`.flip()` here points `mover_color` at *our own* side instead — silently
+inverting the entire signal (reporting our own defensive strength as if
+it were the threat's attacking strength, and vice versa) rather than
+failing loudly or panicking. Fixed: `let mover_color = pos.side_to_move;`
+— no flip.
+
+**Both bugs share the same shape**: neither would have panicked or
+produced an obviously-wrong result during casual testing — both fail
+silently, returning a plausible-looking but backwards or zeroed number.
+This is exactly the failure mode independent verification exists to
+catch and static "does it compile" checking cannot — confirmed both by
+reading the actual callee's implementation (`see_value_of`) and by
+tracing the actual call-time value of `pos.side_to_move` at each call
+site, not by re-reading the proposal's own comments about what it
+intended.
+
+**Implemented, matching the proposal's design otherwise:**
+- `ThreatInfo` gains a `threat_see_before: i32` field.
+- `attacker_count_on(pos, sq, by_color) -> u32` — same raw bitboard
+  primitives `king_safe_square_count` (D75) already uses, same file,
+  matching that established precedent over the proposal's suggestion to
+  place things in `pruning.rs` (deliberate deviation — see below).
+- `control_delta_on_threat_squares(pos, threat_move) -> i32` — fixed
+  per Bug 2 and the `to_square()` fix D98 already made.
+- `pub fn defusal_score(pos, candidate, threat) -> i32` — combines
+  illegality bonus (reuses the same legality check `defuses_threat`
+  does, but inline rather than calling it, to avoid a second redundant
+  make/unmake pair), SEE-drop, and control-delta into one weighted
+  score. `WEIGHT_ILLEGAL=1000`, `WEIGHT_SEE=4`, `WEIGHT_CONTROL=15` —
+  starting-point constants, explicitly not yet Texel-tuned, same order
+  D63/D68 already established (validate mechanism, tune after).
+- `iterative.rs`'s TDSE block now calls `defusal_score` and picks the
+  **highest-scoring** near-tied candidate, replacing D98's "first
+  candidate that merely makes the threat illegal." Considered gating
+  the override on `score > 0` (only act on a clearly positive signal)
+  but reverted that after reasoning it through: among candidates the
+  real search already judged near-equal, the highest-scoring one by
+  this heuristic is still the best available tiebreak even if the
+  absolute score is small or negative — gating on `> 0` would silently
+  disable the technique in exactly the close-call cases it exists for.
+
+**Deliberate deviation from the proposal's file placement**: the
+proposal suggested putting `defusal_score`/the new helpers in
+`pruning.rs` ("alongside `CorrectionHistory` for consistency"). Checked
+where the proposal's *own* cited precedent (`king_safe_square_count`,
+D75 — "new helper reusing existing attack-table primitives, gated by a
+runtime option") actually lives: `alpha_beta.rs`, not `pruning.rs`.
+Followed the actual precedent over the proposal's stated preference —
+also avoids needing to make `ThreatInfo`'s private fields `pub` for
+cross-module access, which moving to `pruning.rs` would have required.
+
+`defuses_threat` (D98) is kept, unchanged, still independently tested —
+just no longer called from `iterative.rs`'s production path, superseded
+there by `defusal_score`. Four new tests: exact SEE-value correctness
+(the one that would have caught Bug 1 directly), `defusal_score` ranking
+an illegality-inducing move above an unrelated one, and
+`attacker_count_on`'s basic per-color correctness.
+
+⚠️ Not yet CI-confirmed — no local `cargo` in this session's sandbox,
+same caveat as always, and this diff touches the same functions D96
+already showed once this investigation that a careless edit can corrupt
+without balance-checking catching it. Reviewed the actual diff text
+this time, not just brace/paren counts, learning from D96.
+
+⚠️ Zero Elo/crash validation for this specific signal yet. Same rollout
+discipline as D98→D101→D103: CI green → 20-game first look (not trusted
+alone) → 100-200 game confirmation, watching specifically for any new
+crash this signal's extra `pos.make_move`/`unmake_move` pair in
+`defusal_score` could introduce, before any consideration of combining
+with control-delta as a third signal or touching any default.

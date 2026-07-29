@@ -9,6 +9,87 @@ Most recent session at TOP.
 
 ---
 
+## Session 99 — 2026-07-28, cont. (Phase 28: SEE-degradation signal implemented — two more real bugs found in the proposal, both fixed; D104)
+
+**Built/done:**
+
+1. Gokul chose the SEE-degradation path from D103's two open options.
+   Re-read the original proposal's §3 in full, then verified every claim
+   against the real repo before writing anything (same discipline as
+   D98) — specifically read `see_value_of`'s actual implementation
+   (`search/see.rs`) rather than trusting the proposal's call-ordering
+   assumption.
+
+2. **Found Bug 1**: the proposal computes `threat_see_before` in
+   `extract_threat_move` *after* restoring `pos.side_to_move` back to
+   the original side. `see_value_of` looks up "our" piece on `mv.from`
+   using whatever `pos.side_to_move` currently is — since `best_move` is
+   the *opponent's* move, calling this after the restore means the
+   function silently returns 0 every time (finds no piece belonging to
+   the wrong color on that square), no panic, no obvious symptom. Fixed
+   by moving the computation before the restore.
+
+3. **Found Bug 2**: `control_delta_on_threat_squares`'s `mover_color`
+   was computed as `pos.side_to_move.flip()` in the proposal, but by the
+   time this function is actually called (inside `defusal_score`, after
+   `pos.make_move(candidate)`), `pos.side_to_move` already correctly
+   equals the threat's owner with no flip needed — the extra `.flip()`
+   would have silently inverted the entire attacker/defender signal.
+   Fixed by removing it.
+
+4. Both bugs share the same shape: neither panics or produces an
+   obviously-wrong result, both fail silently with a plausible-looking
+   backwards or zeroed number — exactly the failure mode independent
+   verification (reading actual callee implementations and tracing
+   actual call-time state, not re-reading the proposal's own comments)
+   exists to catch.
+
+5. Implemented the rest of §3 as designed: `attacker_count_on`,
+   `control_delta_on_threat_squares` (both fixed per above),
+   `ThreatInfo.threat_see_before`, and `pub fn defusal_score` combining
+   illegality-bonus + SEE-drop + control-delta into one weighted score.
+   Deliberately placed in `alpha_beta.rs` rather than `pruning.rs` as
+   the proposal suggested — checked where the proposal's own cited
+   precedent (`king_safe_square_count`, D75) actually lives and followed
+   that instead, also avoiding an unnecessary field-visibility change.
+
+6. Updated `iterative.rs`'s TDSE block to call `defusal_score` and pick
+   the highest-scoring near-tied candidate, replacing D98's
+   first-legality-defusing-candidate logic. Considered and reverted a
+   `score > 0` gate on the override — reasoned that among candidates the
+   real search already judged near-equal, the best-scoring one by this
+   heuristic is still the right tiebreak even at a small or negative
+   absolute score.
+
+7. Four new tests, including one asserting the *exact* expected SEE
+   value (500, an undefended rook) rather than just non-panic — this
+   specific test would have caught Bug 1 directly had it existed before
+   the fix.
+
+**Bugs fixed:** two real bugs in the source design document, caught and
+fixed before they became bugs in the engine (same category as D98's
+`to_square()` catch, this session found two more of the same shape).
+
+**Decisions made:** D104 — also explicitly flags that this diff bundled
+SEE and control-delta together rather than as two separate isolated
+diffs, deviating from the original proposal's "three signals, three
+independent validations" plan.
+
+⚠️ Not yet CI-confirmed. Reviewed the actual diff text this time (not
+just brace/paren balance) given D96 already showed once this
+investigation that balance-checking alone can miss a real mistake.
+
+⚠️ Zero Elo/crash validation yet for this specific signal.
+
+**Next session start point:** Gokul commits `src/search/alpha_beta.rs`
+and `src/search/iterative.rs`, confirms CI is green, runs a 20-game
+first look (not trusted alone), then a 100-200 game confirmation if not
+clearly negative — watching specifically for any new crash, since
+`defusal_score` adds its own make/unmake pair beyond what D101 already
+fixed. Per ROADMAP.md Phase 28's Session 99 update.
+
+---
+
 ## Session 98 — 2026-07-28, cont. (Phase 28: TDSE clears the crash-safety bar — 200/200 games, zero crashes; Elo reverses to mildly positive, still not conclusive; D103)
 
 **Built/done:**

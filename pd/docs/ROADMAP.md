@@ -2368,6 +2368,50 @@ Either is a reasonable next session; Gokul's call which to prioritize.
 
 ---
 
+**Update (Session 99):** Gokul chose path 2. Implemented the
+SEE-degradation signal — and found **two more real bugs in the
+proposal's own §3 code**, beyond the `to_square()` one D98 already
+caught, both by reading actual callee implementations rather than
+trusting the proposal's comments: (1) `threat_see_before` was computed
+*after* restoring `pos.side_to_move`, but `see_value_of` needs it to
+still equal the threat's actual mover — the original ordering would
+have silently returned 0 every time, no panic, no obvious symptom; (2)
+`control_delta_on_threat_squares`'s `mover_color` was computed with an
+extra `.flip()` that doesn't belong there given where the function is
+actually called from — would have silently inverted the whole signal.
+Both fixed; both share the same "fails silently with a plausible-looking
+wrong number" shape, exactly what independent verification exists to
+catch. New test asserts the *exact* expected SEE value (500, an
+undefended rook) rather than just non-panic — would have caught bug (1)
+directly. Full trail in DECISIONS.md D104.
+
+`iterative.rs`'s TDSE block now uses `defusal_score` (weighted: illegal
+> SEE-drop > control-delta) to pick the best near-tied candidate,
+replacing D98's "first candidate that merely makes the threat illegal."
+`defuses_threat` (D98) is kept and still tested, just no longer called
+from production code.
+
+**Not yet done — next session should start here:**
+1. Gokul commits `src/search/alpha_beta.rs` and `src/search/
+   iterative.rs` (this session's SEE-degradation diff) and confirms CI
+   is fully green, including the 4 new tests.
+2. Run a 20-game `uci_match_runner` A/B first look (`ThreatDefusal=true`
+   vs. `false`, fresh seed) — not trusted alone, same as every prior
+   first look.
+3. If not clearly negative, a 100-200 game confirmation, watching
+   specifically for any new crash — `defusal_score` adds its own
+   `pos.make_move`/`unmake_move` pair beyond what D101 already fixed,
+   worth explicit attention given this investigation's history.
+4. Only after this signal is independently confirmed: control-delta as
+   its own signal was already implemented *as part of* this session's
+   diff (it's bundled into `defusal_score` alongside SEE, not held
+   back as a separate diff — note this deviates from the original
+   proposal's "three signals, three independent validations" plan; flag
+   this explicitly if a future session wants to isolate SEE-only vs.
+   control-delta-only impact).
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|
