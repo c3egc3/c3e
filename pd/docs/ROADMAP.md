@@ -2606,11 +2606,12 @@ the existing browser gameplay build at all.
       `uci_wasm.rs`'s tests (gated behind `uci-wasm`, not default).
       Added a second step, `cargo test --verbose --features uci-wasm`,
       right after it — same job, native host target, no wasm32/
-      wasm-bindgen-test-runner setup needed. **Not yet build-verified
-      by an actual Actions run** (no local cargo/wasm-pack available to
-      Gokul or this session) — first real risk check is the next
-      Actions run after these files are committed. Flagging explicitly
-      per working-style ("flag any test risk explicitly").
+      wasm-bindgen-test-runner setup needed. **Build-verified**:
+      Gokul ran Actions (Session 109) — plain `cargo test` step: 517
+      tests, all green, zero regression from Phase 30's `lib.rs`
+      changes. `--features uci-wasm` step: compiled clean, 3 of the 16
+      new tests failed — real bug, not a CI/environment issue, see
+      30.9.
 - [ ] 30.7 — Optional follow-up, not done this session: mirror the same
       second-build addition into `build.yml`'s `build-wasm` job (D46)
       so the UCI-protocol WASM bundle is also published as a downloadable
@@ -2621,6 +2622,22 @@ the existing browser gameplay build at all.
       UCI-speaking browser GUI in mind for this, or is it speculative
       infrastructure? Doesn't block anything already built, but worth
       answering before investing in 30.5's async fix.
+- [x] 30.9 — Bug caught by the first real CI run of 30.6 (Session 109):
+      3 of `uci_wasm.rs`'s 16 tests
+      (`test_position_startpos_sets_standard_position`,
+      `test_position_fen_parses_multi_field_fen`,
+      `test_ucinewgame_resets_position_and_clears_tt`) asserted
+      `session.pos.to_fen() == STANDARD_START_FEN`. `Position::to_fen()`
+      always appends the Pet Dragon pawn-start extension (its own doc
+      comment says so — 7th FEN field, e.g. `a2:w,b2:w,...`), so this
+      could never have matched the bare 6-field `STANDARD_START_FEN`
+      constant. Not a production bug — `uci_wasm.rs`'s actual
+      `position`/`ucinewgame` logic was never wrong, only these three
+      test assertions' expected value was. Fixed by switching to
+      `Position::to_standard_fen()` — a method the codebase already
+      provides specifically for this ("Used for UCI communication with
+      external tools" per its own doc comment), not a new one. All 16
+      tests now correct.
 
 ---
 

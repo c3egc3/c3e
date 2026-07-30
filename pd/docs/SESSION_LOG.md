@@ -9,6 +9,61 @@ Most recent session at TOP.
 
 ---
 
+## Session 109 — 2026-07-30, cont. (Phase 30 CI-verified: 1 real test bug caught and fixed, zero production regressions)
+
+**Built/done:**
+
+1. Gokul uploaded the Actions log bundle for the `Test` job (both the
+   pre-existing `cargo test` step and the new `--features uci-wasm`
+   step added in Session 108).
+
+2. Read the logs directly rather than assuming: plain `cargo test`
+   step — 517 tests, 100% green, zero regression from Phase 30's
+   `lib.rs` changes (confirms the `wasm_bindgen`-import-gate fix from
+   last session was sufficient and the default build path is
+   untouched). `--features uci-wasm` step — compiled clean (no
+   compile errors from the new feature/module at all), but 3 of 16 new
+   tests failed at runtime.
+
+3. Diagnosed by reading the actual panic output, not guessing: all
+   three failures were `assert_eq!`/`assert_ne!` mismatches comparing
+   `session.pos.to_fen()` against the bare `STANDARD_START_FEN`
+   constant. Traced to `Position::to_fen()`'s own doc comment
+   ("always include Pet Dragon extension") — it appends a 7th FEN
+   field unconditionally, so it could never equal the plain 6-field
+   constant. Found `Position::to_standard_fen()` already exists in
+   `position/mod.rs`, doc-commented "Used for UCI communication with
+   external tools" — exactly the right tool, already in the codebase,
+   not something needing to be added.
+
+**Bugs fixed:** 3 test assertions in `src/uci_wasm.rs`
+(`test_position_startpos_sets_standard_position`,
+`test_position_fen_parses_multi_field_fen`,
+`test_ucinewgame_resets_position_and_clears_tt`) switched from
+`.to_fen()` to `.to_standard_fen()`. Cause: assumed `to_fen()` returns
+a bare 6-field FEN without checking its own doc comment first. Fix:
+use the extension-free method the codebase already provides for this
+exact comparison. Why correct: `to_standard_fen()`'s only difference
+from `to_fen()` is omitting the Pet Dragon extension field, which is
+precisely what these three tests need to compare against
+`STANDARD_START_FEN` correctly — confirmed by reading
+`generate_fen()`'s boolean-flag signature and both callers
+(`to_fen()` passes `true`, `to_standard_fen()` passes `false`).
+No production code in `uci_wasm.rs` changed — `position`/`ucinewgame`
+handling was correct all along; only three tests' expected values were
+wrong.
+
+**Decisions made:** None.
+
+**Next session start point:** Gokul commits the corrected
+`uci_wasm.rs` (this session's only changed file) and re-runs Actions
+to confirm all 16 `uci-wasm` tests are green. Once confirmed: ROADMAP
+30.7/30.8 remain open, low-urgency, Gokul's call — or return to 29.6b
+(PlayStyle n=200 confirmation vs. skip to Texel-tuning), also still
+open and unblocked.
+
+---
+
 ## Session 108 — 2026-07-30 (New Phase 30: second WASM build target speaking real UCI text protocol, requested directly rather than continuing 29.6b)
 
 **Built/done:**
