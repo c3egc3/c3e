@@ -9,6 +9,86 @@ Most recent session at TOP.
 
 ---
 
+## Session 108 — 2026-07-30 (New Phase 30: second WASM build target speaking real UCI text protocol, requested directly rather than continuing 29.6b)
+
+**Built/done:**
+
+1. Reviewed 3 uploaded docs (dual-evaluator-proposal.md,
+   pet-dragon-vs-stockfish-gap-report.md, uci-options-comparison.md) —
+   informational, not code-triggering. Flagged the dual-evaluator
+   proposal as likely scope creep pending a product decision (does a
+   *variant* engine need a from-scratch Stockfish-NNUE reimplementation
+   for the one starting position that happens to be standard chess?)
+   — left unscheduled, not rejected outright.
+
+2. Confirmed from uci-options-comparison.md + direct source read:
+   native (`main.rs`) already speaks full UCI; the WASM/browser build
+   (`wasm` feature) does not — it's a direct-function-call API
+   (`search_from_fen` et al.), by design, not an oversight.
+
+3. Gokul asked for a second, separate WASM+JS build that does speak
+   real UCI text, alongside (not replacing) the existing browser build.
+   Read Tier 2 in full this session (PROJECT_CONTEXT — stale/historical,
+   ROADMAP.md is the live source of truth; VARIANT_ARCHITECTURE;
+   ENGINE_ARCHITECTURE; DECISIONS.md read via targeted grep for
+   WASM-relevant entries, not full 311KB read, given token budget).
+
+4. Read current `Cargo.toml`, `src/lib.rs`, `src/eval/mod.rs`,
+   `src/eval/style.rs`, `src/search/{skill,time,mod,iterative}.rs`,
+   `src/tt/mod.rs`, `src/position/{mod,fen,make_move}.rs`,
+   `src/movegen/mod.rs`, `src/types.rs`, `.github/workflows/
+   {deploy,build}.yml` before writing anything, per working-style.
+
+5. Implemented Phase 30 (full breakdown in ROADMAP.md):
+   - New `uci-wasm` Cargo feature, independent from `wasm`.
+   - New `src/uci_wasm.rs`: `uci_command(line) -> String` export,
+     thread_local persistent session (position + TT + options), real
+     `uci`/`isready`/`ucinewgame`/`position`/`go`/`setoption` handling.
+     16 new unit tests.
+   - `src/lib.rs`: declared the module; widened `wasm_main()`'s startup
+     gate and the `wasm_bindgen::prelude` import to `any(wasm,
+     uci-wasm)` — existing `wasm`-only exports (search_from_fen,
+     new_game, etc.) untouched, still gated `wasm` alone.
+   - `deploy.yml`: second `wasm-pack build --features uci-wasm` step
+     → `web/pkg-uci/`, alongside existing `web/pkg/`.
+   - `build.yml`: added a `cargo test --features uci-wasm` step to the
+     existing `test` job — without this, the 16 new tests would never
+     run in CI (gated behind a non-default feature).
+
+**Bugs fixed:** One, caught before shipping, not after: the first pass
+widened `wasm_main()`'s `#[cfg(...)]` to `any(wasm, uci-wasm)` but left
+the `wasm_bindgen::prelude` import gated on `wasm` alone — a
+uci-wasm-only build would have failed to resolve `wasm_bindgen` at the
+`#[wasm_bindgen(start)]` attribute on `wasm_main`. Cause: widened the
+function's own gate without checking its dependency's gate in the same
+pass. Fix: widened the import to the same `any(...)` condition. Why
+correct: both build targets now compile the import exactly when they
+need it, and neither gains anything the other doesn't already have.
+
+**Decisions made:** None requiring a new DECISIONS.md entry this
+session — Phase 30's design choices (thread_local session state,
+dispatch-not-blend for NNUEWeight/PlayStyle reuse, the five documented
+architectural limitations around synchronous WASM calls) are recorded
+directly in `uci_wasm.rs`'s own module doc comment and ROADMAP.md
+30.5, not duplicated into DECISIONS.md — none of them rise to the
+"architectural decision with real alternatives considered and
+rejected" bar DECISIONS.md entries are for; they're scoping notes on a
+single new file.
+
+**Next session start point:** Awaiting Gokul's confirmation that CI is
+green on Phase 30 (first-ever Actions run of both `deploy.yml`'s new
+second `wasm-pack` step and `build.yml`'s new `--features uci-wasm`
+test step — real risk, not yet verified, per ROADMAP 30.6). If green:
+ROADMAP 30.7 (mirror into `build.yml`'s release-asset job — ask first,
+not requested yet) and 30.8 (is there an actual target GUI in mind?)
+are both open, low-urgency, Gokul's call. If CI is red: fix whatever
+Actions reports first, before anything else — do not start 29.6b or
+any other new task with Phase 30 unverified. 29.6b (PlayStyle n=200
+confirmation vs. skip to Texel-tuning) remains open and unblocked
+whenever Gokul wants to return to it instead.
+
+---
+
 ## Session 107 — 2026-07-29, cont. (PlayStyle self-play first-look: all four modes land within noise of Balanced at n=20; D112)
 
 **Built/done:**

@@ -2544,6 +2544,86 @@ Either is reasonable; this entry doesn't pick one.
 
 ---
 
+## Phase 30 — Second WASM Build Target: Real UCI Protocol (Session 108)
+
+Separate from Phase 29/PlayStyle — new work, requested directly by Gokul
+rather than the next open ROADMAP item (29.6b was left open, not
+superseded; still available whenever Gokul wants to pick it back up).
+
+Context: `web/index.html`/`web/pit/vs.html` use the existing `wasm`
+feature's direct-function-call API (`search_from_fen`, `new_game`,
+etc.) — not real UCI text protocol at all (uci-options-comparison.md,
+reviewed this session, confirmed this explicitly). The native binary
+(`src/main.rs`) already speaks full UCI. This phase adds a **second,
+independent** WASM build target that also speaks real UCI text, for any
+future UCI-speaking browser GUI to embed — without touching or risking
+the existing browser gameplay build at all.
+
+- [x] 30.1 — New `uci-wasm` Cargo feature (`Cargo.toml`), same
+      dependencies as `wasm` (wasm-bindgen, js-sys, getrandom/js,
+      console_error_panic_hook), but a genuinely separate feature —
+      never both active in the same `wasm-pack` invocation.
+- [x] 30.2 — New `src/uci_wasm.rs`: single `uci_command(line: &str) ->
+      String` export. Persistent per-session `UciSession`
+      (`thread_local!` + `RefCell` — WASM is single-threaded) holding
+      position, TT (kept warm across moves), and the option values that
+      aren't already engine-wide globals (`NNUEWeight`/`PlayStyle` are
+      — reused directly via `eval::set_nnue_weight_pct`/
+      `eval::style::set_play_style`, not duplicated).
+      Commands implemented: `uci`, `isready`, `ucinewgame`, `position
+      [startpos|fen ...] [moves ...]`, `go [depth|movetime|wtime/btime/
+      winc/binc/movestogo|nodes|infinite]`, `setoption name <id> value
+      <x>` (Hash, Threads [pinned 1], Move Overhead, Skill Level,
+      Contempt, UCI_LimitStrength, UCI_Elo, NNUEWeight, PlayStyle),
+      `stop`/`ponderhit`/`quit`/unrecognized (no-ops). 16 new unit tests.
+- [x] 30.3 — `src/lib.rs`: declared the new module
+      (`#[cfg(feature = "uci-wasm")]`), widened `wasm_main()`'s
+      startup-sequence gate and the `wasm_bindgen::prelude` import from
+      `feature = "wasm"` to `any(wasm, uci-wasm)` — both build targets
+      need the same mandatory `init_masks()→init_magic()→init_zobrist()`
+      + panic-hook setup. Caught and fixed mid-session: the import
+      widening was missed on the first pass, which would have broken a
+      uci-wasm-only build (wasm_bindgen unresolved) — fixed before
+      shipping, not after.
+- [x] 30.4 — `.github/workflows/deploy.yml`: second `wasm-pack build`
+      step, `--features uci-wasm` → `web/pkg-uci/` (alongside the
+      existing `web/pkg/`), both served automatically since the whole
+      `web/` folder is already the Pages upload — no separate Pages
+      config needed.
+- [ ] 30.5 — **Known, documented architectural limitation, not yet
+      solved**: because `uci_command` is a single synchronous WASM call,
+      (a) `stop` can never interrupt an in-flight `go` — JS is blocked on
+      the call stack for the whole search; (b) `go infinite` is clamped
+      to a bounded fallback (`INFINITE_FALLBACK_MS` = 30s) rather than
+      honored literally, to avoid an unrecoverable hung tab; (c) no live
+      `info depth N ...` streaming mid-search, only one final info+
+      bestmove line; (d) `ponder`/`ponderhit` unsupported. A real fix
+      needs an async/threaded model (Web Worker + `postMessage`, or
+      SharedArrayBuffer-backed threads) — meaningfully bigger than this
+      session's scope, not started.
+- [x] 30.6 — `build.yml`'s existing `test` job runs `cargo test
+      --verbose` with no features, which would never have touched
+      `uci_wasm.rs`'s tests (gated behind `uci-wasm`, not default).
+      Added a second step, `cargo test --verbose --features uci-wasm`,
+      right after it — same job, native host target, no wasm32/
+      wasm-bindgen-test-runner setup needed. **Not yet build-verified
+      by an actual Actions run** (no local cargo/wasm-pack available to
+      Gokul or this session) — first real risk check is the next
+      Actions run after these files are committed. Flagging explicitly
+      per working-style ("flag any test risk explicitly").
+- [ ] 30.7 — Optional follow-up, not done this session: mirror the same
+      second-build addition into `build.yml`'s `build-wasm` job (D46)
+      so the UCI-protocol WASM bundle is also published as a downloadable
+      release asset, not just served from GitHub Pages. Ask Gokul before
+      doing this — deploy.yml (Pages) was the explicit ask; build.yml
+      (release assets) is a natural but unrequested extension.
+- [ ] 30.8 — Open question, Gokul's call: is there an actual target
+      UCI-speaking browser GUI in mind for this, or is it speculative
+      infrastructure? Doesn't block anything already built, but worth
+      answering before investing in 30.5's async fix.
+
+---
+
 ## Milestone Targets
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|
