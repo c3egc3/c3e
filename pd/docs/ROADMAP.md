@@ -2516,12 +2516,23 @@ Either is reasonable; this entry doesn't pick one.
 - [x] 29.5 — 10 new regression tests total (8 in `style.rs`, 1 in
       `eval/mod.rs`, 1 in `main.rs`). Full breakdown in DECISIONS.md
       D111.
-- [ ] 29.6 — Self-play validation per mode vs. Balanced (proposal §6.3)
-      — not yet run; needs actual games via the existing selfplay
-      GitHub Actions workflow. Expect and accept some Elo loss vs.
-      Balanced per mode — that's the intended tradeoff; flag for
-      re-tuning if a mode loses more than ~100 Elo or produces unsound
-      sacrifices a deeper Balanced/Stockfish check refutes cleanly.
+- [x] 29.6 — Self-play first-look, n=20 per mode vs. Balanced (Session
+      107, D112): all four modes land within noise of Balanced —
+      Killer -17.4 Elo (A vs B), Tactical -0.0, Positional -34.9,
+      Endgame +17.4 (sign is A-Balanced-vs-B-mode; negative means the
+      mode nominally scored above Balanced). None crossed the ~100 Elo
+      loss flag threshold. At n=20 (~±80 Elo noise floor), none of
+      these are distinguishable from zero effect — same "near the
+      noise floor" situation D106 already documented for TDSE. See
+      DECISIONS.md D112 for the full table and reasoning.
+- [ ] 29.6b — Open, Gokul's call (D112 doesn't pick one): run n=200
+      confirmation on all four modes' current hand-picked constants
+      before drawing any conclusion (expensive, 800 games, but the
+      only way to actually resolve direction/magnitude) — or skip
+      straight to 29.7 (Texel-tune first, confirm the tuned result
+      once, rather than spending compute confirming values about to
+      be replaced anyway). Not blocking either way — PlayStyle
+      defaults off.
 - [ ] 29.7 — Once self-play data exists: fold each mode's `style.rs`
       constants through the same Texel tuning pipeline used for the
       core eval (proposal §7.3), rather than leaving them hand-picked

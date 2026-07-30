@@ -5284,3 +5284,55 @@ proposal's own rollout plan): self-play Elo validation per mode
 (§6.3) and the eventual Texel-tuning pass on the four modes' constants
 (§7.3) — both require actual games, not something this session can
 produce.
+
+---
+
+## D112 — PlayStyle Self-Play First-Look Results: All Four Modes Land Within Noise of Balanced at n=20 (Session 107)
+**Decision**: Recorded first-look Elo A/B results for all four
+non-Balanced PlayStyle modes vs. Balanced, run via
+`uci_match_runner.yml` (same-ref, different-`setoption` pattern —
+Phase 20's Skill Level precedent). No code or default changed as a
+result of this data; `PlayStyle` stays default-0 (Balanced) regardless.
+
+**Results** (n=20 games each, movetime 100ms, Engine A = Balanced
+control, Engine B = the named mode):
+
+| Mode | A (Balanced) score | Elo diff (A vs B) | Reading |
+|------|--------------------|--------------------|---------|
+| Killer (1) | 47.5% (5W-6L-9D) | -17.4 | B (Killer) nominally ahead |
+| Tactical (2) | 50.0% (4W-4L-12D) | -0.0 | dead even |
+| Positional (3) | 45.0% (2W-4L-14D) | -34.9 | B (Positional) nominally ahead |
+| Endgame (4) | 52.5% (5W-4L-11D) | +17.4 | A (Balanced) nominally ahead |
+
+**Why this isn't a real signal yet**: at n=20, the standard error on
+match score is roughly ±11 percentage points (≈ ±80 Elo at p≈0.5),
+so every result above sits within about 0.5 standard errors of zero —
+indistinguishable from pure noise, exactly the same "near the noise
+floor" situation D106 documented for TDSE's own n=20/n=200 runs. None
+of the four modes crossed ROADMAP Phase 29.6's flag threshold (a mode
+losing more than ~100 Elo), so nothing here indicates a broken or
+actively harmful mode — but nothing here validates a mode's constants
+as good, either. The Killer/Positional modes nominally *winning*
+against Balanced at n=20 is notable but not something to read into:
+these are hand-picked, untuned constants (D111), and an untuned
+additive bonus outperforming the fully Texel-tuned baseline at n=20 is
+far more consistent with sampling noise than with a genuine
+improvement.
+
+**Not yet done — Gokul's call, genuinely open (mirrors D106's framing
+for TDSE)**:
+1. **Run n=200 confirmation for all four modes** before drawing any
+   conclusion — the same escalation path D99→D103 used for TDSE. Most
+   expensive option (4×200 = 800 games) but the only way to actually
+   resolve whether any mode has a real effect in either direction.
+2. **Skip straight to Texel-tuning the four modes' constants**
+   (ROADMAP 29.7) instead of spending compute confirming untuned
+   values — since none of the four constants have been tuned yet
+   anyway, a confirmation run on the current hand-picked numbers has
+   limited value regardless of its outcome; tuning first, then
+   confirming the tuned result, may be the more efficient order.
+3. **Leave as-is for now** — nothing here is blocking (PlayStyle
+   defaults off, exactly like ThreatDefusal did at this stage), so
+   there's no urgency either way.
+Either 1 or 2 is reasonable; this entry doesn't pick one, same as
+D106's stance on TDSE.

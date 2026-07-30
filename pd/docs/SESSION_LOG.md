@@ -9,6 +9,49 @@ Most recent session at TOP.
 
 ---
 
+## Session 107 — 2026-07-29, cont. (PlayStyle self-play first-look: all four modes land within noise of Balanced at n=20; D112)
+
+**Built/done:**
+
+1. Gokul ran the 4 `uci_match_runner.yml` workflow_dispatch triggers
+   from last session's instructions (same-ref Balanced-vs-mode, n=20
+   each, seeds 0/100/200/300 for Killer/Tactical/Positional/Endgame)
+   and uploaded all 4 `uci_match_results.txt` artifacts.
+
+2. Read and recorded all four results as-is (no re-running, no
+   estimation): Killer -17.4 Elo (A-vs-B, i.e. Killer nominally ahead
+   of Balanced), Tactical -0.0 (dead even), Positional -34.9
+   (Positional nominally ahead), Endgame +17.4 (Balanced nominally
+   ahead). None crossed the ROADMAP 29.6 flag threshold (~100 Elo
+   loss).
+
+3. Framed the results honestly rather than over-reading them: at
+   n=20, the standard error on match score is roughly ±11 percentage
+   points (~±80 Elo), so all four results sit within about 0.5
+   standard errors of zero — indistinguishable from noise, matching
+   D106's own "near the noise floor" language for TDSE's n=20 runs.
+   Explicitly flagged that Killer/Positional nominally *winning*
+   against the fully Texel-tuned Balanced baseline, on completely
+   untuned hand-picked constants, is far more consistent with sampling
+   noise than a genuine improvement — not something to read into.
+
+**Bugs fixed:** none.
+
+**Decisions made:** D112 (results table + two genuinely open next
+steps, decision left to Gokul, same framing D106 used for TDSE).
+
+**Next session start point:** Gokul's call between two options logged
+in D112/ROADMAP 29.6b: (a) run n=200 confirmation on all four modes'
+current hand-picked constants before drawing any conclusion, or
+(b) skip straight to Texel-tuning the four modes' constants (29.7)
+since none are tuned yet and a confirmation run on soon-to-be-replaced
+values has limited value. Neither is urgent — `PlayStyle` defaults off
+regardless, so nothing here is shipping-blocked. The other open item,
+29.8 (spin vs. combo UCI presentation), also remains Gokul's call
+whenever convenient.
+
+---
+
 ## Session 106 — 2026-07-29, cont. (Five-mode PlayStyle additive eval bonus implemented — style.rs new file, evaluate_styled() wired in, UCI option added; D111)
 
 **Built/done:**
