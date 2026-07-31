@@ -9,6 +9,92 @@ Most recent session at TOP.
 
 ---
 
+## Session 110 — 2026-07-31 (Phase 29.7: Texel-tuning pipeline built for PlayStyle, real compile/test/end-to-end verification, 3 bugs caught before shipping)
+
+**Built/done:**
+
+1. Gokul chose Option 1 ("build the full integration") for 29.7 after
+   an explain-it-simply pass, since the earlier framing
+   (`ask_user_input_v0`) didn't land. Read `texel_tune.rs`,
+   `texel_gen.rs`, and all of `src/texel/` (`features.rs`, `weights.rs`,
+   `weights_f64.rs`, `predict.rs`, `predict_f64.rs`) in full before
+   writing anything, plus re-verified every PlayStyle bonus function in
+   `eval/style.rs` line-by-line against the live source (not from
+   memory) before duplicating its feature-gathering logic.
+
+2. Extended the pipeline across 7 files (full breakdown in ROADMAP
+   29.7a–29.7g): `StyleFeatures` + `extract_style_features()` in
+   `features.rs`; 5 new tunable fields end-to-end through
+   `weights.rs`/`weights_f64.rs` (`PARAM_COUNT`, flatten/unflatten,
+   `to_tunable_weights`, `From`, round-trip test); forward + gradient
+   PlayStyle scoring in `predict.rs`/`predict_f64.rs`, including a
+   finite-difference numerical gradient test (the strongest check in
+   this diff — catches sign/factor errors a self-consistency test
+   can't); mode-tagging in `texel_gen.rs`'s output format (additive,
+   backward compatible); mode-aware, dual-format-accepting data loading
+   in `texel_tune.rs`.
+
+3. **Actually compiled and tested, not just reviewed.** Installed a
+   Rust toolchain in-session specifically because a change this size
+   shouldn't ship on manual review alone — worked around two rounds of
+   ancient-toolchain-vs-modern-dev-dependency friction (apt's rustc
+   1.75 vs. `criterion`'s transitive deps needing edition2024/newer
+   rustc; worked around by downgrading `clap`/`half` for the local
+   check only, not part of the deliverable) to get a real
+   `cargo build`/`cargo test` run.
+
+4. Ran a genuine end-to-end smoke test, not just unit tests:
+   `texel_gen` generated real KILLER-tagged self-play data;
+   `texel_tune` loaded it mixed with a hand-derived legacy-format
+   (untagged) file in the same run, proving backward compatibility by
+   demonstration rather than by claim; ran 2 real gradient-descent
+   epochs; loss decreased monotonically (0.0571→0.0508) with only the
+   tagged mode's constants moving, everything else held exactly at
+   default; `texel_diag` then round-trip-parsed that exact tuned-output
+   file without error.
+
+**Bugs fixed:** 3, all caught by the actual compile (not by review):
+   - `E0428` duplicate `chebyshev_distance` definition in `features.rs`
+     — this file already had one (used by an unrelated passed-pawn
+     feature). Cause: didn't grep the file for the name before adding
+     a same-named helper. Fix: deleted the duplicate, reused the
+     existing one. Why correct: bodies were byte-identical; no
+     behavior change, purely removing dead redundancy.
+   - `E0063` missing fields in `texel_diag.rs`'s `TunableWeights`
+     construction. Cause: this file wasn't in the original file list I
+     read/scoped for this task — its existence as a manual
+     `TunableWeights`-constructing consumer only surfaced via the
+     compiler. Fix: added the same 5 fields via the same
+     `extract_scalar`/`extract_int_array` helpers the file already
+     uses for every other field. Why correct: matches the file's own
+     established convention exactly, verified by the subsequent
+     round-trip smoke test actually parsing tuned PlayStyle output.
+   - `E0433` unresolved `crate::eval::style`/`crate::texel::features`
+     paths in `texel_gen.rs` and `texel_tune.rs`. Cause: forgot that
+     `src/bin/*.rs` files are separate crates from the library — every
+     other bin file in this project reaches library code via
+     `pet_dragon_lib::...`, not `crate::...`. Fix: switched all 5
+     occurrences across the two files to `pet_dragon_lib::`. Why
+     correct: matches the existing, working convention every other
+     line in both files already follows.
+
+**Decisions made:** None requiring a new DECISIONS.md entry — the
+"flat i32, not `S(mg,eg)`" choice for the 5 new weights and the
+"dispatch-on-mode-tag, zero-gradient-elsewhere" data design are
+recorded directly in the code's own doc comments and ROADMAP 29.7,
+same threshold reasoning as Phase 30's decisions in Session 108.
+
+**Next session start point:** 29.7h is the real remaining work —
+generate actual bulk self-play data (hundreds/thousands of games,
+not this session's 2-game smoke test) for all 4 non-Balanced modes
+via Actions, run the real tuning pass, sanity-check with `texel_diag`,
+and copy the results into `eval/style.rs`. Gokul's call on game-count
+budget — not blocking, PlayStyle still defaults off. 29.6b, 30.7,
+30.8 all remain open and unblocked alongside it, same as before this
+session.
+
+---
+
 ## Session 109 — 2026-07-30, cont. (Phase 30 CI-verified: 1 real test bug caught and fixed, zero production regressions)
 
 **Built/done:**

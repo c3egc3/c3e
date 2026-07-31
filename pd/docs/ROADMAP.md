@@ -2533,10 +2533,94 @@ Either is reasonable; this entry doesn't pick one.
       once, rather than spending compute confirming values about to
       be replaced anyway). Not blocking either way — PlayStyle
       defaults off.
-- [ ] 29.7 — Once self-play data exists: fold each mode's `style.rs`
-      constants through the same Texel tuning pipeline used for the
-      core eval (proposal §7.3), rather than leaving them hand-picked
-      indefinitely.
+- [x] 29.7 — Pipeline built (Session 110): folded each mode's
+      `style.rs` constants through the same Texel tuning pipeline used
+      for the core eval (proposal §7.3), as scoped in the "Option 1:
+      build the full integration" discussion. Confirmed via an actual
+      `cargo build`/`cargo test` (not manual review — see below) plus a
+      real end-to-end smoke run.
+    - [x] 29.7a — `src/texel/features.rs`: new `StyleFeatures` struct +
+          `extract_style_features(pos, mode)`, duplicating `style.rs`'s
+          4 bonus functions' feature-gathering halves exactly (verified
+          line-by-line against the live source, not from memory).
+          `TexelFeatures` gets a new `style: Option<StyleFeatures>`
+          field, always `None` from `extract_features()` itself — that
+          function and its self-consistency test are untouched.
+    - [x] 29.7b — `src/texel/weights.rs` / `weights_f64.rs`: 5 new
+          tunable fields (`killer_attacker_bonus[8]`,
+          `killer_storm_bonus_per_pawn`, `tactical_bonus_per_square`,
+          `positional_bonus_per_square`, `endgame_bonus_per_unit`) —
+          flat i32/f64, not `S(mg,eg)`, since each already gets its own
+          phase-scaling directly (matches `style.rs`'s own math, not
+          the taper curve the rest of HCE uses). `PARAM_COUNT`,
+          `flatten`/`unflatten`, `to_tunable_weights`,
+          `From<&TunableWeights>`, and the round-trip test all extended.
+    - [x] 29.7c — `src/texel/predict.rs` / `predict_f64.rs`:
+          `style_score`/`style_score_f64` (forward pass, mirrors
+          `evaluate_style`'s arithmetic exactly) and
+          `style_score_and_grad_f64` (gradient accumulation — every
+          PlayStyle term is a plain linear product, no clamps, so every
+          gradient is a direct `error_signal * feature * phase_factor`
+          term). New tests: bit-exact match against
+          `evaluate() + evaluate_style()` across all 4 modes × 100
+          seeds; a test proving `predict()` ignores the global
+          PlayStyle atomic when `f.style` is `None`; a forward-
+          consistency sweep (grad-path score == plain-path score); and
+          — the strongest one — a **finite-difference numerical
+          gradient check**, which catches a wrong sign or a missing
+          phase factor that a pure self-consistency check cannot.
+    - [x] 29.7d — `src/bin/texel_gen.rs`: new 4th CLI arg
+          (`play_style_mode`, default Balanced), calls
+          `eval::style::set_play_style()` once per run so the whole
+          game is actually played under that style, and stamps every
+          sample it writes with the mode. Output format extended to
+          `<FEN>|<result>|<mode>` — purely additive; a bare 2-field
+          line is still valid and means "no tag."
+    - [x] 29.7e — `src/bin/texel_tune.rs`: `load_samples()` rewritten
+          to accept BOTH the 2-field (legacy, implicit Balanced) and
+          new 3-field format in the same run, and calls
+          `extract_style_features()` for any non-Balanced-tagged
+          sample. `write_tuned_weights()` extended to emit the 5
+          PlayStyle constants under their real `eval/style.rs` const
+          names, ready to copy in directly (same "step 6" workflow
+          Phase 25 established for the core eval).
+    - [x] 29.7f — `src/bin/texel_diag.rs` (a file this session hadn't
+          originally scoped in — found only because an actual compile
+          caught it): extended `parse_tuned_weights()` with the same 5
+          fields, so the diagnostic round-trip still works on tuned
+          output files that include PlayStyle constants.
+    - [x] 29.7g — **Actually compiled and tested, not just reviewed.**
+          Installed a Rust toolchain in-session (not available by
+          default) specifically to verify this rather than trust
+          manual inspection on a change this size — caught and fixed 3
+          real bugs review alone had missed: a duplicate
+          `chebyshev_distance` definition (E0428, `features.rs` already
+          had one for an unrelated feature), `texel_diag.rs`'s
+          `TunableWeights` construction not knowing about the 5 new
+          fields (E0063, a file not originally read/scoped), and two
+          bin files (`texel_gen.rs`, `texel_tune.rs`) using `crate::`
+          for library paths when bin crates need `pet_dragon_lib::`
+          instead (E0433). After fixes: `cargo build --lib`/`--bins`
+          clean, `cargo test --lib` **504/504 passing** (finite-
+          difference gradient test included), and a real end-to-end
+          smoke run — `texel_gen` generated actual KILLER-tagged
+          self-play data, `texel_tune` loaded it mixed with hand-
+          crafted legacy-format data in the same run (proving
+          backward-compatibility, not just claiming it), ran 2 real
+          epochs, and **loss decreased monotonically** (0.0571 →
+          0.0508) with only the tagged mode's constants moving —
+          `texel_diag` then round-trip-parsed that exact output file
+          without error.
+    - [ ] 29.7h — **Not done this session, the actual remaining work**:
+          generate real bulk self-play data for all 4 non-Balanced
+          modes (hundreds/thousands of games each, via Actions — the
+          smoke test above used 2 toy games, nowhere near enough to
+          tune on for real), run the real tuning pass, sanity-check
+          the result with `texel_diag`, and copy the tuned constants
+          into `eval/style.rs`'s actual consts. This is a compute-cost
+          decision (how many games per mode), Gokul's call, same
+          "not blocking either way — PlayStyle defaults off" status
+          29.6b already has.
 - [ ] 29.8 — Open question, Gokul's call (proposal §8): keep
       `PlayStyle` as a 0-4 spin (current implementation, consistent
       with `Contempt`/`NNUEWeight`) or switch to five UCI `combo`
