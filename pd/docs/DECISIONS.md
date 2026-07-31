@@ -5336,3 +5336,63 @@ for TDSE)**:
    there's no urgency either way.
 Either 1 or 2 is reasonable; this entry doesn't pick one, same as
 D106's stance on TDSE.
+
+---
+
+## D113 — PlayStyle n=200 Confirmation: All Four Modes Flatten to Noise, D112's Leans Confirmed as Sampling Noise (Session 115)
+
+**Decision**: Ran the n=200 confirmation D112 left open (option 1 —
+Gokul's call, made this session), same `uci_match_runner.yml` same-ref/
+different-`setoption` pattern as every prior PlayStyle/TDSE/Skill Level
+Elo measurement in this repo. 4 runs, 200 games each, movetime 100ms,
+seeds 70000/70200/70400/70600 (Killer/Tactical/Positional/Endgame vs.
+Balanced respectively), no code changed to produce this data — pure
+measurement.
+
+**Results** (Engine A = Balanced control, Engine B = the named mode,
+sign is A vs B — positive means Balanced ahead):
+
+| Mode | A wins | B wins | Draws | A score | Elo diff (A vs B) |
+|------|--------|--------|-------|---------|--------------------|
+| Killer (1) | 36 | 35 | 129 | 50.2% | +1.7 |
+| Tactical (2) | 36 | 36 | 128 | 50.0% | -0.0 |
+| Positional (3) | 40 | 32 | 128 | 52.0% | +13.9 |
+| Endgame (4) | 43 | 43 | 114 | 50.0% | -0.0 |
+
+**Reading against D112's n=20 first look:**
+
+| Mode | n=20 Elo diff | n=200 Elo diff | Direction held? |
+|------|---------------|-----------------|------------------|
+| Killer | -17.4 | +1.7 | No — flipped and flattened |
+| Tactical | -0.0 | -0.0 | Flat both times |
+| Positional | -34.9 | +13.9 | No — flipped and flattened |
+| Endgame | +17.4 | -0.0 | No — flattened toward zero |
+
+Every mode's n=20 lean (as large as ±34.9 Elo) either flattened or
+reversed at n=200 — the exact same pattern D103 established for TDSE
+(n=20 leans washing out at n=200, not compounding). Positional's +13.9
+is the largest remaining gap, well inside the ~±50 Elo 95% CI at this
+sample size (draw-heavy match, ~64% draw rate across all four runs,
+consistent with 100ms/move Pet Dragon-vs-itself games generally) — not
+distinguishable from zero.
+
+**Conclusion**: at their current hand-picked, untuned constants
+(D111), none of the four PlayStyle modes show a measurable Elo effect
+in either direction against Balanced. This isn't "PlayStyle failed" —
+it's the same "hasn't earned promotion" framing D90/D106 used for
+Phase 26/TDSE: the mechanism is confirmed crash-safe and Elo-neutral
+at n=200×4, which is itself useful information (no mode is quietly
+sabotaging play), but says nothing about whether Texel-tuning the
+constants (ROADMAP 29.7h) would reveal a real effect the untuned
+values are currently diluting or masking. `PlayStyle` stays default-0
+(Balanced) — unaffected either way, exactly as D112 already noted.
+
+**Not yet done — Gokul's call, unchanged from before this run:**
+1. **29.7h** — generate real bulk self-play data per mode and run the
+   actual Texel-tuning pass (the pipeline itself has been built and
+   compile/test-verified since Session 110 — this is the compute step,
+   not more scaffolding). This is the only remaining lever that could
+   turn a currently-neutral mode into a measurably distinct one.
+2. **Leave PlayStyle as-is for now** — nothing here is blocking
+   (defaults off), so there's no urgency either way, same standing
+   status as always.

@@ -2525,14 +2525,16 @@ Either is reasonable; this entry doesn't pick one.
       these are distinguishable from zero effect — same "near the
       noise floor" situation D106 already documented for TDSE. See
       DECISIONS.md D112 for the full table and reasoning.
-- [ ] 29.6b — Open, Gokul's call (D112 doesn't pick one): run n=200
-      confirmation on all four modes' current hand-picked constants
-      before drawing any conclusion (expensive, 800 games, but the
-      only way to actually resolve direction/magnitude) — or skip
-      straight to 29.7 (Texel-tune first, confirm the tuned result
-      once, rather than spending compute confirming values about to
-      be replaced anyway). Not blocking either way — PlayStyle
-      defaults off.
+- [x] 29.6b — DONE (Session 115, D113). Ran the n=200 confirmation on
+      all four modes' current hand-picked constants (800 games total,
+      seeds 70000/70200/70400/70600, movetime 100ms). **All four
+      flattened to within noise of Balanced**: Killer +1.7 Elo,
+      Tactical -0.0, Positional +13.9, Endgame -0.0 (sign is A/Balanced
+      vs B/mode). Confirms every one of D112's n=20 leans (as large as
+      -34.9/+17.4) was sampling noise, not signal — same pattern D103
+      established for TDSE (n=20 leans washing out at n=200). No mode
+      is broken or measurably improved at its current untuned
+      constants. Full table and reasoning in DECISIONS.md D113.
 - [x] 29.7 — Pipeline built (Session 110): folded each mode's
       `style.rs` constants through the same Texel tuning pipeline used
       for the core eval (proposal §7.3), as scoped in the "Option 1:

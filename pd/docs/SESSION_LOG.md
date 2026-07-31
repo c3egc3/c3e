@@ -9,6 +9,34 @@ Most recent session at TOP.
 
 ---
 
+## Session 115 — 2026-08-01, cont. (29.6b: PlayStyle n=200 confirmation — all four modes flatten to noise, D112's leans were sampling noise)
+
+**Built/done:** Gokul chose 29.6b over 29.7h. Ran the n=200
+confirmation on all four PlayStyle modes' current hand-picked
+constants via `uci_match_runner.yml` (same same-ref/different-
+`setoption` pattern as every prior Elo measurement in this repo — no
+code changes, pure measurement). 4 runs × 200 games, seeds
+70000/70200/70400/70600: Killer +1.7 Elo, Tactical -0.0, Positional
++13.9, Endgame -0.0 (A/Balanced vs B/mode). Every one of D112's n=20
+leans (as large as ±34.9 Elo) flattened or reversed — same pattern
+D103 already established for TDSE. No mode is measurably better or
+worse than Balanced at current untuned constants. Full table and
+reasoning in DECISIONS.md D113.
+
+**Bugs fixed:** None — measurement-only session.
+
+**Decisions made:** D113 (this entry).
+
+**Next session start point:** `PlayStyle` stays default-0, unaffected.
+Two open, non-blocking paths recorded in D113: 29.7h (bulk self-play +
+real Texel-tuning pass for the four modes — the only remaining lever
+that could reveal a real effect) or leave PlayStyle as-is. Gokul's
+call, same as before this run. Also still open from prior sessions:
+30.8 (real UCI-speaking browser GUI target — Gokul answered "not sure
+yet," revisit later, doesn't block anything built).
+
+---
+
 ## Session 114 — 2026-08-01 (30.7: UCI-protocol WASM bundle added to build.yml's release assets)
 
 **Built/done:** Did ROADMAP.md's 30.7 (previously left `[ ]`, flagged
