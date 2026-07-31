@@ -9,6 +9,43 @@ Most recent session at TOP.
 
 ---
 
+## Session 113 — 2026-07-31, cont. (build.yml YAML syntax error, caught by Actions itself, fixed)
+
+**Built/done:** Gokul uploaded a screenshot of Actions run #585 — "Add
+files via upload," Failure, annotation `Invalid workflow file:
+.github/workflows/build.yml#L58 — You have an error in your yaml
+syntax on line 58`. That line was Session 112's new `run: cargo test
+--lib -- --ignored --test-threads=1 eval::style::tests::
+texel::predict::tests::` — a plain (unquoted) YAML scalar ending in a
+bare `::` right before end-of-line, which trips YAML's ambiguity rule
+around colons in plain scalars (a colon at/near end-of-line reads as
+"start of a mapping value" to a strict parser). Fixed by switching
+that one `run:` line to a block scalar (`run: |`), matching the style
+this file already uses elsewhere for multi-line commands — sidesteps
+the whole class of colon-ambiguity issue rather than trying to escape
+individual colons. Verified with an actual YAML parser (`pyyaml`) this
+time, not just visual inspection — confirmed it parses and the exact
+command text survives the block-scalar wrapping unchanged.
+
+**Bugs fixed:** 1. Cause: didn't run the workflow file through a YAML
+parser before delivering it — Rust's `::` module-path separator is
+fine in Rust, but the same characters are a YAML footgun when unquoted
+near a line boundary. Fix: block-scalar the affected `run:` line; also
+worth noting as a process gap — future workflow-file edits should get
+a `pyyaml`/`yamllint`-style parse check before delivery, the same way
+Rust changes get an actual `cargo build`/`cargo test`, not just visual
+review.
+
+**Decisions made:** None.
+
+**Next session start point:** Commit the corrected `build.yml` (only
+file changed this session) and re-run Actions to confirm the workflow
+itself is valid and the new "Run PlayStyle tests" step actually
+executes. Everything else (29.7h, 29.6b, 30.7, 30.8) unchanged from
+Session 112.
+
+---
+
 ## Session 112 — 2026-07-31, cont. (ThreatDefusal race root-caused: same mechanism as 29.7i, not a separate bug — Session 111's fix was necessary but not sufficient)
 
 **Built/done:**
