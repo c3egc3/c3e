@@ -9,6 +9,54 @@ Most recent session at TOP.
 
 ---
 
+## Session 114 — 2026-08-01 (30.7: UCI-protocol WASM bundle added to build.yml's release assets)
+
+**Built/done:** Did ROADMAP.md's 30.7 (previously left `[ ]`, flagged
+as "ask Gokul first" — no objection raised, proceeded). Mirrored the
+existing `wasm`-feature build block in `build.yml`'s `build-wasm` job
+with a second, independent `wasm-pack build --features uci-wasm
+--out-dir dist-wasm-uci --out-name pet_dragon_uci` step (same pattern
+Phase 30.1-30.4 already established for `deploy.yml`'s Pages build —
+never both features in the same `wasm-pack` invocation). Output copied
+to `dist/pet_dragon_uci_bg.wasm` / `dist/pet_dragon_uci.js`, uploaded
+as a new `pet-dragon-uci-wasm` artifact. `release` job needed no
+change beyond the generated body's asset table — it already globs
+`dist/**/*` across every downloaded artifact.
+
+Validated the edited `build.yml` with a real `pyyaml` parse before
+delivering it (Session 113's own process lesson from last session —
+last time a colon-adjacent YAML scalar broke Actions' own parser and
+review alone hadn't caught it). Parses clean; all 6 jobs
+(`test`/`build`/`regression-gate`/`build-wasm`/`bench`/`release`)
+still present and correctly keyed.
+
+**Bugs fixed:** None — pure additive feature, no existing code path
+touched.
+
+**Decisions made:** None new (this is straightforward execution of an
+already-scoped, already-approved-in-principle roadmap item, not a
+design decision).
+
+⚠️ **Not yet CI-confirmed.** No local `cargo`/`wasm-pack` toolchain in
+this session's sandbox to actually run the build (same standing caveat
+as every session in this repo unless Rust is explicitly installed for
+a specific verification, as Session 110/29.7g did). Only YAML-syntax-
+validated, not build-verified.
+
+**Next session start point:** Gokul commits `.github/workflows/build.yml`
+(only file changed this session) and confirms the `build-wasm` job
+actually succeeds — specifically that `pet_dragon_uci_bg.wasm` and
+`pet_dragon_uci.js` build cleanly under the `uci-wasm` feature and
+appear as release assets on the next `main` push (rolling `latest`
+release) or tagged release. If it fails, get the real Actions error
+message before guessing at a fix — same discipline as every other bug
+in this project's history. Remaining open items unchanged from Session
+113: 29.7h (bulk self-play + real tuning pass for PlayStyle), 29.6b
+(TDSE-adjacent n=200 confirmation vs. skip-to-tune, actually a Phase 29
+item), 30.8 (is there a real target UCI-speaking browser GUI in mind).
+
+---
+
 ## Session 113 — 2026-07-31, cont. (build.yml YAML syntax error, caught by Actions itself, fixed)
 
 **Built/done:** Gokul uploaded a screenshot of Actions run #585 — "Add

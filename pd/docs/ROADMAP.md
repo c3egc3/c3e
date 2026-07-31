@@ -2758,12 +2758,24 @@ the existing browser gameplay build at all.
       changes. `--features uci-wasm` step: compiled clean, 3 of the 16
       new tests failed — real bug, not a CI/environment issue, see
       30.9.
-- [ ] 30.7 — Optional follow-up, not done this session: mirror the same
-      second-build addition into `build.yml`'s `build-wasm` job (D46)
-      so the UCI-protocol WASM bundle is also published as a downloadable
-      release asset, not just served from GitHub Pages. Ask Gokul before
-      doing this — deploy.yml (Pages) was the explicit ask; build.yml
-      (release assets) is a natural but unrequested extension.
+- [x] 30.7 — DONE (Session 114). Mirrored the second-build addition into
+      `build.yml`'s `build-wasm` job (D46): a new `wasm-pack build
+      --features uci-wasm --out-dir dist-wasm-uci --out-name
+      pet_dragon_uci` step, output copied to `dist/pet_dragon_uci_bg.wasm`
+      / `dist/pet_dragon_uci.js`, uploaded as its own
+      `pet-dragon-uci-wasm` artifact (mirrors the existing `pet-dragon-
+      wasm` artifact exactly, separate wasm-pack invocation from the
+      `wasm`-feature build directly above it, per Phase 30's own
+      "never both active in the same wasm-pack invocation" rule). Both
+      new files also added to the `release` job's generated body table
+      — `release` already globs `dist/**/*` from all downloaded
+      artifacts, so no change needed there beyond the table row itself.
+      YAML validated with a real `pyyaml` parse before delivery (Session
+      113's process lesson — a colon-related workflow syntax error was
+      caught by Actions itself, not review, last time). ⚠️ Not yet
+      CI-confirmed — no local `cargo`/`wasm-pack` in this sandbox to
+      actually run the build; Gokul needs to commit and confirm the
+      `build-wasm` job succeeds and both new release assets appear.
 - [ ] 30.8 — Open question, Gokul's call: is there an actual target
       UCI-speaking browser GUI in mind for this, or is it speculative
       infrastructure? Doesn't block anything already built, but worth
