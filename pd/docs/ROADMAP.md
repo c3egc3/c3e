@@ -2611,6 +2611,45 @@ Either is reasonable; this entry doesn't pick one.
           0.0508) with only the tagged mode's constants moving —
           `texel_diag` then round-trip-parsed that exact output file
           without error.
+    - [x] 29.7i — Bug caught by the first real CI run of 29.7's tests
+          (Session 111): `texel::predict::tests::test_predict_style_
+          matches_evaluate_styled_all_modes` failed on GitHub Actions —
+          `mode 1 seed 12: predict=44 evaluate+style=24 (core=24,
+          style=0)` — but had passed 3/3 times locally (this sandbox
+          only has 1 CPU core; Actions runners have more, so the
+          scheduler-interleaving window that triggers this was never
+          exercised here by luck of hardware, not by the fix being
+          correct). Root cause: `PLAY_STYLE` is a process-global atomic;
+          `cargo test`'s default parallelism runs test FUNCTIONS on
+          separate threads, and this test holds a mode fixed across a
+          100-seed loop — a wide enough window for a *different test in
+          a different file* (`eval/style.rs`'s own pre-existing tests,
+          which also call `set_play_style()`) to flip the global
+          mid-loop on a runner with enough cores to actually interleave
+          them. The project's existing convention for this class of bug
+          (eval/mod.rs's `test_nnue_weight_setter_getter_and_blend_at_
+          zero`, "one test function, not several") only protects
+          within a single file's tests calling each other — it doesn't
+          cover two separate test modules touching the same global,
+          which is exactly what happened. Fix: a real `pub(crate)
+          #[cfg(test)] static PLAY_STYLE_TEST_LOCK: Mutex<()>` added
+          next to `PLAY_STYLE` itself in `eval/style.rs`, acquired as
+          the first line of all 8 pre-existing PLAY_STYLE-touching
+          tests in that file AND both of Phase 30's new tests in
+          `predict.rs` — genuine cross-module mutual exclusion, not
+          just a same-file convention. Verified by repeated stress runs
+          (5× at `--test-threads=16` targeting just the two affected
+          modules, then 3× full-suite at default settings) — 504/504
+          clean every time. **Side finding, NOT fixed, out of this
+          session's scope**: a full-suite run forced to
+          `--test-threads=8` surfaced a DIFFERENT, pre-existing,
+          unrelated race in `search::iterative::tests::test_threat_
+          defusal_default_off_matches_pre_tdse_behavior` (a
+          `ThreatDefusal` global-toggle test, nothing to do with
+          PlayStyle) — flagged for awareness, not investigated or
+          touched; didn't reproduce at cargo's actual default thread
+          count, so it's not blocking anything, but it's real and
+          latent the same way this session's own bug was.
     - [ ] 29.7h — **Not done this session, the actual remaining work**:
           generate real bulk self-play data for all 4 non-Balanced
           modes (hundreds/thousands of games each, via Actions — the

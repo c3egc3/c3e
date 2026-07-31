@@ -9,6 +9,81 @@ Most recent session at TOP.
 
 ---
 
+## Session 111 — 2026-07-31, cont. (Phase 29.7 CI-caught race condition, fixed and stress-verified)
+
+**Built/done:**
+
+1. Gokul uploaded Actions logs for the `Test` job on the commit that
+   included Session 110's PlayStyle Texel-tuning work. `Run all tests`
+   step failed: `texel::predict::tests::test_predict_style_matches_
+   evaluate_styled_all_modes` — `mode 1 seed 12: predict=44
+   evaluate+style=24 (core=24, style=0)`. Had passed 3/3 locally in
+   Session 110 (this sandbox has 1 CPU core; the race needs real
+   multi-core interleaving to trigger, which Actions has and this
+   sandbox doesn't — passing locally was scheduling luck, not evidence
+   of correctness).
+
+2. Diagnosed the actual mechanism rather than just re-running: `mode
+   1` (KILLER) held fixed across a 100-seed loop, but `style=0` in the
+   failure — exactly what `evaluate_style()` returns when the global
+   `PLAY_STYLE` atomic reads BALANCED, not KILLER. Traced to a genuine
+   cross-module race: `eval/style.rs`'s own 8 pre-existing tests (an
+   established, shipped file) also mutate the same global, and the
+   project's existing "one test function, not several" convention
+   (`eval/mod.rs`, documented there) only protects within one file —
+   it was never designed to cover two separate test modules touching
+   the same global concurrently.
+
+3. Added a real fix, not a workaround: `pub(crate) #[cfg(test)] static
+   PLAY_STYLE_TEST_LOCK: Mutex<()>` in `eval/style.rs`, next to
+   `PLAY_STYLE` itself, acquired as the first line of all 8
+   pre-existing tests in that file plus both of Phase 30's new tests
+   in `predict.rs`. Genuine cross-module mutual exclusion.
+
+4. Verified by actually trying to break it, not just re-running once:
+   5 repeated runs at `--test-threads=16` targeting the two affected
+   modules specifically, then 3 full-suite runs at cargo's actual
+   default thread count (matching what CI runs) — 504/504 clean every
+   single time.
+
+5. **Side finding, deliberately not touched**: forcing
+   `--test-threads=8` on the FULL suite (more aggressive than default)
+   surfaced a different, unrelated, pre-existing race —
+   `search::iterative::tests::test_threat_defusal_default_off_matches_
+   pre_tdse_behavior`, a `ThreatDefusal` global-toggle test with
+   nothing to do with PlayStyle. Flagged in ROADMAP 29.7i for
+   awareness rather than fixed — out of this session's scope, didn't
+   reproduce at cargo's actual default settings (so not blocking
+   anything right now), and expanding into an unrelated already-shipped
+   file wasn't something to do without a heads-up first.
+
+**Bugs fixed:** 1 (the race above). Cause: `PLAY_STYLE_TEST_LOCK`
+didn't exist yet — Session 110 added a long-running, mode-holding test
+touching a process-global atomic that other already-shipped tests
+(in a different file) also mutate, without any mutual-exclusion
+mechanism between them; the project's existing same-file convention
+didn't cover cross-file interleaving. Fix: a real `Mutex`, shared via
+`pub(crate)`, acquired by every test on either side of the file
+boundary that touches the global. Why correct: this is the standard,
+complete fix for shared-mutable-global-state test races — verified
+empirically by 8 stress runs (not just argued from the code), and it
+doesn't change any non-test code path at all (the lock is entirely
+`#[cfg(test)]`-gated).
+
+**Decisions made:** None requiring a DECISIONS.md entry — this is a
+test-infrastructure correctness fix, not an architectural choice.
+
+**Next session start point:** Commit `eval/style.rs` and
+`texel/predict.rs` (only files changed this session) and re-run
+Actions to confirm the specific failure is gone. 29.7h (real bulk
+self-play generation + actual tuning run), 29.6b, 30.7, 30.8 all
+remain open exactly as before — none of them touched or blocked by
+this session. The `ThreatDefusal` race noted in 29.7i is available to
+pick up whenever Gokul wants it looked at, but isn't currently causing
+observed CI failures.
+
+---
+
 ## Session 110 — 2026-07-31 (Phase 29.7: Texel-tuning pipeline built for PlayStyle, real compile/test/end-to-end verification, 3 bugs caught before shipping)
 
 **Built/done:**
