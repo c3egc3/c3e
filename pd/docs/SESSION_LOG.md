@@ -9,6 +9,96 @@ Most recent session at TOP.
 
 ---
 
+## Session 112 — 2026-07-31, cont. (ThreatDefusal race root-caused: same mechanism as 29.7i, not a separate bug — Session 111's fix was necessary but not sufficient)
+
+**Built/done:**
+
+1. Gokul said "Fix it" re: the ThreatDefusal flake flagged (not
+   investigated) at the end of Session 111. Read `search::iterative`'s
+   `test_threat_defusal_default_off_matches_pre_tdse_behavior` in full
+   and ruled out two hypotheses by reading code, not guessing: (a)
+   depth-only `TimeControl` gets an effectively-infinite hard time
+   limit (`u64::MAX / 2` ms) from `allocate_time()`, ruling out a
+   time-based-cutoff explanation; (b) `threat_defusal` and `thread_id`
+   are hardcoded literal defaults in `SearchInfo::new()`, not sourced
+   from any global — ruling out those as direct culprits.
+
+2. Reproduced empirically rather than continuing to theorize: 15
+   isolated runs of the test — clean every time. Only fails as part of
+   the FULL suite under forced `--test-threads=8`, ~1 in 8-10 runs.
+   Caught one live: two identically-configured depth-6 searches on an
+   identical position returned different best moves — genuine
+   non-determinism from ostensibly-identical, fully-independent inputs.
+
+3. First hypothesis (unsynchronized `static mut` writes in
+   `init_zobrist()`/`init_masks()`/`init_magic()`, called by literally
+   every test's `setup()` helper under default parallelism) was a real,
+   independently-worth-fixing UB issue — wrapped all three in
+   `std::sync::Once` (`bitboard/masks.rs`, `bitboard/magic.rs`,
+   `position/zobrist.rs`), zero signature changes, zero risk to the
+   ~500 existing call sites. **Stress-tested this fix specifically: it
+   did NOT eliminate the flake** (2/20 runs still failed) — an honest
+   negative result, reported as such rather than declared victory.
+
+4. Kept investigating rather than stopping at a partial fix: confirmed
+   `search::alpha_beta`'s leaf eval calls `eval::evaluate_styled()`
+   UNCONDITIONALLY — meaning literally any test running real search,
+   anywhere in the whole suite, reads the process-global `PLAY_STYLE`
+   atomic on every node. This reframed Session 111's earlier
+   `PLAY_STYLE_TEST_LOCK` fix: it stops the 10 PlayStyle-aware tests
+   from racing EACH OTHER, but does nothing for ThreatDefusal's test
+   (or any other search test), which has no reason to ever acquire a
+   lock it doesn't know exists — a lock only excludes other
+   lock-holders.
+
+5. The actual complete fix: found this project already has a
+   precedent for exactly this class of problem — `node_count`'s
+   benchmark-style tests, `#[ignore]`d and run via a dedicated
+   `--ignored --nocapture` CI step. Applied the same pattern: all 10
+   PLAY_STYLE-mutating tests marked `#[ignore]`, moved to a new
+   `build.yml` step running `--ignored --test-threads=1` — full
+   isolation from the entire binary, not just from each other.
+   Corrected `PLAY_STYLE_TEST_LOCK`'s doc comment to record the full,
+   accurate diagnosis (Mutex necessary-but-insufficient, kept as
+   defense-in-depth) rather than leave the earlier, incomplete
+   explanation standing uncorrected.
+
+6. Verified by actually trying to break it, not by re-running once:
+   25 full-suite runs at `--test-threads=8` (0 failures, vs. 2/20
+   before this fix), 10 more at `--test-threads=16` (0 failures), 5
+   repeats of the new isolated step (5/5 clean, all 10 tests passing
+   each time). 35/35 clean across every stress configuration tried.
+
+**Bugs fixed:** 1, but it took two attempts to actually close —
+worth recording both. Cause: `search::alpha_beta`'s leaf eval reads a
+process-global atomic (`PLAY_STYLE`) unconditionally in every search,
+so any test doing real search work — regardless of whether it knows
+PlayStyle exists — can have its results corrupted by a concurrently-
+running PlayStyle-mutating test on another thread. First fix
+(Session 111's Mutex) addressed the wrong symmetry — mutual exclusion
+among the PlayStyle-aware tests, when the actual requirement was
+isolation from the ENTIRE suite. Second fix (this session):
+`#[ignore]` + a dedicated `--test-threads=1` CI step, which provides
+true whole-binary isolation — the standard fix for global state that
+affects code paths tests outside the "aware" group also exercise. Why
+correct: verified empirically at 35/35 clean stress runs across three
+different thread-count configurations, not argued from the code alone.
+
+**Decisions made:** None requiring a DECISIONS.md entry — test-
+infrastructure correctness, not an architectural choice, same
+category as Session 111's fix attempt.
+
+**Next session start point:** Commit the 6 changed files
+(`eval/style.rs`, `texel/predict.rs`, `bitboard/masks.rs`,
+`bitboard/magic.rs`, `position/zobrist.rs`, `.github/workflows/
+build.yml`) and re-run Actions — the new "Run PlayStyle tests" step
+should show 10 passed, and the main "Run all tests" step should show
+494 passed / 10 ignored, both clean. 29.7h (real bulk self-play +
+actual tuning run), 29.6b, 30.7, 30.8 all remain open, untouched by
+this session.
+
+---
+
 ## Session 111 — 2026-07-31, cont. (Phase 29.7 CI-caught race condition, fixed and stress-verified)
 
 **Built/done:**

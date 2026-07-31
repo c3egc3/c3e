@@ -2616,40 +2616,63 @@ Either is reasonable; this entry doesn't pick one.
           matches_evaluate_styled_all_modes` failed on GitHub Actions —
           `mode 1 seed 12: predict=44 evaluate+style=24 (core=24,
           style=0)` — but had passed 3/3 times locally (this sandbox
-          only has 1 CPU core; Actions runners have more, so the
-          scheduler-interleaving window that triggers this was never
-          exercised here by luck of hardware, not by the fix being
-          correct). Root cause: `PLAY_STYLE` is a process-global atomic;
-          `cargo test`'s default parallelism runs test FUNCTIONS on
-          separate threads, and this test holds a mode fixed across a
-          100-seed loop — a wide enough window for a *different test in
-          a different file* (`eval/style.rs`'s own pre-existing tests,
-          which also call `set_play_style()`) to flip the global
-          mid-loop on a runner with enough cores to actually interleave
-          them. The project's existing convention for this class of bug
-          (eval/mod.rs's `test_nnue_weight_setter_getter_and_blend_at_
-          zero`, "one test function, not several") only protects
-          within a single file's tests calling each other — it doesn't
-          cover two separate test modules touching the same global,
-          which is exactly what happened. Fix: a real `pub(crate)
-          #[cfg(test)] static PLAY_STYLE_TEST_LOCK: Mutex<()>` added
-          next to `PLAY_STYLE` itself in `eval/style.rs`, acquired as
-          the first line of all 8 pre-existing PLAY_STYLE-touching
-          tests in that file AND both of Phase 30's new tests in
-          `predict.rs` — genuine cross-module mutual exclusion, not
-          just a same-file convention. Verified by repeated stress runs
-          (5× at `--test-threads=16` targeting just the two affected
-          modules, then 3× full-suite at default settings) — 504/504
-          clean every time. **Side finding, NOT fixed, out of this
-          session's scope**: a full-suite run forced to
-          `--test-threads=8` surfaced a DIFFERENT, pre-existing,
-          unrelated race in `search::iterative::tests::test_threat_
-          defusal_default_off_matches_pre_tdse_behavior` (a
-          `ThreatDefusal` global-toggle test, nothing to do with
-          PlayStyle) — flagged for awareness, not investigated or
-          touched; didn't reproduce at cargo's actual default thread
-          count, so it's not blocking anything, but it's real and
-          latent the same way this session's own bug was.
+          only has 1 CPU core; Actions runners have more). Root cause:
+          `PLAY_STYLE` is a process-global atomic; this test holds a
+          mode fixed across a 100-seed loop — a wide enough window for
+          `eval/style.rs`'s own pre-existing tests (a different file,
+          also calling `set_play_style()`) to flip the global mid-loop.
+          First fix attempt: a `pub(crate) #[cfg(test)] static
+          PLAY_STYLE_TEST_LOCK: Mutex<()>`, acquired by all 8
+          pre-existing tests in `eval/style.rs` plus both new tests in
+          `predict.rs`. **This was necessary but confirmed NOT
+          sufficient** — see 29.7j below, found while chasing the
+          separately-flagged ThreatDefusal flake: `search::alpha_beta`'s
+          leaf eval calls `eval::evaluate_styled()` UNCONDITIONALLY on
+          every node of every search, in every test in the whole
+          ~500-test suite — not just PlayStyle-aware ones — so a Mutex
+          that only PlayStyle-aware tests know to acquire does nothing
+          to protect an unrelated test (like ThreatDefusal's) from
+          having its own search corrupted by a concurrently-running
+          PlayStyle test on another thread. Confirmed empirically, not
+          assumed: the Mutex alone measurably reduced but did not
+          eliminate the flake (2/20 stress runs still failed after that
+          fix alone).
+    - [x] 29.7j — **The actual complete fix**, found by investigating
+          the "side finding" 29.7i originally flagged and deferred
+          (Session 112, same day, immediately after 29.7i — the
+          ThreatDefusal test itself has nothing to do with PlayStyle;
+          it was corrupted BY the PlayStyle tests via the mechanism
+          above, not a second unrelated bug). All 10 PLAY_STYLE-
+          mutating tests (8 in `eval/style.rs`, 2 in `predict.rs`)
+          marked `#[ignore]`, with a reason string pointing to
+          `PLAY_STYLE_TEST_LOCK`'s doc comment, and moved to a new,
+          dedicated `build.yml` step — `cargo test --lib -- --ignored
+          --test-threads=1 eval::style::tests:: texel::predict::
+          tests::` — run right after the existing "Run uci-wasm
+          feature tests" step. At `--test-threads=1`, nothing else in
+          the binary can execute concurrently, which is the actual
+          correctness requirement ("don't race anything," not "don't
+          race each other"). Exact same pattern this project already
+          used for `node_count`'s benchmark-style tests — not a new
+          convention. `PLAY_STYLE_TEST_LOCK` kept as cheap defense-in-
+          depth in case these are ever run un-ignored by mistake.
+          Along the way, also wrapped `init_masks()`/`init_magic()`/
+          `init_zobrist()` (the "mandatory startup sequence," called by
+          every one of the ~500 tests' `setup()` helper, writing to
+          unsynchronized `static mut` globals) in `std::sync::Once` —
+          genuine UB under Rust's rules regardless of whether it was
+          THE cause of this specific flake (empirically, per the stress
+          testing below, it wasn't the dominant cause — the
+          `PLAY_STYLE`/`evaluate_styled()` mechanism was — but it's a
+          real, separate correctness issue worth fixing regardless, and
+          it's free: identical external signatures, ~500 existing call
+          sites need no changes). **Verified by actually trying to
+          break it, repeatedly, not by re-running once**: 25 full-suite
+          stress runs at `--test-threads=8` (0/25 failed, vs. 2/20
+          before this fix), 10 more at `--test-threads=16` (0/10), and
+          5 repeats of the new isolated step itself (5/5 clean, 10/10
+          tests passing each time) — 35/35 clean total across every
+          stress configuration tried.
     - [ ] 29.7h — **Not done this session, the actual remaining work**:
           generate real bulk self-play data for all 4 non-Balanced
           modes (hundreds/thousands of games each, via Actions — the
