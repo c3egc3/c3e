@@ -5505,3 +5505,69 @@ effect at current thresholds, parked off."** 31.3 (SEE-gating LMP/
 singular margins on capture-adjacent nodes, from the bench report's
 `e2b5` finding) remains open and untouched — different mechanism,
 unaffected by this result either way.
+
+---
+
+## D116 — Fifty-Move-Rule Draw No Longer Overrides Checkmate (Session 118, external review finding #1)
+
+**Decision**: Fixed a real, current correctness bug surfaced by an
+externally-authored code review Gokul uploaded and asked to have
+verified before acting on ("double verified"). Directly re-checked
+against live `main` source before trusting the report (this session's
+own earlier mistake with a stale `ENGINE_ARCHITECTURE.md` claim made
+that discipline non-negotiable this time) — 5 of the report's 8
+findings were spot-verified line-for-line against current source;
+this is the first, and highest-severity, one fixed.
+
+**The bug**: `alpha_beta_with_excluded()`'s fifty-move-rule check
+(`pos.halfmove_clock >= 100`) fired unconditionally and returned
+`draw_score()` immediately — with no check for whether the side to
+move was simultaneously checkmate. Checkmate detection only happens
+later, after move generation, which this check preceded and
+short-circuited. A position that is both `halfmove_clock >= 100` and
+checkmate was scored as a dead draw instead of a forced mate, at any
+node in the tree (not just the root) — narrow in practice (needs 50
+full moves with no capture/pawn move landing exactly on mate) but real
+in long technical endgames and hand-constructed/FEN-loaded positions.
+
+**The fix**: hoisted `let in_check = pos.in_check(pos.side_to_move)`
+above the draw-detection block (pure reordering — the position is
+read-only in that stretch, nothing between the old and new call sites
+mutates it) and guarded the fifty-move check exactly like Stockfish's
+own `Position::is_draw()`:
+`st->rule50 > 99 && (!checkers() || MoveList<LEGAL>(*this).size())`.
+Ported directly: only take the draw path when not in check, or in
+check but `generate_moves(pos)` isn't empty. `generate_moves()` is
+called an extra time only on the rare path where both conditions
+(halfmove_clock ≥ 100 AND in check) hold simultaneously — negligible
+cost given how rarely that combination arises.
+
+**Why repetition and insufficient-material (the other two draw checks
+in the same block) didn't need the same guard**: repetition can't
+coincide with checkmate — if this exact position (same hash) were
+checkmate now, it would have been checkmate the first time it
+occurred too, ending the game before it could repeat. Insufficient
+material can't coincide with checkmate by definition — a side with
+insufficient mating material cannot deliver mate. The fifty-move count
+is the only one of the three fully independent of whether the position
+happens to be checkmate.
+
+**Tests added**: `test_fifty_move_rule_does_not_override_checkmate`
+(a real R-vs-k back-rank mate position with `halfmove_clock = 100` —
+before this fix, returned `DRAW_SCORE`; after, returns a mate-range
+score) and `test_fifty_move_rule_still_draws_when_not_checkmate` (same
+clock, side to move in check but with a legal escape — confirms the
+guard's other branch still reaches the normal draw path, not a false
+mate). Both hand-verified square-by-square (including the "king can't
+step along the checking ray" x-ray rule for the mate position's f8/h8
+squares) before being trusted, not just assumed correct from the FEN
+string. The two pre-existing fifty-move tests
+(`test_fifty_move_rule`/`test_fifty_move_rule_with_contempt`) are
+unaffected — neither position is check, so both take the `!in_check`
+branch exactly as before.
+
+**Not done in this pass**: findings #2-#8 from the same review remain
+open — Gokul asked to fix all 8 in priority order (#1 → #3 → #4 → #2 →
+#5 → #6 → #7, #8 stays parked/inert since it's gated behind a
+default-0 setting), this entry covers #1 only. See ROADMAP.md Phase 32
+for the tracked list.

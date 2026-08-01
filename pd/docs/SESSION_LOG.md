@@ -9,6 +9,75 @@ Most recent session at TOP.
 
 ---
 
+## Session 118 — 2026-08-01, cont. (external code review: verified against source, fixed finding #1; caught and fixed two self-inflicted str_replace deletion bugs)
+
+**Built/done:** Gokul uploaded a detailed external code review
+(`pet-dragon-detailed-report.md`, 8 findings + non-bug suggestions,
+claimed checked against `pet-dragon-main.zip`) and asked for a take
+before acting. Spot-verified 5 of the 8 findings directly against live
+`main` source (not just trusting the report) before responding — all
+5 (#1, #2, #3, #4, #8) checked out exactly as described, line numbers
+and all. Gave a priority order (#1 → #3 → #4 → #2 → #5 → #6 → #7, #8
+parked) with one pushback: #2's "High" severity label is probably
+overstated in practice — Pet Dragon's eval essentially never reaches
+scores near 30,000 in real games, so the duplicate-`MATE_THRESHOLD`
+bug's real-world blast radius is close to zero even though it's a
+genuine duplication worth fixing. Gokul approved the priority order.
+
+Fixed finding #1 (D116): the fifty-move-rule draw check fired
+unconditionally, with no guard against the position simultaneously
+being checkmate. Hoisted `in_check` above the draw-detection block,
+ported Stockfish's own guard
+(`!checkers() || MoveList<LEGAL>(*this).size()`), added two regression
+tests (one real checkmate-at-halfmove-100 position, hand-verified
+square by square including the "king can't step along the checking
+ray" x-ray rule; one companion "in check but has an escape" position).
+Full reasoning in DECISIONS.md D116. ROADMAP Phase 32 tracks all 8
+findings + their status.
+
+**Bugs fixed — two of them self-inflicted, caught before delivery:**
+While building the D116 fix's tests, a `str_replace` call that was
+meant to *insert* two new test functions before
+`test_stalemate_returns_draw` instead *replaced* that function's own
+`#[test]\n fn test_stalemate_returns_draw() {` signature line (the
+`new_str` didn't re-include the anchor text it was matching against).
+Caught by the routine post-edit brace-balance check (`{`/`}` count
+came back 241/242 instead of matching) before this was ever shown to
+Gokul — traced to the orphaned `setup();` line, restored the missing
+signature, re-checked (242/242, clean). Then found the **exact same
+bug class** already sitting in `ROADMAP.md` from earlier this session:
+inserting Phase 31 before "## Milestone Targets" had replaced that
+header's own line without re-adding it, leaving the Milestone table
+headerless. Also caught (this time by a manual full-tail read, not an
+automated check — brace-counting doesn't apply to markdown) and fixed.
+**Process note for future `str_replace` calls that insert new content
+next to an existing anchor**: when `old_str` includes an existing
+line/header purely to anchor the insertion point, `new_str` must
+re-include that anchor text verbatim, not just the new content — an
+insert-via-replace that drops the anchor is a silent deletion, and
+brace/structure counting only catches it in code files, not markdown.
+Worth treating this as a standing checklist item after any
+insert-shaped edit, not just relying on it being caught by luck twice
+in a row.
+
+**Decisions made:** D116.
+
+⚠️ **Not yet CI-confirmed.** No local `cargo test` in this sandbox.
+Given this session's own two near-misses, Gokul should look closely at
+the diff on `alpha_beta.rs` around both the fix itself and the
+`test_stalemate_returns_draw` area specifically before/while confirming
+CI is green, not just trust "tests passed."
+
+**Next session start point:** Gokul commits `src/search/alpha_beta.rs`
++ the three docs files, confirms `cargo test` green (real risk this
+time, more from the review-response and str_replace fixes described
+above than from the fix's own logic, which is small and mirrors
+Stockfish's well-established pattern directly). Then continue down
+ROADMAP Phase 32's priority list: 32.2 (review finding #3,
+`is_recapture()`) is next.
+
+---
+
 ## Session 117 — 2026-08-01, cont. (31.2: ImprovingHeuristic A/B flat at n=200, parked off)
 
 **Built/done:** Ran 31.2, the SPRT-style A/B for D114's

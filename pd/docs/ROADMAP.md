@@ -2856,6 +2856,85 @@ own note (LMP + futility, not LMP alone).
 
 ---
 
+## Phase 32 — External Code Review Follow-Up (Session 118)
+
+Gokul uploaded a detailed external code review (`pet-dragon-detailed-
+report.md`, checked against `pet-dragon-main.zip`) covering the full
+engine-affecting codebase, and asked "what's your take" before acting
+on any of it. 5 of its 8 findings were directly spot-verified against
+live `main` source before trusting the report (see DECISIONS.md D116)
+— all 5 checked out exactly as described. Gokul asked to fix all 8, in
+priority order: #1 → #3 → #4 → #2 → #5 → #6 → #7, with #8 parked
+(self-flagged by the report itself as harmless today, gated behind a
+default-0 NNUE blend weight).
+
+- [x] 32.1 (review finding #1) — DONE (Session 118, D116). Fifty-move-
+      rule draw no longer overrides checkmate. See DECISIONS.md D116
+      for the full fix and reasoning. Two new regression tests.
+      ⚠️ Not yet CI-confirmed.
+- [ ] 32.2 (review finding #3) — Open, not started. `is_recapture()`
+      (`pruning.rs`) doesn't check the previous move at all — it just
+      checks "is this a capture," which means it extends nearly every
+      capture, not genuine recaptures specifically. Report flags this
+      as the sneakiest finding: no crash, no test failure, just a
+      quiet, silent strength cost. Verified real against current
+      source this session.
+- [ ] 32.3 (review finding #4) — Open, not started. The tested
+      `should_apply_lmr()` helper (excludes killer moves and the TT
+      move from reduction) is never called — the real LMR gate in
+      `alpha_beta.rs`'s move loop is an inline duplicate missing both
+      of those guards. Verified real against current source this
+      session — the inline gate checks depth/moves_tried/is_quiet/
+      in_check/gives_check only, no `is_killer`/`is_tt_move` checks
+      anywhere.
+- [ ] 32.4 (review finding #2) — Open, not started. `tt/mod.rs`
+      defines its own `MATE_THRESHOLD = 30_000`, independent of
+      `search/mod.rs`'s `MATE_THRESHOLD = 900_000` — verified real,
+      both constants confirmed to exist with those exact values. Report
+      labels this High severity; Claude's own assessment (see this
+      session's chat) is that real-world impact is probably close to
+      zero in practice — Pet Dragon's eval essentially never reaches
+      scores anywhere near 30,000 in real games, so the "ordinary
+      scores in [30000, 900000) get corrupted" scenario is mostly
+      theoretical — but it's a real duplication worth fixing on
+      correctness/hygiene grounds regardless, hence still queued ahead
+      of the three Low-severity items.
+- [ ] 32.5 (review finding #5) — Open, not started, not independently
+      re-verified this session (spot-check budget prioritized #1-#4 +
+      #8). Packed mg/eg score `mg()` extraction allegedly off by one
+      when the combined `eg` component is negative — classic packed-
+      score sign-extension bug pattern (`(mg << 32) + eg as i64`
+      borrows into the mg bits when eg is negative), well-known enough
+      in engines using this trick that the report's diagnosis is
+      plausible without having re-derived it independently yet.
+- [ ] 32.6 (review finding #6) — Open, not started, not independently
+      re-verified this session. No illegal-king-recapture guard in
+      `see.rs`'s SEE exchange chain, per the report.
+- [ ] 32.7 (review finding #7) — Open, not started, not independently
+      re-verified this session. `iterative.rs` allegedly uses a wrong
+      sentinel check that misclassifies a genuine score of `0` (a real
+      draw) as "unset."
+- [x] 32.8 (review finding #8) — Confirmed inert, no fix needed.
+      `nnue/inference.rs`'s centipawn-scale conversion is
+      self-flagged by the report as analytically derived but
+      unverified against a real forward pass — verified this session
+      that `NNUE_BLEND_WEIGHT_PCT` does default to 0 (pure HCE), so
+      this code path has zero effect on any game played with default
+      settings. Stays parked; revisit only if NNUE blend weight is
+      ever considered for a non-zero default.
+
+Report also included non-bug improvement suggestions (constants
+hygiene / centralizing `MATE_THRESHOLD`-style duplication risk, a
+`filter_legal()` vs `make_move.rs` parallel-implementation risk, a
+packed-`Score` newtype, shared attack-bitboard computation across eval
+terms, a central feature-flag registry, docs archiving for the now-
+316K/356K `DECISIONS.md`/`SESSION_LOG.md`, and several testing
+recommendations). None of these are bugs and none are scheduled —
+noted here for reference, not queued as ROADMAP work unless Gokul asks.
+
+---
+
+## Milestone Targets
 
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|
