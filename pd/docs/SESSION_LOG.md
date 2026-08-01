@@ -9,6 +9,69 @@ Most recent session at TOP.
 
 ---
 
+## Session 116 — 2026-08-01, cont. (D114: improving flag added for LMP + futility pruning, off by default; ENGINE_ARCHITECTURE.md stale-doc bug caught and fixed)
+
+**Built/done:** Gokul uploaded a 4-game external-Stockfish bench log +
+a report analyzing it (Pet Dragon skill 20 lost 4-0 to Stockfish skill
+10 regardless of color/think-time). Asked "what's our current
+middlegame/endgame setup" — **caught and corrected my own mistake
+mid-conversation**: first answer quoted `ENGINE_ARCHITECTURE.md` §4
+verbatim, which said the D63/D68 eval-term gaps (passed-pawn king
+distance, pawn storm, king-relative PST, Threats) were "documented,
+not scheduled." ROADMAP.md Phase 24 (already in context) said they'd
+all been DONE and CI-confirmed back in Sessions 83-84, then Texel-
+retuned in Phase 25. Verified directly against real source on GitHub
+(`eval/pawns.rs`, `eval/king_safety.rs`, `eval/threats.rs`) before
+answering again — confirmed all four are implemented and wired into
+`evaluate()`. `ENGINE_ARCHITECTURE.md` §4 had simply never been updated
+after Phase 24/25 closed; corrected the record to Gokul rather than
+silently building on the wrong premise.
+
+The one gap that WAS real: no "improving" flag in search (D60,
+Session 82, already on record as a known-untaken change). Gokul asked
+to fix it, scoped broader than D60's own note (LMP + futility pruning,
+not LMP alone) — full implementation, D114, ROADMAP Phase 31.1. See
+D114 for the complete design (dual LMP threshold tables, improving-
+aware futility margin, `SearchInfo::static_eval_stack`, gated behind
+new `ImprovingHeuristic` UCI option, default false/byte-identical when
+off). Also updated `ENGINE_ARCHITECTURE.md` §3 (search technique table)
+and §4 (eval section, via the correction above) while already in there
+fixing the stale doc — both were quietly wrong before this session.
+
+**Files touched:** `src/search/mod.rs`, `src/search/pruning.rs`,
+`src/search/alpha_beta.rs`, `src/main.rs`, `docs/ENGINE_ARCHITECTURE.md`
+(this session's uci-wasm addition from Session 114 was still uncommitted
+going into this session — both changes are in the delivered file now).
+
+**Bugs fixed:** None in engine code. One documentation bug caught and
+fixed: `ENGINE_ARCHITECTURE.md` §4 wrongly described three closed
+ROADMAP Phase 24 items as open/unscheduled — see above.
+
+**Decisions made:** D114 (this entry).
+
+⚠️ **Not yet CI-confirmed.** No local `cargo`/`rustc` toolchain in this
+session's sandbox — all four Rust files are hand-verified (brace
+balance, consistent call-site argument counts, full-repo grep for the
+renamed `LMP_THRESHOLDS` constant and old single-arg
+`lmp_threshold()`/`should_apply_lmp()` call sites, no stray `SearchInfo`
+struct literals elsewhere in the repo that would need the two new
+fields added) but not compiled or test-run for real.
+
+**Next session start point:** Gokul commits all 4 Rust files plus
+`docs/ENGINE_ARCHITECTURE.md`, confirms `cargo test` is still green in
+CI (this is a real risk session — new struct fields, changed function
+signatures across 2 files, new UCI option wired through 6+ call sites).
+If CI fails, get the real compiler error before guessing at a fix, same
+discipline as every other bug in this project's history. Once green:
+ROADMAP 31.2 (SPRT-style A/B on `ImprovingHeuristic`, needs a real
+`uci_match_runner.yml` run — Gokul's call on when) is the natural next
+step for this thread. 31.3 (SEE-gating LMP/singular margins on
+capture-adjacent nodes, from the bench report's `e2b5` finding) is a
+separate, unstarted mechanism. Also still open: 29.7h/leave-as-is for
+PlayStyle (D113), 30.8 (real UCI GUI target, Gokul said "not sure yet").
+
+---
+
 ## Session 115 — 2026-08-01, cont. (29.6b: PlayStyle n=200 confirmation — all four modes flatten to noise, D112's leans were sampling noise)
 
 **Built/done:** Gokul chose 29.6b over 29.7h. Ran the n=200

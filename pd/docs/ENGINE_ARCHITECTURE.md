@@ -142,11 +142,11 @@ All of the following are implemented and wired into `alpha_beta()`
 | Null move pruning | `alpha_beta.rs` | adaptive reduction `3 + depth/6`, zugzwang-guarded (non-pawn material check) |
 | Late Move Reductions (LMR) | `alpha_beta.rs`, `pruning.rs` | `MIN_DEPTH_LMR = 3`, reduction scales with depth and move count |
 | Razoring | `alpha_beta.rs` | `MIN_DEPTH_RAZORING = 1`, drops to qsearch when static eval far below alpha |
-| Futility pruning | `alpha_beta.rs` | `MIN_DEPTH_FUTILITY = 1`, near-leaf quiet-move skip |
+| Futility pruning | `alpha_beta.rs` (`pruning::futility_margin`) | `MIN_DEPTH_FUTILITY = 1`, near-leaf quiet-move skip. Margin improving-aware as of D114 (Session 116, off by default — see below) |
 | ProbCut | `pruning.rs` | `MIN_DEPTH_PROBCUT = 5`, shallow-search verified captures beating beta+margin (`PROBCUT_MARGIN = 200`) prune the node — Pet Dragon's first multi-cut-family technique; D59 (below) adds a second, structurally different one inside singular extension |
 | Internal Iterative Reduction (IIR) | `alpha_beta.rs` | `MIN_DEPTH_IIR = 4`, reduces PV nodes with no TT move |
 | Singular extensions, multi-cut, negative extension | `alpha_beta.rs` | `MIN_DEPTH_SINGULAR = 6`. Base technique (Phase 13.3): reduced exclusion-search verifies TT move is forced before extending by 1. Extended D59 (Session 82) with two siblings reusing the same verification result: **multi-cut** — verification still reaches `singular_beta` ⇒ some other move also refutes ⇒ prune the whole node early (`return singular_beta`, same early-return shape as ProbCut above); **negative extension** — verification doesn't confirm singularity but the TT move's own score already meets beta ⇒ reduce (not extend) the TT move, `-1` ply PV / `-2` ply non-PV |
-| Late Move Pruning (LMP) | `pruning.rs` (`should_apply_lmp`, `lmp_threshold`) | D60 (Session 82). Distinct from LMR — skips late quiet moves outright (not just reduced) once a depth-indexed quiet-move-count threshold is passed (`MAX_DEPTH_LMP = 8`). Non-PV only, never in check/giving check, never near mate-range alpha/beta. Uses a single conservative ("non-improving") threshold table — Pet Dragon's search doesn't track an "improving" flag at all currently, so there's no improving-aware variant yet |
+| Late Move Pruning (LMP) | `pruning.rs` (`should_apply_lmp`, `lmp_threshold`) | D60 (Session 82). Distinct from LMR — skips late quiet moves outright (not just reduced) once a depth-indexed quiet-move-count threshold is passed (`MAX_DEPTH_LMP = 8`). Non-PV only, never in check/giving check, never near mate-range alpha/beta. Threshold table is improving-aware as of D114 (Session 116, off by default — see below) |
 | Check extensions | `pruning.rs` (`extension()`) | |
 | Quiescence search | `alpha_beta.rs` | in-check evasions, checkmate detection, per-capture delta pruning, quiet checks at `qs_depth = 0` (13.5) |
 | Move ordering | `ordering.rs` | SEE-based capture ordering, killers, countermoves, history heuristic with gravity, 1-ply continuation history |
@@ -157,16 +157,15 @@ All of the following are implemented and wired into `alpha_beta()`
 | MultiPV | `iterative.rs`, `search/mod.rs` | `root_exclude` prevents re-searching claimed root moves; single-PV path is byte-identical to pre-MultiPV behavior |
 | Pondering | `main.rs`, `search/mod.rs` | `ponder_hit_soft_ms` / `ponder_hit_hard_ms`, consumed once via atomic swap on `ponderhit` |
 | Skill Levels | `search/skill.rs` | depth cap respected by helper threads too, so low-skill searches don't leak full-strength TT lines (Phase 20) |
+| Improving flag | `alpha_beta.rs`, `search/mod.rs` (`SearchInfo::static_eval_stack`) | D114 (Session 116). `SearchInfo::improving_enabled` UCI `ImprovingHeuristic`, default `false` — same unproven-technique rollout shape as `null_move_king_guard`/`threat_defusal`. When on: compares this node's static eval to the value two plies back for the same side to move; feeds improving-aware LMP thresholds and futility margins (both prune more aggressively when not improving). When off (default), `alpha_beta.rs` never writes the eval-history stack and both pruning sites behave byte-identically to pre-D114 |
 
-Not present: an "improving" flag (static eval vs. two plies ago) —
-LMP (D60) and its threshold table use a single conservative value
-uniformly rather than an improving-differentiated pair because of
-this; deeper (2-ply/4-ply) continuation history beyond the current
-1-ply table; and any variant-specific opening statistics (23.4,
-explicitly HELD as of D62 — see ROADMAP.md, not a gap so much as a
-deferred decision). Elo impact of D49/D59/D60 not yet measured against
-a real match — `cargo test` passing confirms correctness, not
-strength; see SESSION_LOG Session 82 for the open item.
+Deeper (2-ply/4-ply) continuation history beyond the current 1-ply
+table, and any variant-specific opening statistics (23.4, explicitly
+HELD as of D62 — see ROADMAP.md, not a gap so much as a deferred
+decision) remain absent. Elo impact of D49/D59/D60/D114 not yet
+measured against a real match — `cargo test` passing confirms
+correctness, not strength; see SESSION_LOG Session 82 (D49/D59/D60)
+and Session 116 (D114) for the open items.
 
 ---
 
@@ -327,6 +326,19 @@ imports `pet_dragon.js` for bindings — see DECISIONS.md D46 for why
 full single-file bundling was explored and rejected). `getrandom/js`
 feature enabled for WASM builds. Live eval bar confirmed rendering real
 search output (Session 71).
+
+A second, independent WASM target exists for the `uci-wasm` feature
+(`src/uci_wasm.rs`, single export `uci_command` — a real UCI text
+protocol over WASM, not the direct-call `wasm` API above). Built via
+its own `wasm-pack build --features uci-wasm` invocation — deliberately
+never combined with the `wasm` feature in one build (D-series decision
+recorded when Phase 30 was scoped: keeps this less-battle-tested
+surface from ever risking the production gameplay bundle). Published
+to `web/pkg-uci/` for GitHub Pages (deploy.yml) and, since Session 114
+(30.7), also as `pet_dragon_uci_bg.wasm` + `pet_dragon_uci.js` release
+assets from `build.yml`'s `build-wasm` job, mirroring the `wasm`
+bundle's release-asset treatment exactly. No real target UCI-speaking
+browser GUI confirmed yet (ROADMAP 30.8, open as of Session 115).
 
 ---
 

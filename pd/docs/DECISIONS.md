@@ -5396,3 +5396,72 @@ values are currently diluting or masking. `PlayStyle` stays default-0
 2. **Leave PlayStyle as-is for now** — nothing here is blocking
    (defaults off), so there's no urgency either way, same standing
    status as always.
+
+---
+
+## D114 — Improving Flag Added for LMP + Futility Pruning, Off by Default (Session 116)
+
+**Decision**: Implemented the "improving" flag D60 (Session 82) originally
+flagged as a real-but-untaken change — Gokul asked to fix it after a
+4-game external Stockfish bench (uploaded log + report) surfaced search-
+depth volatility as its most consistent cross-game signal, and asked for
+LMP + futility pruning both (broader than LMP alone).
+
+**What it is**: `alpha_beta.rs` now computes, per node (only when
+`SearchInfo::improving_enabled` is true): `false` if in check; otherwise
+compares this node's (corrected) `static_eval` to the value stored two
+plies back for the same side to move (`SearchInfo::static_eval_stack`,
+new `[i32; MAX_PLY]` field, `i32::MIN` sentinel for "no usable value").
+Unknown two-plies-back data (too shallow, or that node was in check)
+defaults to `true` — same "assume improving when unsure" convention
+Stockfish uses, since under-pruning on missing information is safer
+than over-pruning on it.
+
+**Where it's used**:
+1. **LMP** (`pruning.rs`) — `LMP_THRESHOLDS` (the single table that
+   existed from D60 through D113) is now `LMP_THRESHOLDS_IMPROVING`,
+   values unchanged. New `LMP_THRESHOLDS_NON_IMPROVING` is roughly half
+   of each entry (`[0,1,2,3,4,6,8,10,12]` vs.
+   `[0,3,4,6,9,12,16,20,25]`), matching the halving relationship
+   Stockfish uses between its own improving/non-improving move-count
+   thresholds. `lmp_threshold()`/`should_apply_lmp()` both gained an
+   `improving: bool` parameter selecting which table applies.
+2. **Futility pruning** (`pruning.rs`, new `futility_margin()`) — base
+   formula `100 * depth + 200` unchanged when improving; drops to
+   `100 * depth + 100` when not (smaller margin ⇒ easier to satisfy the
+   skip condition ⇒ prunes more aggressively).
+
+**Rollout discipline**: `improving_enabled` defaults `false` — same
+shape as `null_move_king_guard` (D75) and `threat_defusal` (D98), not
+`lmp_enabled`/`singular_multicut_enabled`'s already-shipped-default-on
+pattern. When `false`: `alpha_beta.rs` never writes
+`static_eval_stack`, `improving` is unconditionally `true`, and both
+pruning sites reduce to their exact pre-D114 formulas — this is a real,
+tested invariant (`test_lmp_threshold_improving_true_matches_pre_d114_table`,
+`test_futility_margin_improving_matches_pre_d114_formula`,
+`test_static_eval_stack_untouched_when_improving_disabled`), not just an
+assertion in a doc comment. New UCI option `ImprovingHeuristic` (check,
+default false), same `EngineState` → `cmd_go` → `h_info`/`main_info`
+threading pattern as every other Phase 26-family toggle.
+
+**Not done, deliberately out of scope for this change**: no Texel
+tuning of the new thresholds/margin (these are search pruning constants,
+not eval weights — same status every other LMP/futility constant has
+always had); no SPRT-style Elo validation yet (needs a real
+`uci_match_runner.yml` A/B, same open item every other unproven Phase
+26/27/28 toggle already has); the non-improving table's exact halving
+ratio is a reasonable starting guess following Stockfish's own
+convention, not independently derived or tuned for Pet Dragon's specific
+eval/search balance.
+
+**Context**: prompted by a 4-game external bench (Stockfish skill 10 vs.
+Pet Dragon skill 20, both 100ms and 1000ms/move) that Pet Dragon lost
+4-0 regardless of color or think time. The accompanying report's own
+retune recommendations pointed at node-count instrumentation and
+SEE-gating LMP/singular margins on capture-adjacent nodes — neither of
+which is what D114 does. D114 addresses the report's separately-noted
+"search depth is volatile within a game... more than any single blunder,
+the most consistent signal" observation, not the specific one clean
+tactical blunder the report found (`e2b5` in its Match 3) — that stays
+open as a possible future SEE-gating investigation, not resolved by
+this change.

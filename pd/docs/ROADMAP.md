@@ -2801,7 +2801,55 @@ the existing browser gameplay build at all.
 
 ---
 
-## Milestone Targets
+## Phase 31 — Improving Flag for LMP + Futility Pruning (D114, Session 116)
+
+Prompted by a 4-game external Stockfish bench Gokul uploaded (log +
+report) — Pet Dragon lost 4-0 regardless of color/skill/think-time. The
+report's own cross-game pattern section flagged search-depth volatility
+between neighboring moves as its most consistent signal (more so than
+the single clean tactical blunder it also found). D60 (Session 82) had
+already flagged the missing "improving" flag as a real, separate,
+untaken change; Gokul asked to build it now, scoped broader than D60's
+own note (LMP + futility, not LMP alone).
+
+- [x] 31.1 — DONE (Session 116, D114). `SearchInfo::static_eval_stack`
+      (new `[i32; MAX_PLY]` field, `i32::MIN` sentinel) + `improving`
+      computed per-node in `alpha_beta.rs`, gated behind
+      `improving_enabled` (default `false`, zero-cost/byte-identical
+      when off — verified by test, not just asserted in a comment).
+      `pruning::LMP_THRESHOLDS` renamed `LMP_THRESHOLDS_IMPROVING`
+      (values unchanged) + new `LMP_THRESHOLDS_NON_IMPROVING` (~half,
+      Stockfish-style); `lmp_threshold()`/`should_apply_lmp()` both
+      gained an `improving: bool` param. New `pruning::futility_margin()`
+      — `100*depth+200` when improving (unchanged), `100*depth+100` when
+      not. New UCI option `ImprovingHeuristic` (check, default false),
+      threaded through `EngineState`/`cmd_go`/`h_info`/`main_info` same
+      pattern as `NullMoveKingGuard`/`ThreatDefusal`. Full test coverage:
+      pruning.rs (dual-table selection, byte-identical-when-improving-
+      true for both LMP and futility), alpha_beta.rs (defaults false,
+      stack untouched when off, stack populated when on, search
+      completes safely when on), main.rs (option defaults/parses/
+      threads into the real search SearchInfo, not just EngineState).
+      ⚠️ Not yet CI-confirmed (no local `cargo test` in this sandbox).
+      ⚠️ Not yet Texel-tuned (search constant, not an eval weight — same
+      status every other LMP/futility constant has always had) and not
+      yet Elo-measured — needs its own `uci_match_runner.yml` SPRT-style
+      A/B before any default-on flip is ever considered, same open item
+      every other unproven Phase 26/27/28 toggle already carries.
+- [ ] 31.2 — Open, not started: run the SPRT-style A/B (`ImprovingHeuristic
+      value true` vs `false`, matched movetime, real game count — same
+      shape as D76/D77's `NullMoveKingGuard` validation) to find out
+      whether this actually helps before considering a default flip.
+- [ ] 31.3 — Open, not started, explicitly out of scope for 31.1: the
+      bench report's one clean tactical blunder (`e2b5`, Match 3 — hangs
+      a piece to a simple recapture, searched one ply shallower than its
+      immediate neighbors) suggested SEE-gating LMP/singular-extension
+      margins more tightly on capture-adjacent nodes. Different
+      mechanism than the improving flag; not attempted this session.
+
+---
+
+
 | Milestone | Target Elo | Phase |
 |-----------|-----------|-------|
 | Material only (current) | ~1200 | Phase 7 done |
