@@ -5465,3 +5465,43 @@ the most consistent signal" observation, not the specific one clean
 tactical blunder the report found (`e2b5` in its Match 3) — that stays
 open as a possible future SEE-gating investigation, not resolved by
 this change.
+
+---
+
+## D115 — ImprovingHeuristic A/B: Flat at n=200, No Measurable Effect at Current Thresholds. Parked Off (Session 117)
+
+**Result**: Gokul ran the `uci_match_runner.yml` A/B directly at
+200 games (skipped the recommended 20-game first look, went straight to
+confirmation scale) — Engine A (`main`, `ImprovingHeuristic value true`)
+vs. Engine B (`main`, default `false`), seed 80000, 100ms/move. **A
+40 wins, B 39 wins, 121 draws — 50.2%, +1.7 Elo.** Flat, well inside
+noise for a 200-game sample — same conclusive shape D77 reached for
+`NullMoveKingGuard` (50.5%, +3.5 Elo), reached in one run instead of two
+this time since Gokul ran at confirmation scale from the start.
+
+**Conclusion**: at the current thresholds (`LMP_THRESHOLDS_NON_IMPROVING`
+roughly half of `LMP_THRESHOLDS_IMPROVING`; futility margin's constant
+term dropping from 200 to 100 when non-improving), the improving flag
+has no measurable strength impact — positive or negative — in self-play.
+This isn't evidence the underlying idea is wrong; both the halving ratio
+and the futility-margin delta were hand-picked starting guesses (D114)
+following Stockfish's own convention, not independently derived or
+tuned for Pet Dragon's specific eval/search balance. It's equally
+possible the *mechanism* (static eval two plies back) doesn't carry much
+independent signal for Pet Dragon specifically, or that the *thresholds*
+just aren't scaled right yet — this result can't distinguish the two.
+
+**Decision: park it. `ImprovingHeuristic` stays default `false`,
+mechanism stays in the code (real, tested, zero-cost when off, already
+merged and CI-confirmed green — Session 116).** Not reverting/removing
+the option — same reasoning D77 gave for `NullMoveKingGuard`: a real,
+specific idea, implemented and validated, that turned out not to matter
+*at these particular thresholds*. Re-tuning the threshold/margin deltas
+(rather than the flat "half" ratio D114 hand-picked) is possible future
+work if this gets revisited, but not scheduled.
+
+**ROADMAP Phase 31.2: closed as "implemented, tested, no measurable
+effect at current thresholds, parked off."** 31.3 (SEE-gating LMP/
+singular margins on capture-adjacent nodes, from the bench report's
+`e2b5` finding) remains open and untouched — different mechanism,
+unaffected by this result either way.

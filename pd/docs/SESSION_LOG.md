@@ -9,6 +9,32 @@ Most recent session at TOP.
 
 ---
 
+## Session 117 — 2026-08-01, cont. (31.2: ImprovingHeuristic A/B flat at n=200, parked off)
+
+**Built/done:** Ran 31.2, the SPRT-style A/B for D114's
+`ImprovingHeuristic`. Gokul went straight to 200 games (skipped the
+recommended 20-game first look) via `uci_match_runner.yml`: Engine A
+`ImprovingHeuristic value true` vs Engine B `false`, seed 80000,
+100ms/move. Result: 40-39-121, 50.2%, +1.7 Elo — flat, same conclusive
+shape D77 reached for `NullMoveKingGuard`. No code changes — pure
+measurement, same as Session 115/117's PlayStyle and this one.
+
+**Bugs fixed:** None.
+
+**Decisions made:** D115 — parked `ImprovingHeuristic` off
+(unchanged from its D114 default), mechanism stays merged and tested,
+not reverted. Doesn't confirm or rule out the underlying idea, just
+the specific hand-picked threshold/margin deltas D114 chose.
+
+**Next session start point:** Phase 31 stands at: 31.1 done, 31.2
+closed (this entry), 31.3 open and untouched — the bench report's
+`e2b5` finding (SEE-gating LMP/singular margins on capture-adjacent
+nodes), a different mechanism, unaffected by D115 either way. Also
+still open from prior sessions: 29.7h/leave-as-is for PlayStyle
+(D113), 30.8 (real UCI GUI target, Gokul said "not sure yet").
+
+---
+
 ## Session 116 — 2026-08-01, cont. (D114: improving flag added for LMP + futility pruning, off by default; ENGINE_ARCHITECTURE.md stale-doc bug caught and fixed)
 
 **Built/done:** Gokul uploaded a 4-game external-Stockfish bench log +

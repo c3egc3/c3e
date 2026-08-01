@@ -2836,10 +2836,17 @@ own note (LMP + futility, not LMP alone).
       yet Elo-measured — needs its own `uci_match_runner.yml` SPRT-style
       A/B before any default-on flip is ever considered, same open item
       every other unproven Phase 26/27/28 toggle already carries.
-- [ ] 31.2 — Open, not started: run the SPRT-style A/B (`ImprovingHeuristic
-      value true` vs `false`, matched movetime, real game count — same
-      shape as D76/D77's `NullMoveKingGuard` validation) to find out
-      whether this actually helps before considering a default flip.
+- [x] 31.2 — CLOSED (Session 117, D115). Gokul ran the A/B directly at
+      confirmation scale (200 games, skipped the 20-game first look):
+      Engine A `ImprovingHeuristic value true` vs Engine B `false`, seed
+      80000, 100ms/move. **Flat: 40-39-121, 50.2%, +1.7 Elo** — no
+      measurable effect at the current hand-picked thresholds, same
+      conclusive shape D77 reached for `NullMoveKingGuard`. Parked off
+      (`ImprovingHeuristic` stays default `false`); mechanism stays in
+      the code, real and tested, not reverted. Full reasoning in
+      DECISIONS.md D115 — this doesn't confirm or rule out the
+      underlying idea, just the specific threshold/margin deltas D114
+      picked.
 - [ ] 31.3 — Open, not started, explicitly out of scope for 31.1: the
       bench report's one clean tactical blunder (`e2b5`, Match 3 — hangs
       a piece to a simple recapture, searched one ply shallower than its
