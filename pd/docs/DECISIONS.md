@@ -5571,3 +5571,80 @@ open — Gokul asked to fix all 8 in priority order (#1 → #3 → #4 → #2 →
 #5 → #6 → #7, #8 stays parked/inert since it's gated behind a
 default-0 setting), this entry covers #1 only. See ROADMAP.md Phase 32
 for the tracked list.
+
+---
+
+## D117 — Recapture Extension Fixed AND Wired Into Live Search for the First Time, Gated (Session 119, external review finding #3)
+
+**Context**: while scoping the fix for review finding #3
+(`is_recapture()` "extends nearly every capture"), discovered the
+finding's own severity framing was wrong in an important way: its only
+caller, `pruning::extension()`, is **never called anywhere in the live
+search** — verified by grepping the entire repo, the only call site was
+`extension()`'s own unit test. `alpha_beta.rs` has a separate, correct,
+always-live check-extension (`if in_check { depth += 1; }`); recapture
+and passed-pawn-push extension have never run in a real Pet Dragon game
+at all. Surfaced this to Gokul before proceeding rather than silently
+"fixing" a function whose bug had zero actual play-strength impact —
+asked how to handle it now that the ground truth was different from
+the report's framing. Gokul chose: fix the bug **and** wire the
+mechanism into the live search for the first time, gated.
+
+**The bug** (as the report described, confirmed accurate): the pre-fix
+`is_recapture(pos, mv)` only checked "is `mv` a capture, and is there
+currently an enemy piece on its destination square" — it never looked
+at the previous move at all, so it would have returned `true` for
+essentially any capture, not genuine recaptures specifically, had it
+ever been reachable.
+
+**The fix**: `is_recapture()` now takes `prev_move: Move` and requires
+`mv.kind.is_capture() && prev_move.kind.is_capture() && mv.to ==
+prev_move.to` — same simplification Stockfish itself uses for its own
+recapture check (doesn't special-case en passant's one-rank offset,
+same known/accepted imprecision as the reference implementation, not
+unique to this fix). Pulled the recapture + passed-pawn-push logic out
+of `extension()` into its own `recapture_and_passed_pawn_extension()`
+function so the (still-unused-as-a-whole) `extension()` and the new
+live call site share one implementation, deliberately not repeating
+the should_apply_lmr-vs-inline-duplicate pattern review finding #4
+flagged elsewhere in the same codebase.
+
+**The wiring — deliberately scoped narrower than the whole bundled
+`extension()` function**: only the recapture component was activated
+in `alpha_beta.rs`'s move loop, not passed-pawn-push extension.
+Passed-pawn-push wasn't flagged as buggy by the review and was never
+part of what Gokul asked to fix — it stays real, correct, and
+unreachable, same status it's always had, pending a separate decision
+if it's ever wanted. New `move_ext` computation in the move loop:
+applies to **any** move (not just the TT move, unlike the existing
+singular/multi-cut extension), gated behind
+`SearchInfo::recapture_extension_enabled` (default `false`), combined
+with whatever `tt_move_extension` already contributed and capped
+together at `MAX_EXTENSION`/`-2` (the same floor/ceiling the singular-
+extension logic already respects on its own).
+
+**Rollout discipline**: same shape as every Phase 26+ toggle —
+`SearchInfo`/`EngineState` field, `ImprovingHeuristic`-style UCI option
+(`RecaptureExtension`, check, default false), full `cmd_go` threading
+into `h_info`/`main_info`. When `false` (default): zero extra
+computation in the move loop, `move_ext` for any non-TT move stays
+exactly `0`, byte-identical to before D117.
+
+**Tests added**: 4 targeted `is_recapture()` unit tests (genuine
+recapture, wrong-square capture — the exact pre-fix bug scenario,
+previous move wasn't a capture, this move isn't a capture), 3 for
+`recapture_and_passed_pawn_extension()` (fires for a recapture,
+respects the `depth <= 4` cutoff, zero for an unrelated capture), plus
+the standard 3-test toggle template (defaults false, parses true/false,
+`cmd_go` actually threads it into the real search `SearchInfo`) and 2
+search-level sanity checks (completes safely on the start position;
+completes safely on a position specifically constructed to have a
+pending exchange on d5, exercising the real code path rather than just
+proving the toggle doesn't crash on an empty board).
+
+**Not done**: no SPRT-style A/B yet — needs its own
+`uci_match_runner.yml` run before any default-on consideration, same
+open item every other unproven Phase 26+ toggle carries. Passed-pawn-
+push extension remains unwired, out of scope. ROADMAP Phase 32 next:
+32.3 (review finding #4, dead `should_apply_lmr()` vs. the inline LMR
+gate missing its killer-move/TT-move guards).

@@ -2872,13 +2872,24 @@ default-0 NNUE blend weight).
       rule draw no longer overrides checkmate. See DECISIONS.md D116
       for the full fix and reasoning. Two new regression tests.
       ⚠️ Not yet CI-confirmed.
-- [ ] 32.2 (review finding #3) — Open, not started. `is_recapture()`
-      (`pruning.rs`) doesn't check the previous move at all — it just
-      checks "is this a capture," which means it extends nearly every
-      capture, not genuine recaptures specifically. Report flags this
-      as the sneakiest finding: no crash, no test failure, just a
-      quiet, silent strength cost. Verified real against current
-      source this session.
+- [x] 32.2 (review finding #3) — DONE (Session 119, D117). `is_recapture()`
+      bug confirmed real (as reported) but its "extends nearly every
+      capture" severity claim was wrong in an important way: the only
+      caller, `pruning::extension()`, was never called anywhere in the
+      live search — verified by grepping the whole repo, its only call
+      site was its own unit test. Zero real play-strength impact before
+      this fix. Surfaced that to Gokul before proceeding; he chose fix +
+      wire in (gated). `is_recapture()` now correctly checks
+      `prev_move`; new `recapture_and_passed_pawn_extension()` is called
+      live from `alpha_beta.rs`'s move loop (any move, not just the TT
+      move), gated behind new `SearchInfo::recapture_extension_enabled`
+      / UCI `RecaptureExtension` (default false, byte-identical when
+      off). Deliberately scoped to recapture only — passed-pawn-push
+      extension (bundled in the same original function) wasn't flagged
+      as buggy and stays unwired, out of scope. 12 new tests. Full
+      reasoning in DECISIONS.md D117. ⚠️ Not yet CI-confirmed. ⚠️ Not
+      yet Elo-measured — needs its own SPRT-style A/B, same open item
+      every other unproven Phase 26+ toggle carries.
 - [ ] 32.3 (review finding #4) — Open, not started. The tested
       `should_apply_lmr()` helper (excludes killer moves and the TT
       move from reduction) is never called — the real LMR gate in

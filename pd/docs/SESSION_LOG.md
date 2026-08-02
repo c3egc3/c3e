@@ -9,6 +9,68 @@ Most recent session at TOP.
 
 ---
 
+## Session 119 — 2026-08-01, cont. (32.2: recapture extension bug fixed AND wired into live search for the first time, gated — D117)
+
+**Built/done:** Continued down Phase 32's priority list to finding #3
+(`is_recapture()`). Before touching it, discovered its real status
+didn't match the report's framing: `pruning::extension()` — the only
+function that ever calls `is_recapture()` — is never called anywhere
+in the live search (verified by grepping the whole repo; its only call
+site was its own unit test). `alpha_beta.rs` has its own separate,
+correct, always-live check-extension instead. So the bug was real, but
+its "extends nearly every capture" severity claim overstated actual
+impact — it had been fully inert. Surfaced this to Gokul rather than
+silently fixing a dead function; he chose to fix the bug **and** wire
+the mechanism into live search for the first time, gated behind a new
+toggle (same rollout discipline as every Phase 26+ heuristic).
+
+Fixed `is_recapture()` to actually check `prev_move` (same
+simplification Stockfish uses for its own recapture check). Extracted
+`recapture_and_passed_pawn_extension()` so the live call site and the
+still-unused `extension()` reference implementation share one
+implementation instead of duplicating logic the way review finding #4
+already flagged elsewhere. Wired the recapture component (only —
+passed-pawn-push wasn't flagged as buggy and stays out of scope,
+unwired) into `alpha_beta.rs`'s move loop's `move_ext` computation,
+applying to any move rather than just the TT move, gated behind new
+`SearchInfo::recapture_extension_enabled` / UCI `RecaptureExtension`
+(default false). New UCI option threaded through `EngineState` →
+`cmd_go` → `h_info`/`main_info`, matching every prior toggle exactly.
+12 new tests across `pruning.rs`, `alpha_beta.rs`, and `main.rs`. Full
+reasoning in DECISIONS.md D117; ROADMAP Phase 32.2 marked done.
+
+**Files touched:** `src/search/pruning.rs`, `src/search/alpha_beta.rs`,
+`src/search/mod.rs`, `src/main.rs`.
+
+**Bugs fixed:** The `is_recapture()` bug itself (review finding #3),
+plus none of this session's own str_replace edits repeated the two
+near-misses from Session 118 — every insert-shaped edit this session
+explicitly re-included its anchor text in `new_str`, and a brace-
+balance check followed each Rust file edit before delivery (all four
+files came back exactly balanced: `alpha_beta.rs` 246/246,
+`pruning.rs` 144/144, `search/mod.rs` 96/96, `main.rs` 254/254; test
+function counts also cross-checked, e.g. `main.rs` 77 `#[test]` vs. 77
+`fn test_` matches).
+
+**Decisions made:** D117.
+
+⚠️ **Not yet CI-confirmed.** No local `cargo test` in this sandbox —
+hand-verified via brace balance, test-count matching, and full-repo
+grep for stale call sites, but not compiled or run for real.
+
+**Next session start point:** Gokul commits all 4 Rust files, confirms
+`cargo test` green. Once green: ROADMAP Phase 32.3 (review finding #4
+— dead `should_apply_lmr()` vs. the inline LMR gate in `alpha_beta.rs`
+missing its killer-move/TT-move guards) is next in priority order.
+32.4 (finding #2, duplicate `MATE_THRESHOLD`) after that. D117's
+`RecaptureExtension` also joins D114's `ImprovingHeuristic` as an
+unmeasured toggle needing its own `uci_match_runner.yml` A/B whenever
+Gokul wants to run one — could plausibly batch both into the same
+session if he'd rather validate a backlog of toggles at once than one
+at a time.
+
+---
+
 ## Session 118 — 2026-08-01, cont. (external code review: verified against source, fixed finding #1; caught and fixed two self-inflicted str_replace deletion bugs)
 
 **Built/done:** Gokul uploaded a detailed external code review
