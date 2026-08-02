@@ -2890,14 +2890,19 @@ default-0 NNUE blend weight).
       reasoning in DECISIONS.md D117. ⚠️ Not yet CI-confirmed. ⚠️ Not
       yet Elo-measured — needs its own SPRT-style A/B, same open item
       every other unproven Phase 26+ toggle carries.
-- [ ] 32.3 (review finding #4) — Open, not started. The tested
-      `should_apply_lmr()` helper (excludes killer moves and the TT
-      move from reduction) is never called — the real LMR gate in
-      `alpha_beta.rs`'s move loop is an inline duplicate missing both
-      of those guards. Verified real against current source this
-      session — the inline gate checks depth/moves_tried/is_quiet/
-      in_check/gives_check only, no `is_killer`/`is_tt_move` checks
-      anywhere.
+- [x] 32.3 (review finding #4) — DONE (Session 120, D118). Replaced the
+      inline LMR gate in `alpha_beta.rs`'s move loop with a direct call
+      to `pruning::should_apply_lmr()` (already existed, already fully
+      tested, already correctly excluded killer moves and the TT move —
+      the bug was that nothing called it). Shipped live, not behind a
+      new gated toggle — treated as a correctness/wiring fix (standard
+      practice, matches D116's treatment), not a new speculative
+      technique like D114/D117. Also removed the now-unused
+      `MIN_DEPTH_LMR` import in `alpha_beta.rs`. 2 new tests. Full
+      reasoning in DECISIONS.md D118. ⚠️ Not yet CI-confirmed. No
+      dedicated Elo measurement yet — this fix has no "off" state to
+      A/B against via `setoption` the way D114/D117's toggles do; would
+      need the pre-D118 commit pinned as one side of a match instead.
 - [ ] 32.4 (review finding #2) — Open, not started. `tt/mod.rs`
       defines its own `MATE_THRESHOLD = 30_000`, independent of
       `search/mod.rs`'s `MATE_THRESHOLD = 900_000` — verified real,

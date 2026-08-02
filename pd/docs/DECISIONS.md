@@ -5648,3 +5648,70 @@ open item every other unproven Phase 26+ toggle carries. Passed-pawn-
 push extension remains unwired, out of scope. ROADMAP Phase 32 next:
 32.3 (review finding #4, dead `should_apply_lmr()` vs. the inline LMR
 gate missing its killer-move/TT-move guards).
+
+**Addendum (Session 120)**: ran a 20-game `uci_match_runner.yml` check
+(`RecaptureExtension value true` vs. `value false`, seed 90000,
+100ms/move) — 3-3-14, 50.0%, -0.0 Elo. Confirms the wiring works
+functionally: 20 games completed cleanly with no crashes, hangs, or
+illegal-move errors, which is itself meaningful given this was the
+mechanism's first time ever running in a real search. Dead flat at
+n=20, same as every other toggle's first look — not enough sample to
+conclude neutral vs. masking a small effect either way. Gokul chose to
+defer the n=200 confirmation for now rather than run it immediately —
+tracked as open work (a real SPRT-style A/B for `RecaptureExtension`),
+not blocking anything else in Phase 32.
+
+---
+
+## D118 — LMR Gate Now Calls should_apply_lmr() Directly, Fixing the Missing Killer/TT-Move Guards — Shipped Live, Not Gated (Session 120, external review finding #4)
+
+**Decision**: Fixed review finding #4 by replacing `alpha_beta.rs`'s
+inline LMR gate (`depth >= MIN_DEPTH_LMR && moves_tried >= 3 &&
+is_quiet && !in_check && !gives_check`) with a direct call to
+`pruning::should_apply_lmr()`, which already existed, was already
+fully unit-tested, and already correctly excluded killer moves and the
+TT move from reduction — the bug was specifically that nothing ever
+called it; the inline duplicate silently omitted those last two checks
+rather than the tested function being wrong. Confirmed via full-repo
+grep before this fix (as with finding #3) that
+`should_apply_lmr()`'s only caller before this session was its own
+unit tests.
+
+**Why this shipped directly, not behind a new gated toggle** (unlike
+D114's `ImprovingHeuristic` or D117's `RecaptureExtension`): those two
+introduced genuinely new mechanisms that had never run in a real Pet
+Dragon game before. This is different — excluding the TT move and
+killer moves from LMR is standard practice (Stockfish does both), and
+`should_apply_lmr()` already existed as the clearly-intended, fully-
+tested canonical gate; the bug was a wiring omission, not a new idea
+being introduced for the first time. Treated the same way D116's
+fifty-move-rule fix was: a correctness/consistency fix, shipped live.
+
+**Given LMR's reach** (fires on nearly every non-first move at
+`depth >= MIN_DEPTH_LMR`, far more central than D116's narrow edge
+case), this is a broader behavior change than D116 even though it
+isn't gated — worth a closer look at CI and, ideally, a quick sanity
+A/B via `uci_match_runner.yml` after confirming green, the same way
+Gokul just ran a functional check for D117's `RecaptureExtension`, even
+though this isn't a new toggle to flip on/off (there's no "off" state
+to compare against — the fix is unconditional). A before/after
+comparison would need the pinned pre-D118 commit as one side, not a
+`setoption`-toggleable A/B.
+
+**Also removed**: the now-unused `MIN_DEPTH_LMR` import in
+`alpha_beta.rs` (the depth check now lives entirely inside
+`should_apply_lmr()`, referenced via `crate::search::MIN_DEPTH_LMR`
+internally — the caller no longer needs its own copy of the constant).
+
+**Tests added**: `test_lmr_not_applied_to_tt_move` (pruning.rs — the
+one direct case the pre-fix wiring bug missed; `should_apply_lmr()`
+itself was always correct here, this closes a gap in its own test
+coverage rather than testing the fix per se) and
+`test_search_completes_after_lmr_gate_now_calls_should_apply_lmr`
+(alpha_beta.rs — depth-7 search sanity check, deep enough to actually
+exercise LMR, killers, and a TT move across iterative deepening, not
+just prove the toggle-free code path doesn't crash on an empty board).
+
+**Not done**: no dedicated Elo measurement of this specific fix yet —
+see the A/B note above. ROADMAP Phase 32 next: 32.4 (review finding
+#2, duplicate `MATE_THRESHOLD`).

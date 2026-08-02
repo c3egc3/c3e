@@ -9,6 +9,60 @@ Most recent session at TOP.
 
 ---
 
+## Session 120 — 2026-08-02 (32.2 functional check + 32.3: LMR gate now calls should_apply_lmr() directly, shipped live — D118)
+
+**Built/done:** Gokul ran the n=20 `RecaptureExtension` functional
+check via `uci_match_runner.yml` — 20 clean completed games (3-3-14,
+50.0%, -0.0 Elo), confirming the D117 wiring actually works (no
+crashes/hangs on the mechanism's first-ever live run). Flat at n=20 as
+expected; deferred the n=200 confirmation rather than running it now —
+addendum added to DECISIONS.md D117.
+
+Moved to Phase 32.3 (review finding #4). Confirmed via full-repo grep
+that `pruning::should_apply_lmr()` — fully tested, correctly excludes
+killer moves and the TT move from LMR — had exactly one caller before
+this session: its own unit tests, same "tested helper, dead in
+practice" shape as D117's `extension()` discovery two sessions ago.
+The real, live LMR gate in `alpha_beta.rs`'s move loop was an inline
+duplicate of its condition missing both the `is_killer` and
+`is_tt_move` checks. Fixed by replacing the inline duplicate with a
+direct call to `should_apply_lmr()` — the two conditions can't diverge
+again since there's only one now. Removed the resulting unused
+`MIN_DEPTH_LMR` import. **Shipped live, not behind a new gated toggle**
+— treated as a correctness/wiring fix (same category as D116, not
+D114/D117's new-technique-needs-SPRT category), since excluding the
+TT move and killers from LMR is standard practice and the tested
+function already encoded the clearly-intended design; the bug was pure
+wiring, not a new idea. Full reasoning in DECISIONS.md D118.
+
+**Files touched:** `src/search/alpha_beta.rs`, `src/search/pruning.rs`.
+
+**Bugs fixed:** Review finding #4 (D118). No new bugs introduced —
+brace-balance and test-count checks both passed on the first attempt
+this session (247/247 in `alpha_beta.rs`, 145/145 in `pruning.rs`,
+57/57 and 52/52 test counts respectively) — no repeat of Session 118's
+near-misses.
+
+**Decisions made:** D118, plus the D117 addendum recording the n=20
+functional-check result.
+
+⚠️ **Not yet CI-confirmed.** No local `cargo test` in this sandbox.
+This fix touches the live LMR gate directly (unconditional, no toggle
+to fall back to), so it's worth Gokul's attention even though it's not
+gated — broader reach than D116's narrow edge case, even if the fix
+itself is small and well-justified.
+
+**Next session start point:** Gokul commits both Rust files, confirms
+`cargo test` green. Once green: ROADMAP Phase 32.4 (review finding #2,
+duplicate `MATE_THRESHOLD` — `tt/mod.rs`'s own `30_000` vs.
+`search/mod.rs`'s `900_000`) is next in priority order. Two open A/B
+items now on the backlog whenever Gokul wants to batch them:
+`RecaptureExtension`'s n=200 confirmation, and (new, optional) a
+before/after comparison for D118's LMR fix using the pre-D118 commit
+as a pinned reference rather than a `setoption` toggle.
+
+---
+
 ## Session 119 — 2026-08-01, cont. (32.2: recapture extension bug fixed AND wired into live search for the first time, gated — D117)
 
 **Built/done:** Continued down Phase 32's priority list to finding #3
