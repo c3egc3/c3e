@@ -9,6 +9,53 @@ Most recent session at TOP.
 
 ---
 
+## Session 126 — 2026-08-02, cont. (D124: D118/D120 pinned-ref Elo check — +5.2 Elo, within noise, accepted neutral. Caught a real mistake: abbreviated SHA caused a silent main-vs-main mirror match.)
+
+**Built/done:** Ran the standing Elo A/B for D118 (LMR gate fix) and
+D120 (packed-score fix) — both shipped live with no `setoption`
+toggle, so this needed a pinned-ref comparison (pre-fix commit vs.
+`main`) rather than the usual `setoption`-based A/B pattern.
+
+**Caught a real mistake mid-session**: first attempt used a 10-char
+abbreviated commit SHA (`edb0e9a20d`) as `pre_tuning_ref`.
+`actions/checkout` couldn't resolve it as a branch/tag ref, failed
+after 3 retries — and the workflow silently substituted `main` for
+both sides instead of failing the job. The resulting clean 200-game
+"result" (50.0%, -0.0 Elo) looked exactly like a real neutral finding;
+only caught because Gokul noticed both engine labels read `(main)`.
+Re-ran with the full 40-character SHA
+(`edb0e9a20d8579b3b31a99efdf627acd80140826`) and confirmed correct
+labels this time. Flagged to Gokul (not fixed, his call) that this
+workflow probably should hard-fail on a checkout error rather than
+silently mirror-matching `main` against itself.
+
+**Real result**: 36-39-125, pre-fix commit scored 49.2%, **+5.2 Elo
+for main**. Within noise for n=200. Gokul chose to accept as neutral
+rather than run a bigger batch or split D118/D120 into separate
+pinned-ref comparisons. Full reasoning in DECISIONS.md D124.
+
+**Files touched:** None — pure measurement/process session, no code
+changes.
+
+**Bugs fixed:** None in engine code. One real process mistake (using
+an abbreviated SHA for a pinned-ref checkout) caught before it could
+be recorded as a false neutral finding.
+
+**Decisions made:** D124. Closes out the last open item from the
+Phase 32 review-response arc (Sessions 118-125).
+
+**Next session start point:** Nothing queued. Standing backlog, none
+blocking: 29.7h (PlayStyle bulk self-play + real Texel-tuning),
+D117's `RecaptureExtension` n=200 confirmation (still open since
+Session 120's n=20 functional check), 30.5/30.8 (WASM UCI GUI async
+limitations / real target GUI, Gokul said "not sure yet" on the
+latter). Also worth remembering for any *future* pinned-ref run in
+this repo: always use the full 40-character SHA, never an abbreviated
+one, and sanity-check the reported engine labels before trusting a
+result.
+
+---
+
 ## Session 125 — 2026-08-02, cont. (32.7: wrong-sentinel score bug fixed — D123. Phase 32 complete, all 8 external review findings resolved.)
 
 **Built/done:** Fixed the last open item in Phase 32, review finding

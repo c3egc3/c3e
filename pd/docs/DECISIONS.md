@@ -6023,3 +6023,52 @@ the core lesson of Phase 32 as a whole: verify against source and,
 where a bug's downstream impact depends on how another algorithm
 propagates it, verify empirically too — neither a report's own
 confidence nor a single hand-traced example is sufficient on its own.
+
+---
+
+## D124 — D118/D120 Pinned-Ref Elo Check: +5.2 Elo, Within Noise. Accepted as Neutral, No Further Runs (Session 126)
+
+**Decision**: Ran the pinned-ref `uci_match_runner.yml`-adjacent
+"UCI Pinned-Ref Match (D36)" workflow to check D118 (LMR gate fix) and
+D120 (packed mg/eg score fix) for a real Elo effect — neither had a
+`setoption` toggle to A/B, since both shipped live as unconditional
+correctness fixes, so this needed the pre-fix commit pinned directly
+rather than a `setoption`-based comparison.
+
+**Process note — a real mistake caught and fixed mid-session**: the
+first attempt used `edb0e9a20d` (a 10-character abbreviated SHA) as
+`pre_tuning_ref`. `actions/checkout` couldn't resolve that as a branch
+or tag ref, failed after 3 retries, and — this is the concerning
+part — **the workflow silently fell back to using `main` for both
+sides** rather than hard-failing the job. The resulting "clean" 200-
+game run (50.0%, -0.0 Elo, both engines labeled `(main)`) looked
+exactly like a real neutral finding and would have been recorded as
+one if Gokul hadn't noticed both engine labels read `main`. Re-ran with
+the full 40-character SHA
+(`edb0e9a20d8579b3b31a99efdf627acd80140826`) — confirmed correct labels
+this time (`Engine A: A (edb0e9a20d8579b3b31a99efdf627acd80140826)`,
+`Engine B: B (main)`). **Lesson for future pinned-ref runs in this
+repo: always give the full SHA, never an abbreviated one, and always
+sanity-check the reported engine labels before trusting the result.**
+Separately flagged to Gokul (not fixed this session, his call): the
+workflow itself probably should hard-fail on a checkout error instead
+of silently substituting `main` — a real CI-robustness gap, since it
+makes a broken run indistinguishable from a genuine neutral result at
+a glance.
+
+**Real result** (edb0e9a20d8579b3b31a99efdf627acd80140826 = pre-D118/
+D120, vs. `main` = has D118+D120 plus the unrelated D119/D121/D122/D123):
+36-39-125, A(pre-fix) 49.2%, **+5.2 Elo for main**. Within noise for
+n=200 (typical 95% CI at this sample size is roughly ±50 Elo) —
+directionally consistent with the fixes being neutral-to-mildly-
+positive, not evidence of a real regression, but not a confirmed
+strength gain either.
+
+**Decision: accept as neutral, no further runs.** Gokul's call, given
+the options (n=800 for a tighter read, or split D118 vs. D120 into
+separate pinned-ref runs to isolate which fix drives the small
+positive lean) — chose to move on rather than spend more compute
+narrowing a result that's already not concerning in either direction.
+Both fixes stay as-is (unconditional, no toggle, already merged and
+CI-confirmed). This closes out the last open item from the Phase 32
+review-response arc.
