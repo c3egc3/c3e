@@ -6114,3 +6114,45 @@ regression, this default is the first place to look. Reverting is a
 one-line change (flip the three `true`s back to `false` plus the UCI
 option string and the two test names) — recorded here specifically so
 that's easy to find later.
+
+---
+
+## D126 — 30.5 (Async WASM UCI) Scoped, Deferred — SharedArrayBuffer Ruled Out for This Deployment Target (Session 128)
+
+**Decision**: Gokul asked to start 30.5 (the documented async/threaded
+WASM limitation — `stop` can't interrupt `go`, `go infinite` clamped
+to 30s, no live `info depth` streaming, no ponder). Before writing any
+code, surfaced a hard constraint that determines the viable approach:
+
+**SharedArrayBuffer-backed real threading — the standard fix (same
+shared-memory-plus-polled-stop-flag pattern native `main.rs` already
+uses, and how newer threaded Stockfish.js builds work) — is not viable
+for this project's deployment target.** It requires
+`Cross-Origin-Opener-Policy`/`Cross-Origin-Embedder-Policy` response
+headers, and **GitHub Pages cannot set custom HTTP headers at all** —
+it's a static host with no server-side config surface. There's also a
+subtler point worth recording: a plain Web Worker *alone*, without
+shared memory, doesn't fix `stop` either — a Worker is still a single-
+threaded JS environment, and a long synchronous WASM call blocks its
+message queue exactly as completely as it blocks the main thread's.
+"Just move it to a Worker" is not sufficient on its own.
+
+**The approach identified as viable without special headers:
+cooperative chunking.** Break `go` into repeated short `uci_command`
+calls instead of one long synchronous one — search one iterative-
+deepening depth at a time, return control to JS after each depth (with
+a live `info depth N ...` line), let JS decide whether to request the
+next depth or send `stop`. Fits the existing `thread_local! SESSION`
+design well, since session state already persists across calls by
+design. Would give real (though depth-granularity, not instant) `stop`
+responsiveness, genuinely open-ended `go infinite`, and live depth
+streaming — without any deployment infrastructure change.
+
+**Not started.** Gokul confirmed the chunked approach as the right
+direction in principle but chose not to scope or begin implementation
+this session ("too big" / "later") — this is a real redesign of `go`'s
+execution model in `uci_wasm.rs`, not a small patch. Recorded here so
+the SharedArrayBuffer/GitHub-Pages constraint and the chunking proposal
+don't need to be rediscovered from scratch whenever this is picked back
+up. ROADMAP 30.5 left open, unchanged in status, with a pointer to this
+entry.

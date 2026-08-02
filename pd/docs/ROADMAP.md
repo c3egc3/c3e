@@ -2748,7 +2748,14 @@ the existing browser gameplay build at all.
       bestmove line; (d) `ponder`/`ponderhit` unsupported. A real fix
       needs an async/threaded model (Web Worker + `postMessage`, or
       SharedArrayBuffer-backed threads) — meaningfully bigger than this
-      session's scope, not started.
+      session's scope, not started. **Update (Session 128, D126):
+      SharedArrayBuffer is ruled out for this specific deployment target
+      — GitHub Pages can't set the required COOP/COEP headers. The
+      viable path without special headers is cooperative chunking (`go`
+      broken into repeated per-depth calls instead of one long
+      synchronous one) — see DECISIONS.md D126 for the full analysis.
+      Scoped but deliberately deferred, not started; a real redesign of
+      `go`'s execution model, not a small patch.**
 - [x] 30.6 — `build.yml`'s existing `test` job runs `cargo test
       --verbose` with no features, which would never have touched
       `uci_wasm.rs`'s tests (gated behind `uci-wasm`, not default).

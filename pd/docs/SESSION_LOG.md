@@ -9,6 +9,42 @@ Most recent session at TOP.
 
 ---
 
+## Session 128 — 2026-08-02, cont. (30.5 scoped, deferred — SharedArrayBuffer ruled out for GitHub Pages, D126)
+
+**Built/done:** Gokul asked to start 30.5 (async WASM UCI). Before
+writing code, worked out that the "obvious" fix — SharedArrayBuffer-
+backed real threading, same pattern native `main.rs` already uses —
+isn't viable for this deployment target: GitHub Pages can't set the
+`Cross-Origin-Opener-Policy`/`Cross-Origin-Embedder-Policy` headers
+SharedArrayBuffer requires, being a static host with no server-side
+config. Also worked out a subtler point: a plain Web Worker alone
+doesn't fix `stop` either, since a long synchronous WASM call blocks a
+Worker's own message queue exactly as completely as it blocks the main
+thread's. Identified the viable path instead: cooperative chunking —
+break `go` into repeated per-depth `uci_command` calls instead of one
+long synchronous one, fitting the existing `thread_local! SESSION`
+persistent-state design. Presented this analysis and asked whether to
+proceed and how to scope it; Gokul confirmed the direction but chose
+not to start implementation this session ("too big" / "later").
+Recorded the full analysis in DECISIONS.md D126 so it doesn't need
+rediscovering later, and added a pointer to it in ROADMAP 30.5 without
+changing its open status.
+
+**Files touched:** None — no code changes this session, pure
+architecture scoping.
+
+**Bugs fixed:** None.
+
+**Decisions made:** D126.
+
+**Next session start point:** 30.5 remains open, not started, with a
+concrete approach now on record (D126) whenever Gokul wants to pick it
+up — cooperative chunking of `go`, no deployment infra changes needed.
+Standing backlog otherwise unchanged: 29.7h (PlayStyle bulk tuning),
+30.8 (real UCI GUI target still "not sure yet").
+
+---
+
 ## Session 127 — 2026-08-02, cont. (D125: RecaptureExtension default flipped to true, explicit instruction, standard SPRT step skipped)
 
 **Built/done:** Gokul instructed directly: flip `RecaptureExtension`'s
