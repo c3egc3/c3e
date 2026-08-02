@@ -9,6 +9,60 @@ Most recent session at TOP.
 
 ---
 
+## Session 124 — 2026-08-02, cont. (32.6: SEE king-legality guard added — D122, confirmed real via 20,000-case empirical sweep after an initial hand-trace pointed the wrong way)
+
+**Built/done:** Fixed review finding #6 — `see.rs`'s exchange
+simulation never checked whether a simulated king "recapture" would be
+legal. Confirmed the gap real against live source (no `PieceKind::King`
+special-casing anywhere in either `see()` or `see_value_of()`'s loop).
+
+Notable process moment: hand-traced one concrete position first, and
+found the corruption "self-corrected" via the backward min-max
+propagation (the King's 20,000 placeholder value always dominates a
+subsequent "capture the king" step, erasing the corrupted value at the
+very next backward step). This looked like it might mean the bug
+never actually changes any real result. **Didn't trust that single
+example as a general property** — built an independent Python model of
+the exact algorithm and swept 20,000 randomized, realistically-ordered
+attacker/defender chains (king always last within a side's own chain,
+matching `least_valuable_attacker()`'s real search order) before
+concluding anything. Result: ~9% (1821/20,000) produced a different
+final SEE value, several by large margins — the one hand-traced
+example that self-corrected was not representative, and trusting it
+alone would have led to badly understating this fix's real impact.
+
+Fixed both `see()` and `see_value_of()` (duplicate loops) with the
+standard guard: if the next attacker is a king, check whether the
+opposing side still has any attacker on the target square via
+`least_valuable_attacker()` itself (occupancy-respecting), not the raw
+`attackers` bitboard. Translated one of the swept diff cases into a
+real, hand-verified chess position (both sides down to king-only on
+e5) for a concrete regression test — `see_value_of()` was 220, now
+correctly 320; a companion test confirms the boolean `see()` result
+also flips at a realistic threshold (300). Full reasoning in
+DECISIONS.md D122.
+
+**Files touched:** `src/search/see.rs`.
+
+**Bugs fixed:** Review finding #6 (D122). Brace-balance and test-count
+checks both passed cleanly (49/49 braces, 10/10 tests).
+
+**Decisions made:** D122.
+
+⚠️ **Not yet CI-confirmed.** No local `cargo test` in this sandbox —
+though this fix's justification is unusually well-verified: an
+independent 20,000-case Python model of the exact algorithm, not just
+a single hand-derived example (which this session specifically learned
+not to over-trust on its own).
+
+**Next session start point:** Gokul commits `src/search/see.rs`,
+confirms `cargo test` green. **Phase 32.1-32.6 all done.** Remaining:
+32.7 (iterative.rs sentinel misclassifying a real score of 0) — not yet
+independently re-verified against live source, same discipline needed
+as every finding so far.
+
+---
+
 ## Session 123 — 2026-08-02, cont. (D121: cleared 2 release-build-only unused-import warnings)
 
 **Built/done:** Gokul uploaded the "Publish Release" multi-platform

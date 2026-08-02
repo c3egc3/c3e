@@ -2936,9 +2936,19 @@ default-0 NNUE blend weight).
       (32.2/32.3 before their wiring) or a narrow edge case (32.1) or
       near-zero-reachability hygiene (32.4); this one was live in the
       real evaluation function.
-- [ ] 32.6 (review finding #6) — Open, not started, not independently
-      re-verified this session. No illegal-king-recapture guard in
-      `see.rs`'s SEE exchange chain, per the report.
+- [x] 32.6 (review finding #6) — DONE (Session 124, D122). Confirmed
+      real; added the missing king-legality guard to both `see()` and
+      `see_value_of()` — a king can't legally recapture into a square
+      the opponent still attacks. Empirically swept 20,000 realistic
+      randomized exchange chains against an independent Python model:
+      ~9% (1821) produced a different final SEE result, several by
+      large margins — a genuinely frequent, not corner-case, bug. One
+      concrete verified position (both sides down to king-only on the
+      target square) added as a regression test: `see_value_of()` was
+      220, is now correctly 320; a companion test shows the boolean
+      `see()` result also flips at a realistic threshold. Full
+      reasoning in DECISIONS.md D122. ⚠️ Not yet CI-confirmed. **Phase
+      32.1-32.6 all done.**
 - [ ] 32.7 (review finding #7) — Open, not started, not independently
       re-verified this session. `iterative.rs` allegedly uses a wrong
       sentinel check that misclassifies a genuine score of `0` (a real

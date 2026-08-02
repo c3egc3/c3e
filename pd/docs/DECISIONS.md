@@ -5879,3 +5879,67 @@ warn the next time a release build runs — this session only fixed the
 two the uploaded logs actually surfaced, not a proactive sweep for
 more. Worth keeping in mind if a future release build log shows new
 warnings.
+
+---
+
+## D122 — SEE King-Legality Guard Added — Confirmed Real, Frequently-Reachable Impact via Empirical Sweep (Session 124, external review finding #6)
+
+**Decision**: Fixed review finding #6. `search/see.rs`'s exchange-chain
+simulation (both `see()` and `see_value_of()`, which duplicate the same
+loop) never checked whether a simulated king "recapture" would be
+legal — a king can't move into a square still attacked by the
+opponent. Confirmed real against live source: nowhere in the loop was
+`attacker_kind == PieceKind::King` ever special-cased.
+
+**Investigation discipline note**: initially hand-traced one concrete
+position and found the bug's corrupted intermediate value got
+"self-corrected" by the backward min-max propagation, due to the
+King's placeholder SEE value (20,000) being so much larger than any
+real piece that a subsequent "capture the king" step always dominates
+and erases the corruption at the very next backward step. This could
+have been mistaken for a general property (i.e., "the bug never
+actually matters for the final result"). **It's not general** —
+verified by an independent Python model of the exact algorithm swept
+across 20,000 randomized, realistically-ordered attacker/defender
+chains (a side's king can only ever be its own least-valuable-attacker
+selection *last*, matching `least_valuable_attacker()`'s real
+Pawn→Knight→Bishop→Rook→Queen→King search order): **~9% (1821/20,000)
+produced a different final result**, several by large margins (e.g.
+one case: 170 vs. the correct 500 — a 330cp swing). The one hand-traced
+example that happened to cancel out was not representative.
+
+**The fix**: after selecting the next attacker via
+`least_valuable_attacker()`, if it's a king, check whether the
+opposing side still has any attacker on the target square (via the
+same `least_valuable_attacker()` call, occupancy-respecting — using
+raw `attackers` instead would have been wrong, since that bitboard
+alone doesn't exclude already-used non-sliding pieces the way
+`least_valuable_attacker`'s combined `& occupancy` term does). If so,
+the king's participation is illegal and the exchange sequence stops
+there, same as running out of attackers entirely.
+
+**Concrete verified test case**: White pawn captures a Black knight
+(320) on e5; afterward, White's only remaining attacker on e5 is its
+own king, Black's only remaining attacker is its own king — neither
+can legally recapture, since each king still guards the square against
+the other. Pre-fix, `see_value_of()` returned 220 (corrupted by
+simulating Black's king illegally "recapturing" the pawn); post-fix,
+correctly returns 320. A companion test shows this also flips a real
+`see()` boolean result at threshold 300 (false → true). Position and
+expected values verified against an independent Python re-
+implementation of the exact algorithm before being trusted, not just
+hand-derived once.
+
+**Practical significance**: `see()`/`see_value_of()` are used for
+capture move-ordering (`ordering.rs`) and various SEE-gated
+pruning/extension decisions throughout search — given the fix changes
+results in roughly 1 in 11 randomly-sampled realistic king-involved
+endgame-ish exchange shapes, this is a real, non-trivial correctness
+fix, not a corner case, though (unlike D120) it's specifically confined
+to positions where kings end up as SEE-chain participants (later-game,
+fewer-piece positions), not something touching every evaluated
+position the way the packed-score bug did.
+
+**ROADMAP Phase 32 status**: 32.1-32.6 all done. Remaining: 32.7
+(iterative.rs sentinel misclassifying a real score of 0) — not yet
+independently re-verified against live source.
