@@ -5843,3 +5843,39 @@ previously-tested behavior, only previously-*untested* behavior.
 Remaining: 32.6 (SEE missing illegal-king-recapture guard), 32.7
 (iterative.rs sentinel misclassifying a real score of 0) — neither
 independently re-verified against live source yet.
+
+---
+
+## D121 — Two Unused-Import Warnings Cleared (release-only, cargo test never showed them) (Session 123)
+
+**Decision**: Gokul uploaded CI logs from the multi-platform release
+workflow ("Publish Release" — Windows/aarch64-macOS/x86_64-macOS/WASM
+builds), green but with 2 compiler warnings on every native platform
+build: `unused import: MoveKind` (`search/alpha_beta.rs:52`) and
+`unused import: eg` (`eval/pawns.rs:30`).
+
+**Why these never showed up in the regular `cargo test` CI job**: both
+imports are used exclusively inside each file's own `#[cfg(test)] mod
+tests { ... }` block (`MoveKind::Quiet` in various test fixture
+`Move::new()` calls; `eg()` in a pawn-advancement test assertion). A
+release build (`cargo build --release`, run by this separate
+multi-platform workflow to produce the actual distributed binaries)
+excludes `#[cfg(test)]` code entirely — the whole test module,
+including its `use super::*` re-export of the parent module's
+imports, doesn't exist in that compilation. So the top-level imports
+were genuinely unused from a release build's point of view, while
+being genuinely used from `cargo test`'s point of view — two different
+compilation configurations, not a contradiction.
+
+**Fix**: moved both imports from each file's top-level `use` statement
+into a dedicated `use` line inside the file's own `mod tests` block
+(next to that module's other test-only imports), so they're only
+present in configurations where they're actually used. No behavior
+change in either build configuration — purely a warning cleanup.
+
+**Not investigated further**: whether other files in the codebase have
+the same class of test-only-import-at-top-level pattern waiting to
+warn the next time a release build runs — this session only fixed the
+two the uploaded logs actually surfaced, not a proactive sweep for
+more. Worth keeping in mind if a future release build log shows new
+warnings.

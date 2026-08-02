@@ -9,6 +9,38 @@ Most recent session at TOP.
 
 ---
 
+## Session 123 — 2026-08-02, cont. (D121: cleared 2 release-build-only unused-import warnings)
+
+**Built/done:** Gokul uploaded the "Publish Release" multi-platform
+workflow's CI logs — green, but 2 compiler warnings on every native
+build (Windows/aarch64-macOS/x86_64-macOS): `unused import: MoveKind`
+(`alpha_beta.rs:52`) and `unused import: eg` (`pawns.rs:30`). Both
+imports are only used inside each file's own `#[cfg(test)]` module,
+which a release build excludes entirely — that's why `cargo test`
+(the regular CI job) never showed either warning while this separate
+release-build job did; two different compilation configs, not a
+contradiction. Moved both imports from the top-level `use` into a
+test-only `use` line inside each file's `mod tests` block. Full
+reasoning in DECISIONS.md D121.
+
+**Files touched:** `src/search/alpha_beta.rs`, `src/eval/pawns.rs`.
+
+**Bugs fixed:** 2 compiler warnings (D121) — cosmetic, no behavior
+change in either build configuration. Brace-balance checks passed
+cleanly on both files (alpha_beta.rs 248/248, pawns.rs 85/85).
+
+**Decisions made:** D121.
+
+**Next session start point:** Gokul commits both files, confirms the
+release-build workflow now runs warning-free. Phase 32 still has 32.6
+(SEE missing illegal-king-recapture guard) and 32.7 (iterative.rs
+score-0 sentinel bug) open, neither independently re-verified against
+live source yet — same discipline needed as every finding so far, two
+of which (#3, #4) turned out to have a materially different real-world
+status than the report's own framing once actually checked.
+
+---
+
 ## Session 122 — 2026-08-02, cont. (32.5: packed mg()/eg() sign-extension bug fixed — D120, the highest-impact fix in Phase 32 so far)
 
 **Built/done:** Fixed review finding #5. Empirically verified (not just
