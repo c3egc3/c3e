@@ -9,6 +9,70 @@ Most recent session at TOP.
 
 ---
 
+## Session 122 — 2026-08-02, cont. (32.5: packed mg()/eg() sign-extension bug fixed — D120, the highest-impact fix in Phase 32 so far)
+
+**Built/done:** Fixed review finding #5. Empirically verified (not just
+reasoned about) via a 200,000-random-case Python sweep before touching
+any code: the old `eval/material.rs::mg()` extraction (`(score >> 32)
+as i32`) was wrong on ~50% of cases — every case with a negative `eg`
+component — always off by exactly 1. While investigating, discovered
+`texel/weights_f64.rs` already had an independently-written, partial
+workaround for a version of this bug, with a comment claiming `mg()`
+"is only correct once summed" (i.e., safe on an accumulated total,
+unsafe only on one un-summed literal weight). **Verified that claim
+false** by simulating an accumulated sum of 5 terms — the bug
+reproduces identically on the sum, not just on isolated terms. Since
+`taper()` (called by every real position's eval) runs `mg()` on
+exactly this kind of accumulated total, this means the bug was live in
+the real evaluation pipeline, not just reachable from decoding
+individual un-summed weights — a bigger deal than Phase 32's original
+"not independently re-verified" note suggested.
+
+Fixed `mg()` at the source using Stockfish's own technique (add half
+the low half's range via `wrapping_add`, then shift unsigned so no
+sign-extension happens during the shift). Re-verified against the same
+200k-case sweep plus a unit-test grid: zero failures. Simplified
+`weights_f64.rs`'s now-redundant workaround to call the fixed
+`mg()`/`eg()` directly — confirmed mathematically identical to the old
+workaround across 100,000 cases first, so this is a pure
+simplification, not a behavior change — and corrected its misleading
+comment rather than leaving it to mislead a future reader. Full-repo
+grep confirmed no other file has a similar workaround or duplicate bit-
+manipulation for this same bug (`tt/mod.rs`'s only `>> 32` usage is
+unrelated Zobrist hash-key extraction, already checked). Full reasoning
+in DECISIONS.md D120.
+
+**Files touched:** `src/eval/material.rs`, `src/texel/weights_f64.rs`.
+
+**Bugs fixed:** Review finding #5 (D120) — the highest-impact fix in
+Phase 32 so far, since everything fixed before it was either dead code
+before its own wiring fix (32.2/32.3), a narrow edge case (32.1), or
+near-zero-reachability hygiene (32.4); this one was live in the real
+evaluation function. Brace-balance and test-count checks both passed
+cleanly on both files (material.rs 37/37, weights_f64.rs 51/51; 14/14
+and 2/2 test counts respectively).
+
+**Decisions made:** D120.
+
+⚠️ **Not yet CI-confirmed.** No local `cargo test` in this sandbox —
+though this fix in particular was checked more rigorously than most via
+independent Python empirical sweeps (200,000 cases for the bug/fix
+itself, 100,000 for the weights_f64.rs simplification's equivalence)
+before any Rust code was written, not just hand-derived.
+
+**Next session start point:** Gokul commits both files, confirms
+`cargo test` green — and, given this fix's reach into the live eval
+pipeline, this is a good candidate for an actual Elo A/B once CI is
+green (pre-D120 commit pinned as one side, current `main` as the
+other, same shape as D118's open item) rather than assuming a
+correctness fix is automatically a strength improvement. **Phase 32:
+32.1-32.5 all done.** Remaining: 32.6 (SEE missing illegal-king-
+recapture guard), 32.7 (iterative.rs sentinel misclassifying a real
+score of 0) — neither independently re-verified against live source
+yet, same discipline needed as every finding so far.
+
+---
+
 ## Session 121 — 2026-08-02, cont. (32.4: duplicate MATE_THRESHOLD removed — D119. Phase 32's first four findings all done.)
 
 **Built/done:** Fixed review finding #2 — `tt/mod.rs`'s own

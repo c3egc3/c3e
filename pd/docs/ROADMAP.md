@@ -2914,14 +2914,28 @@ default-0 NNUE blend weight).
       score in the old-vs-real threshold gap). Full reasoning in
       DECISIONS.md D119. ⚠️ Not yet CI-confirmed. **All of Phase 32's
       first four findings (32.1-32.4) are now done.**
-- [ ] 32.5 (review finding #5) — Open, not started, not independently
-      re-verified this session (spot-check budget prioritized #1-#4 +
-      #8). Packed mg/eg score `mg()` extraction allegedly off by one
-      when the combined `eg` component is negative — classic packed-
-      score sign-extension bug pattern (`(mg << 32) + eg as i64`
-      borrows into the mg bits when eg is negative), well-known enough
-      in engines using this trick that the report's diagnosis is
-      plausible without having re-derived it independently yet.
+- [x] 32.5 (review finding #5) — DONE (Session 122, D120). Confirmed
+      real and, unexpectedly, more significant than initially assessed:
+      empirically verified (200,000 random `(mg, eg)` pairs) the old
+      `mg()` was wrong on ~50% of cases, always off by 1. Discovered
+      along the way that `texel/weights_f64.rs` already had a partial,
+      independently-written workaround with an *incorrect* comment
+      claiming the bug "only affects un-summed single terms" — verified
+      that claim false (the bug reproduces identically on an
+      accumulated sum of terms), meaning the real live `taper()`
+      pipeline (not just isolated eval-term decoding) was reachable by
+      this bug whenever a position's total accumulated eg was negative.
+      Fixed `mg()` at the source using Stockfish's own
+      wrapping-add-then-unsigned-shift technique; simplified
+      `weights_f64.rs`'s now-unnecessary workaround to call the fixed
+      function directly (confirmed mathematically identical to the old
+      workaround across 100,000 cases first). 6 new tests across both
+      files. Full reasoning in DECISIONS.md D120. ⚠️ Not yet
+      CI-confirmed. **This is the highest-impact fix in Phase 32 so
+      far** — everything else fixed before it was either dead code
+      (32.2/32.3 before their wiring) or a narrow edge case (32.1) or
+      near-zero-reachability hygiene (32.4); this one was live in the
+      real evaluation function.
 - [ ] 32.6 (review finding #6) — Open, not started, not independently
       re-verified this session. No illegal-king-recapture guard in
       `see.rs`'s SEE exchange chain, per the report.

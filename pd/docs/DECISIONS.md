@@ -5762,3 +5762,84 @@ recapture guard, finding #6), 32.7 (iterative.rs sentinel
 misclassifying a real score of 0, finding #7) — none of these three
 have been independently re-verified against live source yet, unlike
 #1-#4 and #8.
+
+---
+
+## D120 — Packed mg()/eg() Sign-Extension Bug Fixed at the Source — Confirmed Empirically, Affects the Live Eval Pipeline, Not Just Isolated Terms (Session 122, external review finding #5)
+
+**Decision**: Fixed review finding #5, and it turned out to be more
+significant than its initial "not independently re-verified" status
+(ROADMAP Phase 32) suggested — the most impactful fix in Phase 32 so
+far.
+
+**The bug**: `eval/material.rs`'s `s(mg, eg) -> i64` packs a tapered
+score as `(mg << 32) + eg`. The old `mg(score) -> i32` extraction
+(`(score >> 32) as i32`, a plain arithmetic right shift) doesn't
+account for `eg`'s sign-extension borrowing into the mg half's own
+bits whenever `eg` is negative. **Verified empirically, not just
+reasoned about**: swept 200,000 random `(mg, eg)` pairs — the old
+`mg()` was wrong on 99,937 of them (~50%, exactly the cases with
+`eg < 0`), always off by exactly 1 (too low). `eg()` itself
+(`score as i32`, a plain low-32-bit truncation) was correct in 100% of
+the same cases — the bug is specific to `mg()`.
+
+**Scope discovery — this is NOT limited to isolated eval terms**:
+while investigating, found `texel/weights_f64.rs` already had a
+hand-rolled workaround for a version of this bug in `From<i64> for S`,
+with a comment claiming `mg()` "is only correct once summed" — i.e.,
+safe to use on an accumulated total across many eval terms, unsafe
+only on one un-summed literal weight. **That claim is false.**
+Verified by simulating an accumulated sum of 5 terms
+(`Σ mg_i = 40, Σ eg_i = -43`): the old `mg()` applied to the *summed*
+packed value still returned 39, not 40 — the bug depends purely on the
+sign of the final packed value's low 32 bits, whether that value
+represents one term or a total. Since `taper()` — which every real
+position's eval score passes through — calls `mg()` on exactly this
+kind of accumulated total, **this means the bug was reachable from the
+live evaluation pipeline itself**, not just from decoding individual
+un-summed weights, whenever a position's total accumulated eg score
+happened to be negative. Given how common negative eg values are
+across dozens of tapered eval terms, this was plausibly live in a
+meaningful fraction of real evaluated positions, each time shaving
+1 centipawn off the middlegame-blended score.
+
+**The fix**: `mg()` now uses the same technique Stockfish's own
+`Score` packing uses — `(score.wrapping_add(0x8000_0000) as u64 >> 32)
+as i32` — add half the low half's range before shifting
+(`wrapping_add`, not `+`, so this can't panic in debug builds even at
+`i64`'s own extreme bounds, which `s()`'s realistic inputs never
+actually approach), then shift as **unsigned** so no sign-extension
+happens during the shift itself. Re-verified against the same
+200,000-case sweep plus an exhaustive `[-500, -100, -1, 0, 1, 100,
+500]²` grid in the new unit tests: zero failures. `eg()` is unchanged
+— it was already correct.
+
+**`weights_f64.rs` simplified as a direct consequence**: its
+hand-rolled `From<i64> for S` workaround (subtract the known-correct
+`eg`, then divide) is now unnecessary — confirmed mathematically
+identical to the new, fixed `mg()` across 100,000 random cases before
+removing it — simplified to call `mg()`/`eg()` directly like every
+other caller, and its misleading "only correct once summed" comment
+corrected rather than left in place to mislead a future reader.
+
+**Also checked**: full-repo grep for any other packed-score
+workarounds or duplicate `mg()`/`eg()`-style bit manipulation —
+`tt/mod.rs`'s only `>> 32` usage is unrelated Zobrist hash-key
+extraction, not another instance of this bug. `bin/texel_tune.rs`
+calls the same `material::mg()`/`eg()` directly (no separate
+workaround needed there) and benefits from the fix automatically.
+
+**Tests added**: 5 in `material.rs` (negative-eg round-trip — the
+exact pre-fix failure case, negative-mg, both-negative, a 7×7 sign-
+combination sweep, and an end-to-end `taper()`-level check using the
+function every real eval term actually calls, not just `mg()`/`eg()`
+in isolation) and 1 in `weights_f64.rs` (confirms the simplified
+`From<i64>` still round-trips the exact scenario its old workaround
+existed to handle). None of the pre-existing tests in either file used
+a negative `eg` value, so none needed updating — the fix changes no
+previously-tested behavior, only previously-*untested* behavior.
+
+**ROADMAP Phase 32 status**: 32.1/32.2/32.3/32.4/32.5 all done.
+Remaining: 32.6 (SEE missing illegal-king-recapture guard), 32.7
+(iterative.rs sentinel misclassifying a real score of 0) — neither
+independently re-verified against live source yet.
