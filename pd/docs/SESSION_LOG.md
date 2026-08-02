@@ -9,6 +9,53 @@ Most recent session at TOP.
 
 ---
 
+## Session 121 — 2026-08-02, cont. (32.4: duplicate MATE_THRESHOLD removed — D119. Phase 32's first four findings all done.)
+
+**Built/done:** Fixed review finding #2 — `tt/mod.rs`'s own
+`MATE_THRESHOLD = 30_000`, independent of `search/mod.rs`'s real
+`MATE_THRESHOLD = 900_000`. Removed the local duplicate entirely;
+`score_to_tt()`/`score_from_tt()` now reference
+`crate::search::MATE_THRESHOLD` directly — confirmed no import-cycle
+risk (both modules are top-level siblings under the crate root per
+`lib.rs`) and confirmed via full-repo grep that nothing outside
+`tt/mod.rs` itself referenced the removed constant, so this isn't a
+breaking API change for any other file. Updated the existing
+`test_mate_score_adjustment` test and added a direct regression guard
+(`test_score_to_tt_no_longer_uses_stale_local_threshold`) using a score
+that sits exactly in the gap between the old wrong threshold and the
+real one. Full reasoning in DECISIONS.md D119.
+
+**Files touched:** `src/tt/mod.rs`.
+
+**Bugs fixed:** Review finding #2 (D119). Brace-balance and test-count
+checks both passed cleanly (75/75 braces; the 16 `#[test]` vs. 17
+`fn test_` gap is a pre-existing, harmless naming coincidence — a
+`test_move()` helper function that builds a test `Move`, not an actual
+unit test — confirmed against the pre-session file before trusting the
+count, not just assumed).
+
+**Decisions made:** D119.
+
+⚠️ **Not yet CI-confirmed.** No local `cargo test` in this sandbox.
+
+**Next session start point:** Gokul commits `src/tt/mod.rs`, confirms
+`cargo test` green. **Phase 32's priority-ordered first four findings
+(#1/#3/#4/#2 → 32.1-32.4) are all done as of this session.** Remaining:
+32.5 (packed mg/eg score sign-extension bug), 32.6 (SEE missing
+illegal-king-recapture guard), 32.7 (iterative.rs sentinel
+misclassifying a real score of 0) — none of these three have been
+independently re-verified against live source yet, unlike #1-#4 and
+#8. Worth doing that verification pass before fixing each, same
+discipline as every finding so far — two of the four verified findings
+(#3, #4) turned out to have a materially different real-world status
+than the report's own framing once actually checked. Also still open:
+D114/D117's unmeasured toggles (`ImprovingHeuristic` closed at D115;
+`RecaptureExtension` still needs its n=200 confirmation), D118's LMR
+fix has no dedicated Elo measurement yet, and the older backlog (29.7h/
+PlayStyle tuning, 30.5/30.8 WASM UCI GUI items) remains untouched.
+
+---
+
 ## Session 120 — 2026-08-02 (32.2 functional check + 32.3: LMR gate now calls should_apply_lmr() directly, shipped live — D118)
 
 **Built/done:** Gokul ran the n=20 `RecaptureExtension` functional

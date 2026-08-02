@@ -2903,18 +2903,17 @@ default-0 NNUE blend weight).
       dedicated Elo measurement yet — this fix has no "off" state to
       A/B against via `setoption` the way D114/D117's toggles do; would
       need the pre-D118 commit pinned as one side of a match instead.
-- [ ] 32.4 (review finding #2) — Open, not started. `tt/mod.rs`
-      defines its own `MATE_THRESHOLD = 30_000`, independent of
-      `search/mod.rs`'s `MATE_THRESHOLD = 900_000` — verified real,
-      both constants confirmed to exist with those exact values. Report
-      labels this High severity; Claude's own assessment (see this
-      session's chat) is that real-world impact is probably close to
-      zero in practice — Pet Dragon's eval essentially never reaches
-      scores anywhere near 30,000 in real games, so the "ordinary
-      scores in [30000, 900000) get corrupted" scenario is mostly
-      theoretical — but it's a real duplication worth fixing on
-      correctness/hygiene grounds regardless, hence still queued ahead
-      of the three Low-severity items.
+- [x] 32.4 (review finding #2) — DONE (Session 121, D119). Removed the
+      duplicate `TranspositionTable::MATE_THRESHOLD = 30_000` entirely;
+      `score_to_tt()`/`score_from_tt()` now use the shared
+      `crate::search::MATE_THRESHOLD` (900,000) directly. No import-
+      cycle risk (both modules are top-level siblings, confirmed against
+      `lib.rs`). Confirmed via full-repo grep that nothing outside
+      `tt/mod.rs` referenced the removed constant. 2 tests (updated the
+      existing round-trip test, added a direct regression guard using a
+      score in the old-vs-real threshold gap). Full reasoning in
+      DECISIONS.md D119. ⚠️ Not yet CI-confirmed. **All of Phase 32's
+      first four findings (32.1-32.4) are now done.**
 - [ ] 32.5 (review finding #5) — Open, not started, not independently
       re-verified this session (spot-check budget prioritized #1-#4 +
       #8). Packed mg/eg score `mg()` extraction allegedly off by one

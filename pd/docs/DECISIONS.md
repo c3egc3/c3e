@@ -5715,3 +5715,50 @@ just prove the toggle-free code path doesn't crash on an empty board).
 **Not done**: no dedicated Elo measurement of this specific fix yet —
 see the A/B note above. ROADMAP Phase 32 next: 32.4 (review finding
 #2, duplicate `MATE_THRESHOLD`).
+
+---
+
+## D119 — Duplicate MATE_THRESHOLD Constant Removed, TT Now Uses the Shared Value (Session 121, external review finding #2)
+
+**Decision**: Fixed review finding #2. `tt/mod.rs` defined its own
+`TranspositionTable::MATE_THRESHOLD = 30_000`, entirely independent of
+`search/mod.rs`'s `MATE_THRESHOLD = 900_000` — used by `score_to_tt()`/
+`score_from_tt()` to decide whether a score needs ply-relative
+adjustment before/after TT storage. Removed the local constant
+entirely; both functions now reference `crate::search::MATE_THRESHOLD`
+directly (both modules are top-level siblings under the crate root, so
+no import-cycle risk — confirmed against `lib.rs`'s module list before
+making the change).
+
+**Real-world impact, as assessed when this was first flagged
+(Session 118, ROADMAP Phase 32.4)**: probably close to zero in
+practice. Pet Dragon's eval essentially never reaches scores anywhere
+near 30,000 in real games, so the report's own "ordinary scores in
+[30000, 900000) get corrupted" scenario was mostly theoretical.
+Fixed anyway on correctness/hygiene grounds — a duplicated magic
+number with two very different values for the same concept is a real
+landmine for future code even where today's practical blast radius is
+small, and the fix itself is small, low-risk, and unambiguous (there's
+only one correct value; unlike D118, there's no judgment call about
+whether to gate this behind a toggle).
+
+**Also removed**: `TranspositionTable::MATE_THRESHOLD` as a public API
+— confirmed via full-repo grep that its only reference outside
+`tt/mod.rs` itself didn't exist (only the module's own test used it),
+so removing it is not a breaking change for any other file.
+
+**Tests**: updated the existing `test_mate_score_adjustment` to use the
+shared constant, and added
+`test_score_to_tt_no_longer_uses_stale_local_threshold` — a direct
+regression guard using a score (50,000) that sits exactly in the gap
+between the old wrong threshold and the real one, confirming it now
+passes through `score_to_tt()` unadjusted instead of being
+misclassified as a mate score.
+
+**ROADMAP Phase 32 status after this fix**: 32.1 (D116), 32.2 (D117),
+32.3 (D118), 32.4 (D119) all done. Remaining: 32.5 (packed mg/eg score
+sign-extension bug, finding #5), 32.6 (SEE missing illegal-king-
+recapture guard, finding #6), 32.7 (iterative.rs sentinel
+misclassifying a real score of 0, finding #7) — none of these three
+have been independently re-verified against live source yet, unlike
+#1-#4 and #8.
