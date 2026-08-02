@@ -2949,10 +2949,23 @@ default-0 NNUE blend weight).
       `see()` result also flips at a realistic threshold. Full
       reasoning in DECISIONS.md D122. ⚠️ Not yet CI-confirmed. **Phase
       32.1-32.6 all done.**
-- [ ] 32.7 (review finding #7) — Open, not started, not independently
-      re-verified this session. `iterative.rs` allegedly uses a wrong
-      sentinel check that misclassifies a genuine score of `0` (a real
-      draw) as "unset."
+- [x] 32.7 (review finding #7) — DONE (Session 125, D123). Confirmed
+      real at the report's exact cited location (`iterative.rs:154`,
+      matched verbatim). Extracted the buggy inline expression into its
+      own testable `choose_result_score()` function; dropped the wrong
+      `.abs() > 0` clause, keeping only the real `!= -INFINITY` sentinel
+      check. 3 new tests. Matches the report's own "Low" severity label
+      — the one finding out of 8 whose framing held up exactly as
+      written, unlike #3/#4/#5/#6 which all turned out different once
+      independently checked. Full reasoning in DECISIONS.md D123.
+      ⚠️ Not yet CI-confirmed.
+
+**Phase 32 complete — all 8 external review findings resolved.** See
+DECISIONS.md D123 for the full before/after severity table across all
+8: 6 of 8 findings turned out different (better or worse) than their
+original framing once independently checked against live source, and
+in two cases (#5, #6) an empirical sweep was needed, not just a single
+hand-derived example.
 - [x] 32.8 (review finding #8) — Confirmed inert, no fix needed.
       `nnue/inference.rs`'s centipawn-scale conversion is
       self-flagged by the report as analytically derived but

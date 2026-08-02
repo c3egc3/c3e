@@ -9,6 +9,52 @@ Most recent session at TOP.
 
 ---
 
+## Session 125 — 2026-08-02, cont. (32.7: wrong-sentinel score bug fixed — D123. Phase 32 complete, all 8 external review findings resolved.)
+
+**Built/done:** Fixed the last open item in Phase 32, review finding
+#7. Confirmed real at the report's exact cited location
+(`iterative.rs:154`, matched verbatim): `score_for_result`'s selection
+logic required `info.best_score.abs() > 0` in addition to the real
+sentinel check (`!= -INFINITY`), which wrongly treated a genuine drawn
+root score of exactly `0` as invalid, falling back to a local
+`best_score` tracker that only updates when `info.best_move !=
+Move::NULL` for that depth — stale on the narrow edge case where a
+completed depth left it `NULL`. Extracted the logic into its own
+`choose_result_score()` function (matching this session's D114/D117/
+D118 pattern of pulling inline logic out for direct testability) and
+dropped the wrong `.abs() > 0` clause. 3 new unit tests exercise the
+exact bug scenario, the real sentinel case, and the ordinary path.
+Full reasoning in DECISIONS.md D123.
+
+Unlike #3/#4/#5/#6, which all turned out to have a different real-world
+severity than their original framing once independently checked
+(sometimes needing an empirical sweep, not just a hand-derived
+example), **this one's own "Low severity" framing held up exactly as
+written** — added a before/after summary table across all 8 findings
+to DECISIONS.md D123 as the closing note for Phase 32.
+
+**Files touched:** `src/search/iterative.rs`.
+
+**Bugs fixed:** Review finding #7 (D123) — **Phase 32 is now complete,
+all 8 external review findings resolved.** Brace-balance and test-count
+checks both passed cleanly (112/112 braces, 23/23 tests).
+
+**Decisions made:** D123.
+
+⚠️ **Not yet CI-confirmed.** No local `cargo test` in this sandbox.
+
+**Next session start point:** Gokul commits `src/search/iterative.rs`,
+confirms `cargo test` green — this closes out Phase 32 for real.
+Standing open items from prior phases, none blocking: D118's LMR fix
+and D120's packed-score fix both still lack a dedicated Elo A/B
+(pre-fix commit pinned vs. current `main`); D117's `RecaptureExtension`
+still needs its n=200 confirmation; D114's `ImprovingHeuristic` is
+already closed at n=200 (D115, parked off); 29.7h (PlayStyle bulk
+tuning) and 30.5/30.8 (WASM UCI GUI target/async limitations) remain
+untouched from before Phase 32 began.
+
+---
+
 ## Session 124 — 2026-08-02, cont. (32.6: SEE king-legality guard added — D122, confirmed real via 20,000-case empirical sweep after an initial hand-trace pointed the wrong way)
 
 **Built/done:** Fixed review finding #6 — `see.rs`'s exchange

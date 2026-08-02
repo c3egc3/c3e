@@ -5943,3 +5943,83 @@ position the way the packed-score bug did.
 **ROADMAP Phase 32 status**: 32.1-32.6 all done. Remaining: 32.7
 (iterative.rs sentinel misclassifying a real score of 0) — not yet
 independently re-verified against live source.
+
+---
+
+## D123 — Wrong-Sentinel Score Bug Fixed, Extracted to a Testable Function — Phase 32 Complete, All 8 Findings Resolved (Session 125, external review finding #7)
+
+**Decision**: Fixed review finding #7, the last open item in Phase 32.
+Confirmed real against live source at the report's exact cited
+location (`iterative.rs:154`, matched verbatim):
+
+```rust
+let score_for_result = if info.best_score.abs() > 0
+    && info.best_score != -INFINITY {
+    info.best_score
+} else {
+    best_score
+};
+```
+
+`info.best_score`'s real "unset" sentinel is `-INFINITY` (set in
+`SearchInfo::reset_for_search()`) — the extra `.abs() > 0` clause
+wrongly treated a genuinely drawn root position (a completely
+legitimate score of exactly `0`) as if it were invalid, silently
+falling back to the local `best_score` tracker instead. That local
+variable only updates when `info.best_move != Move::NULL` for a given
+depth (see the loop a few lines above), so on the narrow edge case
+where a completed depth left it `Move::NULL`, the fallback would be
+stale — from the *previous* depth — while `info.best_score` correctly
+held the current depth's real `0`.
+
+**Severity assessment matches the report's own "Low" label** — unlike
+findings #3/#4/#5/#6, which all turned out different (better or worse)
+than initially framed once independently checked, this one's own
+framing held up: harmless in the common path (both variables agree),
+narrow trigger condition (`info.best_move == Move::NULL` on a
+completed depth is itself rare), and the report's own suggested fix
+was exactly correct — didn't need any independent empirical sweep the
+way #5 and #6 did to establish real-world reach, since the bug is
+purely a value-selection logic error with an unambiguous correct
+answer, not something whose downstream impact depends on how a
+separate algorithm (like SEE's backward min-max) happens to propagate
+it.
+
+**Fix**: extracted the inline expression into its own function,
+`choose_result_score(info_best_score, fallback_best_score) -> i32`,
+matching this session's established pattern (D114's
+`futility_margin()`, D117's `recapture_and_passed_pawn_extension()`,
+D118's reuse of `should_apply_lmr()`) rather than leaving fragile
+inline logic buried in a large loop — makes the exact fixed condition
+directly unit-testable with plain `i32` inputs, no need to construct a
+full `alpha_beta` search or a real position to exercise the edge case.
+Dropped the `.abs() > 0` clause entirely; the only condition that
+disqualifies `info_best_score` is being the real sentinel.
+
+**Tests added**: 3 — the exact pre-fix bug scenario (`info_best_score
+= 0` must be trusted, not treated as unset), the real sentinel case
+(`-INFINITY` must fall back), and a sanity check for the ordinary
+non-zero, non-sentinel path.
+
+**Phase 32 is now complete — all 8 external review findings resolved**:
+
+| # | Finding | Status | Real-world severity once checked |
+|---|---------|--------|-----------------------------------|
+| 1 | Fifty-move rule overrides checkmate | Fixed (D116) | Real, narrow edge case |
+| 2 | Duplicate `MATE_THRESHOLD` | Fixed (D119) | Real, near-zero reachability |
+| 3 | `is_recapture()` ignores prev_move | Fixed + wired live (D117) | Was 100% dead code before the fix |
+| 4 | Dead `should_apply_lmr()` vs. inline gate | Fixed (D118) | Was 100% dead code before the fix |
+| 5 | Packed mg/eg sign-extension bug | Fixed (D120) | **Highest impact — live in real eval, ~50% of terms** |
+| 6 | SEE missing king-legality guard | Fixed (D122) | Real, ~9% of realistic exchange shapes |
+| 7 | Wrong sentinel misclassifies score 0 | Fixed (D123) | Real, narrow — matches report's own "Low" label |
+| 8 | NNUE centipawn conversion unverified | Confirmed inert | Zero — gated behind default-0 blend weight |
+
+Across this whole pass, the review's own severity labels proved
+accurate for exactly 2 of 8 findings (#7, #8) — the other 6 all turned
+out to be either more or less impactful than first framed once
+independently verified against live source and, in two cases (#5, #6),
+an empirical sweep rather than a single hand-derived example. This is
+the core lesson of Phase 32 as a whole: verify against source and,
+where a bug's downstream impact depends on how another algorithm
+propagates it, verify empirically too — neither a report's own
+confidence nor a single hand-traced example is sufficient on its own.
