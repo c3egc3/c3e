@@ -9,6 +9,50 @@ Most recent session at TOP.
 
 ---
 
+## Session 127 — 2026-08-02, cont. (D125: RecaptureExtension default flipped to true, explicit instruction, standard SPRT step skipped)
+
+**Built/done:** Gokul instructed directly: flip `RecaptureExtension`'s
+default to `true`, no further A/B run. Flagged once, plainly, that
+this departs from every other unproven-technique toggle's rollout
+pattern in this project (D75/D98/D114/D117 all required a dedicated
+SPRT-style A/B before a default-on flip; the only data point here is
+D117's own flat n=20 functional check, which confirms the mechanism
+works, not that it helps) — then made the change as instructed, since
+this is Gokul's call as project owner and the instruction was explicit
+and repeated, not something to keep pushing back on.
+
+Flipped the default in `SearchInfo::recapture_extension_enabled` and
+`EngineState::recapture_extension_enabled` (both `false` → `true`),
+updated the `RecaptureExtension` UCI option's advertised default
+string, and renamed/flipped the two tests that asserted the old
+default (`_defaults_to_false` → `_defaults_to_true` in both
+`alpha_beta.rs` and `main.rs`). The extension mechanism's own logic is
+completely unchanged — pure default-value flip. Full reasoning,
+including an explicit note on how to revert if a future bench run
+surfaces a regression, in DECISIONS.md D125.
+
+**Files touched:** `src/search/mod.rs`, `src/search/alpha_beta.rs`,
+`src/main.rs`.
+
+**Bugs fixed:** None — pure configuration change. Brace-balance and
+test-count checks passed cleanly on all three files (search/mod.rs
+96/96, alpha_beta.rs 248/248 with 57/57 tests, main.rs 254/254 with
+77/77 tests); confirmed no other file had a stray reference to the old
+default.
+
+**Decisions made:** D125.
+
+⚠️ **Not yet CI-confirmed.** No local `cargo test` in this sandbox.
+
+**Next session start point:** Gokul commits all three files, confirms
+`cargo test` green — the two renamed tests should pass now that both
+the default and the assertions agree. `RecaptureExtension` now runs by
+default in every game with no dedicated Elo data behind it (D125's own
+risk note). Standing backlog, none blocking: 29.7h (PlayStyle bulk
+tuning), 30.5/30.8 (WASM UCI GUI).
+
+---
+
 ## Session 126 — 2026-08-02, cont. (D124: D118/D120 pinned-ref Elo check — +5.2 Elo, within noise, accepted neutral. Caught a real mistake: abbreviated SHA caused a silent main-vs-main mirror match.)
 
 **Built/done:** Ran the standing Elo A/B for D118 (LMR gate fix) and

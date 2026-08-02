@@ -2883,13 +2883,14 @@ default-0 NNUE blend weight).
       `prev_move`; new `recapture_and_passed_pawn_extension()` is called
       live from `alpha_beta.rs`'s move loop (any move, not just the TT
       move), gated behind new `SearchInfo::recapture_extension_enabled`
-      / UCI `RecaptureExtension` (default false, byte-identical when
-      off). Deliberately scoped to recapture only — passed-pawn-push
-      extension (bundled in the same original function) wasn't flagged
-      as buggy and stays unwired, out of scope. 12 new tests. Full
-      reasoning in DECISIONS.md D117. ⚠️ Not yet CI-confirmed. ⚠️ Not
-      yet Elo-measured — needs its own SPRT-style A/B, same open item
-      every other unproven Phase 26+ toggle carries.
+      / UCI `RecaptureExtension` (default false at the time, byte-
+      identical when off). Deliberately scoped to recapture only —
+      passed-pawn-push extension (bundled in the same original
+      function) wasn't flagged as buggy and stays unwired, out of
+      scope. 12 new tests. Full reasoning in DECISIONS.md D117.
+      **Update (Session 127, D125): default flipped to `true` by
+      Gokul's explicit instruction, skipping the SPRT-style A/B this
+      note originally called for — see DECISIONS.md D125.**
 - [x] 32.3 (review finding #4) — DONE (Session 120, D118). Replaced the
       inline LMR gate in `alpha_beta.rs`'s move loop with a direct call
       to `pruning::should_apply_lmr()` (already existed, already fully

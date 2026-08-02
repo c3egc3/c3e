@@ -6072,3 +6072,45 @@ narrowing a result that's already not concerning in either direction.
 Both fixes stay as-is (unconditional, no toggle, already merged and
 CI-confirmed). This closes out the last open item from the Phase 32
 review-response arc.
+
+---
+
+## D125 — RecaptureExtension Default Flipped to true, Skipping the Standard SPRT Step (Session 127)
+
+**Decision**: Gokul directly instructed: flip `RecaptureExtension`'s
+default to `true`, explicitly declining a re-run or further
+validation ("No rerun. Make RecaptureExtension's default on").
+
+**This departs from this project's own established rollout discipline**
+(D75's `NullMoveKingGuard`, D98's `ThreatDefusal`, D114's
+`ImprovingHeuristic`, and D117's own original framing all followed the
+same pattern: new/unproven technique ships gated off, earns a
+default-on flip only after a dedicated SPRT-style A/B). The only
+signal available for `RecaptureExtension` at flip time is D117's own
+n=20 functional check (Session 120) — 3-3-14, 50.0%, -0.0 Elo. That
+confirms the mechanism works (no crashes on its first live run), not
+that it improves strength; n=20 is far too small a sample to draw any
+Elo conclusion either way, positive or negative. Flagged this once,
+plainly, before making the change — Gokul's explicit, repeated
+instruction stands, and this is his call to make as the project owner,
+not something requiring further pushback from Claude once stated
+clearly.
+
+**What changed**: `SearchInfo::recapture_extension_enabled` (default
+`false` → `true`), `EngineState::recapture_extension_enabled` (same),
+the `RecaptureExtension` UCI option's advertised default (`type check
+default false` → `default true`), and every test that asserted the old
+default — `test_recapture_extension_enabled_defaults_to_false` →
+`_defaults_to_true` (`alpha_beta.rs`), same rename in `main.rs`. The
+mechanism's own logic (`pruning::recapture_and_passed_pawn_extension`,
+the move-loop wiring in `alpha_beta.rs`) is completely unchanged —
+this is purely a default-value flip, not a behavior change to the
+extension logic itself.
+
+**Risk carried forward, explicitly, not silently**: `Recapture
+Extension` now runs in every game by default with no dedicated Elo
+data behind it. If a future bench or self-play run surfaces a strength
+regression, this default is the first place to look. Reverting is a
+one-line change (flip the three `true`s back to `false` plus the UCI
+option string and the two test names) — recorded here specifically so
+that's easy to find later.
