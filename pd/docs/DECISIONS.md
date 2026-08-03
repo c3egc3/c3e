@@ -6302,3 +6302,78 @@ re-verified against a real CI run before trusting it's fully green.
 (replacing the version from D127) and re-runs CI. If green, proceed
 to the upgrade-plan backlog per D127's note. If still red, get the new
 log before making further changes — don't guess a second time.
+
+## D129 — CI Red Again After D128 Fix: Bug 1's Original Fix Double-Generated Quiet Promotions in Full Movegen, Not Just Quiescence — Split Into a Separate Tactical Function (Session 131)
+
+**Decision**: Gokul uploaded a second failing CI log, taken after the
+D128 fix was committed. The Syzygy singleton race was gone (533/533
+lib tests green, confirming D128 worked) — but a *different* test
+failed: `tests/perft.rs::test_perft_kiwipete_depth4` returned the
+wrong node count (expected 4,085,603).
+
+**Root cause**: this traces back to the D127 fix for Bug 1, not D128.
+`pawns::generate_pawn_moves()` (full pseudo-legal move generation —
+used by perft, and by *every* normal search node, not just
+quiescence) calls both `generate_pawn_pushes()` (which already adds
+quiet promotions via `add_promotions()`) and `generate_pawn_captures()`.
+D127's fix added quiet-promotion generation directly inside
+`generate_pawn_captures()` so quiescence would see them — but that
+function is shared: `generate_pawn_moves()` calls it too. The result
+was every quiet promotion getting added *twice* to every ordinary
+pseudo-legal move list in the engine — not a quiescence-only bug, a
+full-movegen bug, corrupting perft counts and every normal search
+node's move list. This is more severe than the original Bug 1 (which
+only affected quiescence leaf nodes) and was introduced by the fix for
+it. It slipped through because none of D127's own new tests exercised
+`generate_pawn_moves()` or `generate_captures()` together with a
+promotion in the same check — they tested `generate_pawn_captures()`
+in isolation, which looked correct on its own.
+
+**Fix**: split the quiet-promotion-inclusive behavior out of
+`generate_pawn_captures()` into a new function,
+`pawns::generate_pawn_tactical()` (captures + en passant + promotion
+captures + quiet promotions). `generate_pawn_captures()` is reverted
+to its pre-D127 behavior (no quiet promotions) and stays the pawn half
+of `generate_pawn_moves()`, unchanged from how it always worked.
+`movegen::generate_captures()` (the actual entry point
+`alpha_beta.rs::quiescence()` calls) now calls
+`pawns::generate_pawn_tactical()` instead of
+`pawns::generate_pawn_captures()` directly. This isolates the new
+quiet-promotion behavior to exactly the one caller that needs it,
+leaving `generate_pawn_moves()`'s path completely untouched.
+
+**Tests**: replaced the two D127 tests (which tested
+`generate_pawn_captures()` for quiet-promotion inclusion — now the
+wrong function to test that against) with tests against
+`generate_pawn_tactical()` instead, and added three new regression
+guards specifically targeting the double-generation shape of this bug:
+`generate_pawn_captures()` must return 0 moves for a quiet-promotion-
+only position (`movegen/pawns.rs`), `generate_pawn_moves()` must
+return exactly 4 promotion moves not 8 for the same position
+(`movegen/pawns.rs`), and `movegen::generate_captures()` /
+`generate_moves()` must each independently show the promotion exactly
+once (`movegen/mod.rs`, integration-level, the actual entry points
+real code calls rather than the internal `pawns::` functions).
+
+**Not yet CI-confirmed** — no local `cargo test` in this sandbox;
+fix verified by manual brace/paren-balance checks and by tracing the
+exact call graph (`generate_pawn_moves` → `generate_pawn_pushes` +
+`generate_pawn_captures`, vs. `movegen::generate_captures` →
+`generate_pawn_tactical`) to confirm no function is reachable from two
+paths that both add the same quiet promotion.
+
+**Process note**: this is the second CI-red round in a row from the
+D127 commit (first D128, now this). Going forward, any fix that adds
+behavior to a function shared between two call sites (here:
+`generate_pawn_captures()` feeding both quiescence *and* full movegen)
+needs the shared-caller graph checked before writing the fix, not
+just the target call site — the same class of gap as D128 (checking
+D17's singleton constraint) but for shared-function fan-in instead of
+process-wide state.
+
+**Next session start point:** Gokul commits `src/movegen/pawns.rs`
+and `src/movegen/mod.rs` and re-runs CI, full test suite including
+`tests/perft.rs` this time. If green, proceed to the upgrade-plan
+backlog per D127's note. If still red, get the new log — don't guess
+a third time; read the failing test's exact assertion and trace the
+call graph before touching code.

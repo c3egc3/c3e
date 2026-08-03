@@ -9,6 +9,55 @@ Most recent session at TOP.
 
 ---
 
+## Session 131 — 2026-08-03, cont. (CI red again after D128: Bug 1's fix double-generated promotions in full movegen, not just quiescence — D129)
+
+**Built/done:** Gokul uploaded a second failing CI log, taken after
+the D128 commit. Syzygy singleton race was gone (533/533 lib tests
+green — confirms D128 worked), but `tests/perft.rs::
+test_perft_kiwipete_depth4` failed with the wrong node count. Root
+cause traced back to D127, not D128:
+`pawns::generate_pawn_moves()` (full pseudo-legal generation — used by
+perft and every normal search node, not just quiescence) calls both
+`generate_pawn_pushes()` (already generates quiet promotions) and
+`generate_pawn_captures()`. D127's Bug 1 fix added quiet-promotion
+generation directly inside `generate_pawn_captures()`, which is shared
+by both `generate_pawn_moves()` and quiescence's capture-only path —
+so every quiet promotion was now being generated *twice* in ordinary
+move lists, not just made visible once to quiescence. This is a more
+severe regression than the original Bug 1 (whole-engine, not
+quiescence-only) and slipped through because D127's own tests checked
+`generate_pawn_captures()` in isolation, never `generate_pawn_moves()`
+or `movegen::generate_captures()` together with a promotion.
+
+Fixed by splitting the quiet-promotion-inclusive behavior into a new
+function, `pawns::generate_pawn_tactical()`, called only from
+`movegen::generate_captures()` (quiescence's actual entry point).
+`generate_pawn_captures()` reverted to its original (pre-D127)
+behavior and stays untouched inside `generate_pawn_moves()`. Replaced
+the two D127 unit tests (now pointed at the wrong function) and added
+3 new regression guards specifically shaped around the
+double-generation failure mode, including an integration-level test
+in `movegen/mod.rs` against the real `generate_captures()`/
+`generate_moves()` entry points rather than internal `pawns::`
+functions only.
+
+**Files touched:** `src/movegen/pawns.rs`, `src/movegen/mod.rs`.
+
+**Bugs fixed:** Regression introduced by the D127 Bug-1 fix
+(double-generated quiet promotions in full move generation — perft
+and every normal search node, not just quiescence).
+
+**Decisions made:** D129.
+
+**Next session start point:** Gokul commits both files and re-runs
+full CI including `tests/perft.rs`. If green, proceed to the
+upgrade-plan backlog (D127's parked item, priority order still needed
+from Gokul). If still red, get the new log, read the exact failing
+assertion, and trace the call graph before touching code again — this
+is the second CI-red round in a row from the same original commit.
+
+---
+
 ## Session 130 — 2026-08-03, cont. (CI red from D127 commit: flaky Syzygy test singleton race — D128)
 
 **Built/done:** Gokul uploaded a failing GitHub Actions "Test" job log
