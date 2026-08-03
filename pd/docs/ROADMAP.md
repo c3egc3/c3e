@@ -3001,19 +3001,25 @@ confirmed) and a separate, larger search/eval upgrade-plan review
 (no bugs — parked as unscheduled backlog, see note below). Gokul's
 instruction: "Bugs then upgrade."
 
-- [x] 33.1 (bug report finding #1) — DONE (Session 129, D127).
-      Confirmed real: `movegen::pawns::generate_pawn_captures()` never
-      generated quiet (non-capturing) pawn promotions — only
+- [x] 33.1 (bug report finding #1) — DONE (Session 129, D127; fixed
+      forward twice, now CI-confirmed — Session 131, D129). Confirmed
+      real: `movegen::pawns::generate_pawn_captures()` never generated
+      quiet (non-capturing) pawn promotions — only
       `generate_pawn_pushes()` (full move gen) ever reached
       `add_promotions()`. This is the list `alpha_beta.rs::quiescence()`
       draws its tactical move set from, so a pawn that could walk
       straight to the queening square with no capture involved was
       invisible to qsearch — a real horizon-effect gap, not a corner
-      case. Added `generate_pawn_quiet_promotions()`, wired into
-      `generate_pawn_captures()`. 2 new regression tests. ⚠️ Not yet
-      CI-confirmed.
-- [x] 33.2 (bug report finding #2) — DONE (Session 129, D127).
-      Confirmed real: `bin/match_runner.rs` and
+      case. D127's first fix wired the quiet-promotion generator
+      directly into `generate_pawn_captures()`, which double-generated
+      every quiet promotion in full move generation too (shared by
+      `generate_pawn_moves()`) — caught by a real CI perft failure
+      (Kiwipete depth 4). D129 fixed forward: split into a separate
+      `generate_pawn_tactical()`, called only from
+      `movegen::generate_captures()`. 5 regression tests total across
+      both rounds. ✅ CI green (Session 131).
+- [x] 33.2 (bug report finding #2) — DONE (Session 129, D127). ✅ CI
+      green (Session 131). Confirmed real: `bin/match_runner.rs` and
       `bin/uci_match_runner.rs` both called `push_game_history()`
       redundantly after `make_move_with_history()` (which already
       pushes internally), double-counting every position and tripping
@@ -3026,21 +3032,26 @@ instruction: "Bugs then upgrade."
       severity note (`selfplay.rs` not pushing ply-0 to history) left
       unaddressed — cosmetic, out of scope for "fix the bugs" as
       scoped this session.
-- [x] 33.3 (bug report finding #3) — DONE (Session 129, D127).
-      Confirmed real: `syzygy/mod.rs` never checked castling rights
-      before probing, at either the interior WDL call site
-      (`alpha_beta.rs`) or the root DTZ call site (`main.rs`). Syzygy
-      tables don't encode castling at all. Also corrected a directly-
-      contradicted, unverified claim in `ENGINE_ARCHITECTURE.md` §5
-      that assumed castling rights were always gone by the time
-      material reaches TB range. Added `has_castling_rights()` guard
-      centralized inside `SyzygyProber` itself (both `probe_wdl()` and
-      `probe_root()`), per the report's own suggested fix shape, so a
-      future third call site can't reintroduce the gap. 3 new
-      regression tests. ⚠️ Not yet CI-confirmed.
+- [x] 33.3 (bug report finding #3) — DONE (Session 129, D127; test
+      suite fixed forward once — Session 130, D128 — for a flaky
+      singleton race, now CI-confirmed — Session 131). Confirmed real:
+      `syzygy/mod.rs` never checked castling rights before probing, at
+      either the interior WDL call site (`alpha_beta.rs`) or the root
+      DTZ call site (`main.rs`). Syzygy tables don't encode castling at
+      all. Also corrected a directly-contradicted, unverified claim in
+      `ENGINE_ARCHITECTURE.md` §5 that assumed castling rights were
+      always gone by the time material reaches TB range. Added
+      `has_castling_rights()` guard centralized inside `SyzygyProber`
+      itself (both `probe_wdl()` and `probe_root()`), per the report's
+      own suggested fix shape, so a future third call site can't
+      reintroduce the gap. D127's first pass added 3 tests that raced
+      on `pyrrhic_rs::TableBases`'s process-wide singleton (D17); D128
+      consolidated to 1 test, net 5. ✅ CI green (Session 131).
 
-**Phase 33.1-33.3 done — all 3 bug-report findings resolved.** Full
-verification trail and reasoning in DECISIONS.md D127.
+**Phase 33 complete — all 3 bug-report findings resolved and
+CI-confirmed green (Session 131), after two fix-forward rounds (D128
+flaky-test fix, D129 double-generation regression fix).** Full
+verification trail and reasoning in DECISIONS.md D127/D128/D129.
 
 Upgrade-plan review (search/eval enhancement backlog: NNUE
 re-validation, LMR formula enrichment, missing threat sub-terms,

@@ -9,6 +9,30 @@ Most recent session at TOP.
 
 ---
 
+## Session 132 — 2026-08-03, cont. (CI confirmed green — Phase 33 closed out)
+
+**Built/done:** Gokul confirmed CI green after committing the D129
+files (`movegen/pawns.rs`, `movegen/mod.rs`). Full test suite,
+including `tests/perft.rs::test_perft_kiwipete_depth4`, now passes.
+Closes out Phase 33 and the D127/D128/D129 fix-forward trilogy — all
+3 original bug-report findings are resolved and CI-confirmed. No code
+changed this session; docs-only update to mark ROADMAP.md's
+⚠️-not-yet-CI-confirmed flags as resolved.
+
+**Files touched:** `docs/ROADMAP.md` (status update only).
+
+**Bugs fixed:** None this session (confirmation only).
+
+**Decisions made:** None.
+
+**Next session start point:** Start the upgrade-plan backlog from
+`pet-dragon-full-review.md` (parked in D127). Priority order not yet
+set by Gokul — ask before starting, since it wasn't specified when
+the review was uploaded. Headline item per the review's own framing:
+NNUE re-validation.
+
+---
+
 ## Session 131 — 2026-08-03, cont. (CI red again after D128: Bug 1's fix double-generated promotions in full movegen, not just quiescence — D129)
 
 **Built/done:** Gokul uploaded a second failing CI log, taken after
