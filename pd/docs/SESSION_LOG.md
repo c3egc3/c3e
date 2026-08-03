@@ -9,6 +9,44 @@ Most recent session at TOP.
 
 ---
 
+## Session 130 — 2026-08-03, cont. (CI red from D127 commit: flaky Syzygy test singleton race — D128)
+
+**Built/done:** Gokul uploaded a failing GitHub Actions "Test" job log
+from committing the D127 files. 1 of 535 tests failed:
+`test_probe_wdl_refuses_when_castling_rights_present` panicked with
+`"Syzygy init error: AlreadyInitialized"`, while its structurally
+identical sibling `test_probe_root_refuses_when_castling_rights_present`
+(added in the same commit) passed. Root cause: `pyrrhic_rs::TableBases`
+is a process-wide singleton (already recorded in D17 from Session 33 —
+should have been cross-checked before writing new tests that call
+`SyzygyProber::new()`). Only the first `new()` call in the whole test
+binary succeeds; every later call returns `Err(AlreadyInitialized)`.
+D127 had introduced two new tests each unwrapping their own `new()`
+call, on top of the pre-existing `test_syzygy_new_does_not_panic`
+(which discards its result, so never panics) — three call sites racing
+concurrently under `cargo test`'s default parallelism, with no fixed
+winner. Fixed by consolidating all three into one test,
+`test_syzygy_prober_construction_and_castling_guard()`, now the *only*
+`SyzygyProber::new()` call site in the test binary, performing all
+three original assertions against the one successfully-constructed
+instance. This removes the race rather than patching one observed
+ordering.
+
+**Files touched:** `src/syzygy/mod.rs` (test module only — no
+production code changed this session).
+
+**Bugs fixed:** Flaky test / CI-red from the D127 commit (singleton
+race in newly-added Syzygy tests, not a real engine bug).
+
+**Decisions made:** D128.
+
+**Next session start point:** Gokul commits the replacement
+`src/syzygy/mod.rs` and re-runs CI. If green, move to the upgrade-plan
+backlog (D127's parked item, priority order still needed from Gokul).
+If still red, get the new log before making further changes.
+
+---
+
 ## Session 129 — 2026-08-03 (Second external review round: 3 bugs fixed, upgrade plan parked — D127)
 
 **Built/done:** Gokul uploaded two new external documents: a focused

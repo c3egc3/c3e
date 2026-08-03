@@ -6253,3 +6253,52 @@ tests of their own — their behavior change is only observable via a
 real match run). Once confirmed green, move to the upgrade-plan
 backlog per its own priority order (see the review document itself —
 headline item is NNUE re-validation).
+
+## D128 — CI Red on First Commit of D127: Flaky Syzygy Test Singleton Race, Fixed by Consolidating to One `new()` Call (Session 130)
+
+**Decision**: Gokul uploaded a failing GitHub Actions log ("Test" job)
+from committing the D127 files. `cargo test` reported 1 failure:
+`syzygy::tests::test_probe_wdl_refuses_when_castling_rights_present`
+panicked with `called Result::unwrap() on an Err value: "Syzygy init
+error: AlreadyInitialized"`, while its sibling test
+`test_probe_root_refuses_when_castling_rights_present` (added in the
+same commit, structurally identical) passed.
+
+**Root cause**: exactly the constraint already recorded in D17 —
+`pyrrhic_rs::TableBases` is a process-wide singleton. Only the *first*
+`SyzygyProber::new()` call across the whole test binary succeeds;
+every subsequent call returns `Err(AlreadyInitialized)` regardless of
+path validity. D127 added two new tests that each called
+`SyzygyProber::new(...).unwrap()`, on top of the pre-existing
+`test_syzygy_new_does_not_panic` (which also calls `new()`, but with
+`let _ = ...`, so it never panics either way) — three call sites
+total. `cargo test` runs tests concurrently by default, so which call
+"wins" the singleton is a race with no fixed outcome; any test that
+unwraps its own call is flaky by construction. This should have been
+caught before committing — D17 is exactly the kind of Tier-2-adjacent
+prior decision that a new test touching `SyzygyProber::new()` needs to
+be checked against, and it wasn't.
+
+**Fix**: consolidated all three `SyzygyProber::new()`-dependent tests
+into one — `test_syzygy_prober_construction_and_castling_guard()` —
+which is now the *only* call site for `SyzygyProber::new()` in the
+whole test binary. It performs the original construction-doesn't-panic
+check plus both castling-guard assertions (`probe_wdl` and
+`probe_root` each return `None` for a position with remaining
+castling rights) against the single successfully-constructed
+instance. This removes the race outright rather than fixing one
+specific failing ordering — a `.unwrap()` on the *only* call site in
+the binary cannot lose a singleton race that no longer has a second
+competitor. Net test count in `syzygy/mod.rs`: 5 (was 6 after D127;
+consolidating three into one nets -2).
+
+**Not yet CI-confirmed** — no local `cargo test` in this sandbox
+(pyrrhic-rs/libc don't build in the sandboxed network anyway); fix
+verified by direct reasoning about the singleton behavior D17 already
+documented, plus a manual brace/paren-balance check. Should be
+re-verified against a real CI run before trusting it's fully green.
+
+**Next session start point:** Gokul commits `src/syzygy/mod.rs`
+(replacing the version from D127) and re-runs CI. If green, proceed
+to the upgrade-plan backlog per D127's note. If still red, get the new
+log before making further changes — don't guess a second time.
