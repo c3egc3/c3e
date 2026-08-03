@@ -6156,3 +6156,100 @@ the SharedArrayBuffer/GitHub-Pages constraint and the chunking proposal
 don't need to be rediscovered from scratch whenever this is picked back
 up. ROADMAP 30.5 left open, unchanged in status, with a pointer to this
 entry.
+
+## D127 — Second External Review Round: 3 Confirmed Bugs Fixed (`pet-dragon-bug-report.md`), Upgrade-Plan Review Parked as Backlog (Session 129)
+
+**Context**: Gokul uploaded two independent external documents this
+session: a focused bug report covering the full ~31,000-line codebase
+(`src/bitboards` through `src/bin/` tools and both UCI front ends), and
+a separate, much larger search/eval "Full Review & Upgrade Plan"
+(NNUE re-validation, LMR formula enrichment, missing threat sub-terms,
+razoring, etc. — no bugs, source-review-only, explicitly unverified
+against the real API surface, no SPRT testing performed). Asked to
+handle "Bugs then upgrade" — decision covers the bug report; the
+upgrade plan is parked as an unscheduled backlog item, same treatment
+Phase 32's non-bug suggestions got (see the note at the end of Phase
+32 in ROADMAP.md).
+
+All three bug-report findings were spot-verified against live `main`
+source (grep + direct file reads) before trusting them, matching the
+discipline established in D116 for the first external review round.
+All three checked out exactly as described — this report's hit rate
+was notably higher than the first external review's (D116: 5/8 findings
+verified, and D117/D118/D119/D120/D122/D123 later found 6/8 of *those*
+were more/less severe than originally framed once independently
+checked). No such reframing was needed here.
+
+**Bug 1 — quiescence never considers quiet pawn promotions.**
+Confirmed: `movegen::pawns::generate_pawn_captures()` called only
+`generate_pawn_diagonal_captures()` and `generate_en_passant()`;
+`add_promotions()` (the quiet-promotion helper) was only ever reached
+via `generate_pawn_pushes()`, part of full move generation, never the
+capture-only path quiescence draws from. Compounded by
+`alpha_beta.rs::quiescence()`'s quiet-checks section explicitly
+skipping `mv.kind.is_promotion()` on the (false) assumption promotions
+were already covered by the captures list. **Fix**: added
+`generate_pawn_quiet_promotions()` (single push landing on the
+promotion rank only — double pushes structurally can't reach the
+promotion rank, guarded by the existing range checks in
+`generate_pawn_pushes()`), called from `generate_pawn_captures()`.
+Verified no downstream logic needed changes: `see()` already handles a
+zero-value "capture" target correctly (no special-casing needed for a
+non-capturing move), and `ordering::score_captures()` already branches
+on `mv.kind.is_promotion()` independent of whether `mv.captured` is
+`Some`. 2 new regression tests in `movegen/pawns.rs`.
+
+**Bug 2 — `push_game_history()` double-called in both match-runner
+binaries.** Confirmed at `bin/match_runner.rs:182-183` and
+`bin/uci_match_runner.rs:463-464` — both called
+`pos.push_game_history()` immediately after
+`pos.make_move_with_history()`, which already pushes internally.
+Every move after the first double-counted its resulting hash in
+`game_history`, tripping `is_threefold_repetition()`'s raw `count >= 3`
+check a full occurrence early (2 real occurrences × 2 pushes = 4).
+`uci_match_runner.rs` is wired into `build.yml`'s `regression-gate` CI
+job — this was pulling every measured Elo delta (regressions and
+improvements alike) toward 50% via spurious early repetition draws,
+in both that CI gate and any manual A/B run through `match_runner.rs`.
+**Fix**: deleted the redundant line in both files; `selfplay.rs` and
+`texel_gen.rs` were already correct (verified via grep) and untouched.
+The bug report's related lower-severity note (`selfplay.rs` never
+pushes the starting position to `game_history`, unlike the two match
+runners) was **not** addressed this session — cosmetic-only
+consistency issue, not a correctness bug, out of scope for "fix the
+bugs" as scoped.
+
+**Bug 3 — Syzygy tablebase probing never checks castling rights.**
+Confirmed: zero references to castling anywhere in `syzygy/mod.rs`;
+neither `alpha_beta.rs`'s interior WDL probe nor `main.rs`'s root DTZ
+probe gated on it either. Syzygy tables don't encode castling rights
+at all (fixed assumption of the underlying retrograde-analysis
+format) — every mainstream Syzygy-consuming engine gates every probe
+on zero remaining rights. Worth calling out explicitly:
+**`ENGINE_ARCHITECTURE.md` §5 previously asserted this was safe
+("by the time few enough pieces remain for tablebase lookup, castling
+rights are gone")** — that claim has no backing decision anywhere in
+this file and no test; it's contradicted by the bug report's own
+figure (~26% of games retain at least one castling right, no game
+rule forcing rights to clear before material thins into TB range).
+Docs get corrected alongside the code fix. **Fix**: added
+`has_castling_rights(pos)` (checks `pos.castling.has_any()` for both
+colors) as a private helper in `syzygy/mod.rs`, called at the top of
+both `SyzygyProber::probe_wdl()` and `SyzygyProber::probe_root()` —
+centralized in the prober itself (per the report's own suggestion)
+rather than duplicated at each of the two call sites, so a future
+third call site can't reintroduce the gap. 3 new regression tests.
+
+**Files touched:** `src/movegen/pawns.rs`, `src/bin/match_runner.rs`,
+`src/bin/uci_match_runner.rs`, `src/syzygy/mod.rs`.
+
+⚠️ **Not yet CI-confirmed** — no local `cargo test` in this sandbox;
+all four files passed manual brace/paren-balance checks.
+
+**Next session start point:** Gokul commits all four files, confirms
+`cargo test` green (8 new tests total: 2 in `movegen/pawns.rs`, 3 in
+`syzygy/mod.rs`, plus the two match-runner files which have no new
+tests of their own — their behavior change is only observable via a
+real match run). Once confirmed green, move to the upgrade-plan
+backlog per its own priority order (see the review document itself —
+headline item is NNUE re-validation).

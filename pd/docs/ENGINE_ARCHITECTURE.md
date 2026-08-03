@@ -287,11 +287,18 @@ Stockfish-distillation data augmentation), not from scratch.
 
 Syzygy support (Phase 15), native builds only (`#[cfg(not(target_arch
 = "wasm32"))]`) — `syzygy::SyzygyProber`, `Arc`-wrapped for cheap
-cloning into Lazy SMP helper threads. Valid for Pet Dragon endgames
-because by the time few enough pieces remain for tablebase lookup,
-castling rights are gone and pawn-start features have decayed to zero
-— the position is, for evaluation and search purposes, indistinguishable
-from a standard-chess endgame of the same material.
+cloning into Lazy SMP helper threads. Pawn-start features have decayed
+to zero by the time few enough pieces remain for tablebase lookup, so
+the position is otherwise indistinguishable from a standard-chess
+endgame of the same material — **but castling rights are not
+guaranteed to be gone** (corrected 2026-08-03, D127/external bug
+report: no game rule forces rights to clear before material thins into
+TB range, and roughly 26% of games retain at least one right; a king
+and its never-moved rook can survive untouched into a 5-7 piece
+endgame). Syzygy tables don't encode castling at all, so both
+`SyzygyProber::probe_wdl()` and `probe_root()` explicitly refuse to
+probe (`has_castling_rights()` guard) whenever either side still has
+any right, rather than relying on piece count alone.
 
 ---
 

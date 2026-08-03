@@ -2994,6 +2994,64 @@ noted here for reference, not queued as ROADMAP work unless Gokul asks.
 
 ---
 
+## Phase 33 — Second External Review Round (Session 129)
+
+Two documents this session: a focused bug report (3 findings, all
+confirmed) and a separate, larger search/eval upgrade-plan review
+(no bugs — parked as unscheduled backlog, see note below). Gokul's
+instruction: "Bugs then upgrade."
+
+- [x] 33.1 (bug report finding #1) — DONE (Session 129, D127).
+      Confirmed real: `movegen::pawns::generate_pawn_captures()` never
+      generated quiet (non-capturing) pawn promotions — only
+      `generate_pawn_pushes()` (full move gen) ever reached
+      `add_promotions()`. This is the list `alpha_beta.rs::quiescence()`
+      draws its tactical move set from, so a pawn that could walk
+      straight to the queening square with no capture involved was
+      invisible to qsearch — a real horizon-effect gap, not a corner
+      case. Added `generate_pawn_quiet_promotions()`, wired into
+      `generate_pawn_captures()`. 2 new regression tests. ⚠️ Not yet
+      CI-confirmed.
+- [x] 33.2 (bug report finding #2) — DONE (Session 129, D127).
+      Confirmed real: `bin/match_runner.rs` and
+      `bin/uci_match_runner.rs` both called `push_game_history()`
+      redundantly after `make_move_with_history()` (which already
+      pushes internally), double-counting every position and tripping
+      `is_threefold_repetition()`'s `count >= 3` check a full
+      occurrence early. `uci_match_runner.rs` feeds `build.yml`'s
+      `regression-gate` CI job — this was dampening every measured Elo
+      delta toward 50% in both that gate and manual A/B runs. Deleted
+      the redundant line in both files. `selfplay.rs`/`texel_gen.rs`
+      confirmed already correct, untouched. Report's related low-
+      severity note (`selfplay.rs` not pushing ply-0 to history) left
+      unaddressed — cosmetic, out of scope for "fix the bugs" as
+      scoped this session.
+- [x] 33.3 (bug report finding #3) — DONE (Session 129, D127).
+      Confirmed real: `syzygy/mod.rs` never checked castling rights
+      before probing, at either the interior WDL call site
+      (`alpha_beta.rs`) or the root DTZ call site (`main.rs`). Syzygy
+      tables don't encode castling at all. Also corrected a directly-
+      contradicted, unverified claim in `ENGINE_ARCHITECTURE.md` §5
+      that assumed castling rights were always gone by the time
+      material reaches TB range. Added `has_castling_rights()` guard
+      centralized inside `SyzygyProber` itself (both `probe_wdl()` and
+      `probe_root()`), per the report's own suggested fix shape, so a
+      future third call site can't reintroduce the gap. 3 new
+      regression tests. ⚠️ Not yet CI-confirmed.
+
+**Phase 33.1-33.3 done — all 3 bug-report findings resolved.** Full
+verification trail and reasoning in DECISIONS.md D127.
+
+Upgrade-plan review (search/eval enhancement backlog: NNUE
+re-validation, LMR formula enrichment, missing threat sub-terms,
+razoring, and others) intentionally not started this session — parked
+as an unscheduled backlog per "Bugs then upgrade." Will need its own
+priority pass, and every item requires Texel-tuning/SPRT validation
+before landing, per this project's existing rollout discipline — none
+of it goes in blind the way a mechanical bug fix does.
+
+---
+
 ## Milestone Targets
 
 | Milestone | Target Elo | Phase |

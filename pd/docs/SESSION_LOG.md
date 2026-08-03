@@ -9,6 +9,64 @@ Most recent session at TOP.
 
 ---
 
+## Session 129 — 2026-08-03 (Second external review round: 3 bugs fixed, upgrade plan parked — D127)
+
+**Built/done:** Gokul uploaded two new external documents: a focused
+bug report (full ~31,000-line codebase audit, 3 confirmed findings)
+and a separate, larger search/eval "upgrade plan" review (no bugs,
+source-review-only, unverified against real API surface). Instruction:
+"Bugs then upgrade." All 3 bug-report findings spot-verified against
+live `main` source (grep + direct reads) before trusting, matching the
+D116 discipline from the first external review round — all 3 checked
+out exactly as reported, a notably cleaner hit rate than round one's
+5/8.
+
+Fixed all three:
+1. **Quiescence never searched quiet pawn promotions** —
+   `generate_pawn_captures()` only ever called the diagonal-capture and
+   en-passant generators; `add_promotions()` was unreachable from the
+   capture-only path qsearch draws from. Added
+   `generate_pawn_quiet_promotions()`, wired in. Verified `see()` and
+   `score_captures()` already handle non-capturing promotion moves
+   correctly with no further changes needed.
+2. **`push_game_history()` double-called** in both
+   `bin/match_runner.rs` and `bin/uci_match_runner.rs`, on top of the
+   internal push already done by `make_move_with_history()` —
+   corrupted `is_threefold_repetition()`'s count, tripping it a full
+   occurrence early and dampening every measured Elo delta toward 50%
+   in both the CI `regression-gate` job and manual A/B runs. Deleted
+   the redundant line in both files.
+3. **Syzygy probing never checked castling rights** — tables don't
+   encode castling at all; neither the interior WDL probe nor the root
+   DTZ probe gated on it. Also caught and corrected a directly-
+   contradicted, unbacked claim in `ENGINE_ARCHITECTURE.md` §5 that
+   assumed castling always clears before TB range is reached (it
+   doesn't — ~26% of games retain a right, no game rule forces
+   clearing). Added `has_castling_rights()` guard centralized inside
+   `SyzygyProber` (both `probe_wdl()` and `probe_root()`).
+
+Upgrade-plan review intentionally not started — parked as an
+unscheduled backlog per "Bugs then upgrade"; every item there needs
+its own Texel-tuning/SPRT validation pass before landing.
+
+**Files touched:** `src/movegen/pawns.rs`, `src/bin/match_runner.rs`,
+`src/bin/uci_match_runner.rs`, `src/syzygy/mod.rs`,
+`docs/ENGINE_ARCHITECTURE.md`.
+
+**Bugs fixed:** All 3 from `pet-dragon-bug-report.md` (quiescence
+quiet promotions, double `push_game_history()`, Syzygy castling gap).
+
+**Decisions made:** D127.
+
+**Next session start point:** Gokul commits all 5 changed files,
+confirms `cargo test` green (8 new tests: 2 in `movegen/pawns.rs`, 3
+in `syzygy/mod.rs`, plus 3 doc files with no tests of their own).
+⚠️ None of this session's code changes are CI-confirmed yet. Once
+green, start on the upgrade-plan backlog — begin by asking Gokul for
+its priority order, since it wasn't set this session.
+
+---
+
 ## Session 128 — 2026-08-02, cont. (30.5 scoped, deferred — SharedArrayBuffer ruled out for GitHub Pages, D126)
 
 **Built/done:** Gokul asked to start 30.5 (async WASM UCI). Before
