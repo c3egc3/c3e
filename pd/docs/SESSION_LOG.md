@@ -9,6 +9,34 @@ Most recent session at TOP.
 
 ---
 
+## Session 138 — 2026-08-04, cont. (CI confirmed green — Phase 34.1 fully closed)
+
+**Built/done:** Gokul confirmed CI green after committing the D134
+files (default flip for `nonpawn_correction_enabled` + the 5 tests
+fixed to match). This closes Phase 34.1 completely — all three
+experimental flags now have a final, CI-confirmed call
+(`improving_enabled`: no change, `continuation_correction_enabled`: no
+change, `nonpawn_correction_enabled`: flipped to `true`). Phase 34.2
+was already closed (Session 135). No code changed this session —
+docs-only update to mark ROADMAP.md's ⚠️ flag resolved and consolidate
+the Phase 34.1 completion note under all three sub-items rather than
+sitting between 34.1a and 34.1b.
+
+**Files touched:** `docs/ROADMAP.md` (status update only).
+
+**Bugs fixed:** None this session (confirmation only).
+
+**Decisions made:** None.
+
+**Next session start point:** Remaining upgrade-plan backlog: 34.4
+(LMR reduction formula enrichment), 34.5 (`ThreatByKing` — review flags
+this as needing the most care, do last among the eval items), 34.6
+(`WeakQueenProtection`). 34.3 (NNUE re-validation) stays parked pending
+Gokul's explicit call per D131. No priority order set yet for 34.4-34.6
+— ask before starting.
+
+---
+
 ## Session 137 — 2026-08-04, cont. (nonpawn_correction_enabled default flipped to true — D134)
 
 **Built/done:** Gokul's explicit call on D133's combined 700-game

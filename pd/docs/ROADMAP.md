@@ -3092,8 +3092,8 @@ three experimental flags) and #4 (`ThreatByRook`), explicitly skipping
       `true`** — implemented across every default site
       (`search/mod.rs`, `main.rs`'s `EngineState` + advertised UCI
       option string; `uci_wasm.rs` confirmed to inherit automatically),
-      5 tests fixed across 3 files that assumed the old default. ⚠️ Not
-      yet CI-confirmed.
+      5 tests fixed across 3 files that assumed the old default. ✅ CI
+      green (Session 138).
 - [x] 34.1b — `continuation_correction_enabled` SPRT — DONE (Session
       136, D133): 200 games, +8.7 Elo favoring `false` (off) — within
       noise (same bar as D124's own +5.2 Elo precedent). **No change**:
@@ -3103,6 +3103,14 @@ three experimental flags) and #4 (`ThreatByRook`), explicitly skipping
       magnitude to the D124 precedent that set this project's own bar
       for "no signal"). **No change**: default stays `false`, no
       further runs planned for this flag.
+
+**Phase 34.1 complete — all three experimental flags resolved**
+(`improving_enabled`: no change, `continuation_correction_enabled`: no
+change, `nonpawn_correction_enabled`: flipped to `true`), all
+CI-confirmed. Phase 34.2 (`ThreatByRook`) also fully closed (Session
+135). Remaining upgrade-plan backlog: 34.3 (NNUE, parked per D131),
+34.4 (LMR enrichment), 34.5 (ThreatByKing), 34.6
+(WeakQueenProtection).
 - [x] 34.2 — `ThreatByRook` (review §8.1) — DONE (Session 133, D130;
       fixed forward once — Session 134, D132 — for a missing Texel
       tuner mirror that broke `predict()`/`evaluate()` consistency and
