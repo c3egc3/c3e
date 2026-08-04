@@ -6377,3 +6377,176 @@ and `src/movegen/mod.rs` and re-runs CI, full test suite including
 backlog per D127's note. If still red, get the new log — don't guess
 a third time; read the failing test's exact assertion and trace the
 call graph before touching code.
+
+## D130 — Upgrade-Plan Backlog Started: SPRT Infrastructure for 3 Experimental Flags (34.1) + ThreatByRook (34.2) (Session 133)
+
+**Context**: Gokul confirmed CI green (Session 132) closing out Phase
+33. Asked to start the upgrade-plan backlog (D127) with items #3 and
+#4 from the review's own priority list — explicitly *not* #1 (NNUE
+re-validation), which was flagged back to Gokul as conflicting with
+already-tested project history (see D131 below) before any work
+started, per this session's own recommendation in the prior turn.
+
+**34.1 — SPRT infrastructure for `nonpawn_correction_enabled`,
+`continuation_correction_enabled`, `improving_enabled`.** These three
+`SearchInfo` bools all default `false` and are gated behind exactly
+the kind of A/B validation `match_runner` already does for NNUE
+weight (D23/D25/D26) — but `match_runner`/`match_runner.yml` only ever
+varied NNUE blend weight, with no path to toggle these flags at all.
+Extended both:
+- `match_runner.rs`: new `ExperimentalFlag` enum (one of the three
+  flags), `parse_flag()`/`parse_bool_arg()` for CLI parsing, and
+  `resolve_weights()` — when a flag is under test, both engines' NNUE
+  weight is **forced to 0%** regardless of the `weight_a`/`weight_b`
+  inputs, so a mobile user who forgets to zero them doesn't
+  accidentally run a two-variable (confounded) match. `play_one_game`
+  now applies the flag to each mover's own `SearchInfo` via a new
+  `ExperimentalFlag::apply()` method.
+- `match_runner.yml`: 3 new `workflow_dispatch` inputs — `flag_name`
+  (dropdown: none/nonpawn_correction/continuation_correction/
+  improving), `flag_a`, `flag_b` (dropdown true/false, default
+  false/true — testing the shipped `false` default against flipping
+  it to `true`, the natural SPRT direction for an unproven flag).
+  Fully mobile-usable, same as the existing weight-only inputs.
+- Backward compatible: existing positional CLI args 1-6 unchanged, new
+  args 7-9 are optional and default to the original pure-NNUE-weight
+  behavior (`flag_name` empty/missing → `None`).
+- 9 new unit tests in `match_runner.rs` covering `parse_flag`,
+  `parse_bool_arg`, `resolve_weights`, `ExperimentalFlag::apply`, and
+  the flag-carrying path through `play_one_game`.
+- **Not yet run.** This session built the capability to test; it did
+  not trigger a match or make a keep/revert call on any of the three
+  flags. Next step is Gokul running the workflow three times (once per
+  flag) from the Actions tab and reporting results back.
+
+**34.2 — `ThreatByRook`.** Implemented per the review's §8.1 spec
+almost verbatim — near-identical shape to the existing
+`THREAT_BY_MINOR_BONUS` term, same double-counting argument already
+accepted for it (see updated module doc comment in `threats.rs`).
+`THREAT_BY_ROOK_BONUS = s(20, 12)`, scored only for rook-attacks-
+*queen* (not rook-attacks-rook — a roughly even trade, weak signal,
+matches Stockfish's own restriction). 2 new regression tests plus a
+scoping test confirming rook-attacks-rook does NOT trigger the bonus
+— both had to be built defending the attacking rook with a pawn to
+avoid `UNDEFENDED_PENALTY` (same open-file mutual-attack shape)
+confounding the sign of the assertion; this took a first-draft
+mistake and a self-caught fix during this session (documented in the
+test comments themselves) before landing on the correct FENs.
+
+**Not yet CI-confirmed** — no local `cargo test` in this sandbox; both
+changes verified by manual brace/paren-balance checks and, for
+`threats.rs`, by hand-tracing the packed `s(mg,eg)` arithmetic through
+each test FEN to confirm the expected sign before finalizing.
+
+**Next session start point:** Gokul commits `src/bin/match_runner.rs`,
+`.github/workflows/match_runner.yml`, and `src/eval/threats.rs`, and
+confirms CI green. Once green, run the three flag-SPRT matches via the
+Actions tab (34.1) and report results back — that decides whether any
+of the three flags flips to `true` by default. Upgrade-plan backlog
+continues from there; #1 (NNUE) still pending Gokul's call per D131.
+
+## D131 — NNUE Re-Validation (Review Item #1) Flagged as Conflicting With Tested Project History, Not Started (Session 133)
+
+**Context**: the external upgrade-plan review's headline recommendation
+("NNUE shipped at 0%... re-validating and re-enabling it is very
+likely the highest-return single change available") was flagged back
+to Gokul, before any implementation work started, as based on reading
+the code rather than the project's own Elo history:
+
+- **D25**: 25%-weight NNUE tested head-to-head against pure HCE, 20
+  games — **+338 Elo in favor of turning NNUE off**, not merely
+  under-contributing.
+- **D53/D55/D57/D58**: three separate follow-up attempts to fix the
+  network (label smoothing, phase-balanced oversampling, and others)
+  — best result unchanged, same ~+338 Elo gap for HCE.
+- **D61**: Gokul's explicit call to shelve NNUE entirely — every
+  remaining lever (feature redesign, GPU training pipeline,
+  Stockfish-distillation data) is a genuine infrastructure investment
+  per D58's own conclusion, not a quick retry.
+
+So "re-validate and re-enable" would be repeating an already-negative,
+already-repeated result, not recovering a forgotten feature. Gokul's
+response: proceed with review items #3 and #4 instead (this session,
+D130); no decision made on NNUE. **Recorded here so a future session
+doesn't restart NNUE work from the review document's framing without
+first reading this entry and D61** — if NNUE work is ever resumed, it
+should start from D58's three reopening options, not from the review's
+"just flip the weight back up" framing.
+
+## D132 — CI Red From D130 Commit: ThreatByRook Missing From the Texel Tuner Mirror, Fixed Across the Whole Pipeline (Session 134)
+
+**Context**: Gokul uploaded a failing CI log after committing the
+D130 files. 537/538 lib tests passed; the one failure was
+`texel::predict::tests::test_predict_matches_evaluate_after_moves`
+(`predict()`/`evaluate()` mismatch mid-game at seed 4: predict=31
+evaluate=51).
+
+**Root cause**: `eval::threats::THREAT_BY_ROOK_BONUS` (added in D130's
+34.2) is a real HCE eval term, but the Texel tuner's `predict()`
+function computes its own independent, feature-based mirror of the
+entire evaluator — every eval term has to be duplicated on the tuner
+side (`texel::features::extract_features`, `texel::predict::predict`,
+`texel::predict_f64` forward pass + gradient, `texel::weights::
+TunableWeights`, `texel::weights_f64::TunableWeightsF64`) or
+`predict()` silently drifts out of sync with `evaluate()`. D130 only
+touched `eval/threats.rs` itself — none of the five `texel/*.rs`
+mirror files. This is exactly the kind of cross-cutting-concern miss
+D129's process note called out (checking a change's full caller/mirror
+graph, not just its most obvious call site) — should have been caught
+before committing, the same class of gap as D129, just in a different
+subsystem (Texel mirroring instead of shared-function fan-in).
+
+**Fix**: added `threat_by_rook` end to end, following the exact same
+pattern `threat_by_minor` already established at every one of these
+touch points:
+- `features.rs`: `threat_by_rook_diff` field on `TexelFeatures`;
+  `threats_side_raw()` extended to a 6-tuple with a rook-attacks-
+  enemy-queen loop mirroring `eval::threats::threats_for_color`'s new
+  loop exactly.
+- `weights.rs` / `weights_f64.rs`: `threat_by_rook: i64` / `S` field,
+  default `s(20, 12)` (must match `THREAT_BY_ROOK_BONUS` exactly),
+  wired into `zero()`, `to_packed()`/`to_tunable_weights()`,
+  `flatten()`/`unflatten()` (with `PARAM_COUNT` bumped 5→6 threats
+  terms), and `From<&TunableWeights>`.
+- `predict.rs` / `predict_f64.rs`: scored in both the integer forward
+  pass and the f64 forward pass + gradient accumulation.
+- `texel_tune.rs` / `texel_diag.rs`: the D35 tuning-pipeline pair that
+  writes tuned weights out as a Rust snippet and reads them back in —
+  both needed the new field too (`texel_diag.rs`'s
+  `parse_tuned_weights()` constructs `TunableWeights { .. }`
+  exhaustively, so missing this would have been a **compile error**,
+  not just a test failure, on the next `cargo build` covering that
+  binary). `EXPECTED_PAIR_COUNT` bumped alongside `PARAM_COUNT`.
+
+**Process note (self-caught, not CI-caught)**: made the identical
+mistake twice while hand-editing struct literals during this fix — a
+`str_replace` meant to insert `threat_by_rook,` after
+`threat_by_minor,` in `weights_f64.rs`'s `unflatten()` and again in
+`texel_diag.rs`'s `parse_tuned_weights()` each accidentally deleted
+the adjacent `tempo,` field instead of preserving it, because the
+old/new string boundaries were drawn too tight around just the two
+threat lines. Caught both by re-viewing the file immediately after
+each edit rather than trusting the diff blind — worth remembering as
+a general lesson: when inserting a field into a struct literal via
+`str_replace`, include enough of the following context in `old_str`
+to make an accidental adjacent deletion impossible, not just enough to
+be unique.
+
+**Not yet CI-confirmed** — no local `cargo test`/`cargo build` in this
+sandbox; verified by (1) a full field-list diff of every
+`TunableWeights { .. }` / `TunableWeightsF64 { .. }` literal against
+the struct definitions (`texel_diag.rs`'s confirmed as an exact
+39-field match after the fix), (2) manual brace/paren-balance checks
+on all 7 touched files, and (3) tracing `test_predict_matches_evaluate_
+after_moves`'s exact assertion back to confirm `threat_by_rook_diff`
+is now populated and scored identically on both the `evaluate()` and
+`predict()` sides.
+
+**Next session start point:** Gokul commits all 7 files
+(`texel/features.rs`, `texel/predict.rs`, `texel/predict_f64.rs`,
+`texel/weights.rs`, `texel/weights_f64.rs`, `bin/texel_tune.rs`,
+`bin/texel_diag.rs`) and re-runs full CI. If green, 34.1/34.2 are both
+closed out — proceed to running the three 34.1 flag-SPRT matches from
+the Actions tab. If still red, get the new log and check first whether
+it's another Texel-mirror gap (unlikely, this was the last untouched
+mirror file) before assuming a new class of bug.

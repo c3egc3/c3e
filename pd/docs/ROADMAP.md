@@ -3063,6 +3063,54 @@ of it goes in blind the way a mechanical bug fix does.
 
 ---
 
+## Phase 34 — Upgrade-Plan Backlog (from `pet-dragon-full-review.md`, D127)
+
+Started per Gokul's "3 & 4" instruction — review items #3 (SPRT the
+three experimental flags) and #4 (`ThreatByRook`), explicitly skipping
+#1 (NNUE re-validation) which conflicts with tested project history
+(D25/D53/D55/D57/D58/D61) — see D131, not started, needs Gokul's call.
+
+- [x] 34.1 — SPRT infrastructure for `nonpawn_correction_enabled`,
+      `continuation_correction_enabled`, `improving_enabled` — DONE,
+      infra only (Session 133, D130). `match_runner.rs` extended with
+      an `ExperimentalFlag` enum, CLI parsing, and a
+      `resolve_weights()` safeguard that forces both engines' NNUE
+      weight to 0% whenever a flag is under test, so a mobile user
+      can't accidentally run a two-variable confounded match.
+      `match_runner.yml` gained 3 new dropdown inputs
+      (`flag_name`/`flag_a`/`flag_b`), fully mobile-usable. 9 new
+      tests. ⚠️ Not yet CI-confirmed. **Not yet run** — building the
+      capability to test is done; actually running the three matches
+      and deciding whether any flag flips its default is the next
+      step, from the Actions tab.
+- [ ] 34.1a — Run the `nonpawn_correction_enabled` SPRT match via the
+      Actions tab, report results. Blocked on Gokul triggering it.
+- [ ] 34.1b — Run the `continuation_correction_enabled` SPRT match,
+      report results. Blocked on Gokul triggering it.
+- [ ] 34.1c — Run the `improving_enabled` SPRT match, report results.
+      Blocked on Gokul triggering it.
+- [x] 34.2 — `ThreatByRook` (review §8.1) — DONE (Session 133, D130;
+      fixed forward once — Session 134, D132 — for a missing Texel
+      tuner mirror that broke `predict()`/`evaluate()` consistency and
+      would have broken compilation of `bin/texel_diag.rs`).
+      `THREAT_BY_ROOK_BONUS = s(20, 12)`, rook-attacks-queen only (not
+      rook-attacks-rook — weak signal, matches Stockfish's own
+      restriction). Same double-counting argument already accepted for
+      `THREAT_BY_MINOR_BONUS`. 3 new regression tests. ⚠️ Not yet
+      CI-confirmed.
+- [ ] 34.3 (review #1, NNUE re-validation) — NOT STARTED, flagged as
+      conflicting with tested history, see D131. Needs Gokul's
+      explicit call before any work — this is real infrastructure
+      investment (D58), not a flag flip, if it's ever picked back up.
+- [ ] 34.4 (review #2) — LMR reduction formula enrichment (cut-node
+      status, correction magnitude signals) — not started.
+- [ ] 34.5 (review #9) — `ThreatByKing` (review §8.3) — not started;
+      review flags this as needing the most care (MG/EG weighting,
+      avoid rewarding an exposed king), do last among the eval items.
+- [ ] 34.6 (review §8.2) — `WeakQueenProtection` — not started.
+
+---
+
 ## Milestone Targets
 
 | Milestone | Target Elo | Phase |

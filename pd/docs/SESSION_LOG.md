@@ -9,6 +9,110 @@ Most recent session at TOP.
 
 ---
 
+## Session 134 — 2026-08-03, cont. (CI red from D130 commit: ThreatByRook missing from Texel tuner mirror — D132)
+
+**Built/done:** Gokul uploaded a failing CI log after the D130 commit.
+537/538 lib tests passed; the one failure was
+`texel::predict::tests::test_predict_matches_evaluate_after_moves`
+(mismatch at seed 4: predict=31, evaluate=51). Root cause: D130's
+`ThreatByRook` term was added to `eval/threats.rs` only —
+`texel::predict::predict()` computes an independent feature-based
+mirror of the entire evaluator for tuning purposes, and every eval
+term has to be duplicated across 5 `texel/*.rs` files or `predict()`
+silently drifts from `evaluate()`. Fixed by threading `threat_by_rook`
+through the full mirror: `features.rs` (new `threat_by_rook_diff`
+feature, extraction loop mirroring the eval-side loop exactly),
+`weights.rs`/`weights_f64.rs` (new weight field, default matching
+`THREAT_BY_ROOK_BONUS` exactly, wired into every conversion/flatten/
+unflatten path, `PARAM_COUNT` bumped), `predict.rs`/`predict_f64.rs`
+(scored in both the integer and f64+gradient forward passes). Also
+found and fixed two more files with the same gap that weren't even
+part of the lib test suite — `bin/texel_tune.rs` and
+`bin/texel_diag.rs`, the D35 tuning-pipeline pair that round-trips
+tuned weights as a Rust snippet. `texel_diag.rs` constructs
+`TunableWeights { .. }` exhaustively, so this would have been a
+**compile error** on the next full build, not just a failing test.
+
+Self-caught process note: made the same mistake twice while editing —
+a `str_replace` meant to insert `threat_by_rook,` next to
+`threat_by_minor,` in a struct literal accidentally deleted the
+adjacent `tempo,` field instead, in both `weights_f64.rs`'s
+`unflatten()` and `texel_diag.rs`'s `parse_tuned_weights()`. Caught
+both immediately by re-viewing the file after each edit. Documented in
+D132 as a general lesson for future struct-literal insertions.
+
+**Files touched:** `src/texel/features.rs`, `src/texel/predict.rs`,
+`src/texel/predict_f64.rs`, `src/texel/weights.rs`,
+`src/texel/weights_f64.rs`, `src/bin/texel_tune.rs`,
+`src/bin/texel_diag.rs`.
+
+**Bugs fixed:** Regression from D130 (ThreatByRook not mirrored in the
+Texel tuner — would have broken both test correctness and, separately,
+compilation of the tuning-pipeline binaries).
+
+**Decisions made:** D132.
+
+**Next session start point:** Gokul commits all 7 files, re-runs full
+CI. If green: 34.1/34.2 both fully closed — move to running the three
+34.1 flag-SPRT matches from the Actions tab and reporting results. If
+still red: check first whether it's another Texel-mirror gap (this
+should have been the last untouched one) before assuming something new.
+
+---
+
+## Session 133 — 2026-08-03, cont. (Upgrade-plan backlog started: SPRT infra for 3 flags (34.1) + ThreatByRook (34.2) — D130/D131)
+
+**Built/done:** Started the upgrade-plan backlog (D127) per Gokul's
+"3 & 4" instruction, explicitly skipping review item #1 (NNUE
+re-validation) — flagged back to Gokul beforehand as conflicting with
+already-tested project history (D25: +338 Elo for turning NNUE off at
+25% weight; D53/D55/D57/D58: three more attempts, same result; D61:
+Gokul's own call to shelve it). Recorded as D131 so a future session
+doesn't restart NNUE work from the review's framing without reading
+D61 first. Gokul proceeded with #3 and #4 instead.
+
+**34.1**: `match_runner`/`match_runner.yml` only ever varied NNUE
+blend weight — no path to SPRT-test the three experimental
+`SearchInfo` flags (`nonpawn_correction_enabled`,
+`continuation_correction_enabled`, `improving_enabled`) the review
+pointed at. Extended `match_runner.rs` with an `ExperimentalFlag` enum,
+CLI arg parsing, and a `resolve_weights()` safeguard forcing both
+engines' NNUE weight to 0% whenever a flag is under test (prevents a
+mobile user from accidentally running a confounded two-variable
+match). `match_runner.yml` gained 3 new dropdown
+workflow_dispatch inputs. Backward compatible — original positional
+args unchanged, new ones optional. 9 new tests. This is
+infrastructure only — no match has been run yet, no flag's default has
+changed.
+
+**34.2**: Implemented `ThreatByRook` (`eval/threats.rs`) per the
+review's §8.1 spec — `THREAT_BY_ROOK_BONUS = s(20, 12)`, scoped to
+rook-attacks-queen only. 3 new tests, including a scoping test that
+rook-attacks-rook does NOT trigger the bonus. Caught and fixed my own
+first-draft test-design mistake mid-session: the positive-case and
+scoping-case FENs both put the attacking rook on an open file directly
+facing the enemy target, which also puts the attacking rook itself
+under `UNDEFENDED_PENALTY` (mutual attack, no other defender) — that
+would have confounded or flipped the sign of what the tests were
+checking. Fixed by adding a defending pawn to both FENs before
+finalizing.
+
+**Files touched:** `src/bin/match_runner.rs`,
+`.github/workflows/match_runner.yml`, `src/eval/threats.rs`.
+
+**Bugs fixed:** None (new feature work); one self-caught test-design
+error during development (documented above), not shipped.
+
+**Decisions made:** D130, D131.
+
+**Next session start point:** Gokul commits all 3 files, confirms CI
+green. Once green: run the three 34.1 flag-SPRT matches from the
+Actions tab (34.1a/b/c) and report results — decides whether any flag
+flips its shipped `false` default. NNUE (34.3) stays parked pending
+Gokul's explicit call per D131.
+
+---
+
 ## Session 132 — 2026-08-03, cont. (CI confirmed green — Phase 33 closed out)
 
 **Built/done:** Gokul confirmed CI green after committing the D129
