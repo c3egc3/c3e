@@ -3079,7 +3079,7 @@ three experimental flags) and #4 (`ThreatByRook`), explicitly skipping
       can't accidentally run a two-variable confounded match.
       `match_runner.yml` gained 3 new dropdown inputs
       (`flag_name`/`flag_a`/`flag_b`), fully mobile-usable. 9 new
-      tests. ⚠️ Not yet CI-confirmed. **Not yet run** — building the
+      tests. ✅ CI green (Session 135). **Not yet run** — building the
       capability to test is done; actually running the three matches
       and deciding whether any flag flips its default is the next
       step, from the Actions tab.
@@ -3096,8 +3096,8 @@ three experimental flags) and #4 (`ThreatByRook`), explicitly skipping
       `THREAT_BY_ROOK_BONUS = s(20, 12)`, rook-attacks-queen only (not
       rook-attacks-rook — weak signal, matches Stockfish's own
       restriction). Same double-counting argument already accepted for
-      `THREAT_BY_MINOR_BONUS`. 3 new regression tests. ⚠️ Not yet
-      CI-confirmed.
+      `THREAT_BY_MINOR_BONUS`. 3 new regression tests. ✅ CI green
+      (Session 135).
 - [ ] 34.3 (review #1, NNUE re-validation) — NOT STARTED, flagged as
       conflicting with tested history, see D131. Needs Gokul's
       explicit call before any work — this is real infrastructure

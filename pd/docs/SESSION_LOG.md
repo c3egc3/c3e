@@ -9,6 +9,32 @@ Most recent session at TOP.
 
 ---
 
+## Session 135 — 2026-08-03, cont. (CI confirmed green — 34.1/34.2 closed out)
+
+**Built/done:** Gokul confirmed CI green after committing the D132
+files (the 7-file Texel-mirror fix). Closes out 34.1 (SPRT
+infrastructure) and 34.2 (`ThreatByRook`) — both now fully
+CI-confirmed after their respective fix-forward rounds. No code
+changed this session; docs-only update to clear ROADMAP.md's
+⚠️-not-yet-CI-confirmed flags.
+
+**Files touched:** `docs/ROADMAP.md` (status update only).
+
+**Bugs fixed:** None this session (confirmation only).
+
+**Decisions made:** None.
+
+**Next session start point:** 34.1's infrastructure is done but unused
+— run the three flag-SPRT matches (34.1a/b/c:
+`nonpawn_correction_enabled`, `continuation_correction_enabled`,
+`improving_enabled`) from the Actions tab and report results back;
+that's what decides whether any of the three flags flips its shipped
+`false` default. Remaining upgrade-plan backlog (34.4 LMR enrichment,
+34.5 ThreatByKing, 34.6 WeakQueenProtection) and 34.3 (NNUE, parked
+per D131) still open after that.
+
+---
+
 ## Session 134 — 2026-08-03, cont. (CI red from D130 commit: ThreatByRook missing from Texel tuner mirror — D132)
 
 **Built/done:** Gokul uploaded a failing CI log after the D130 commit.
