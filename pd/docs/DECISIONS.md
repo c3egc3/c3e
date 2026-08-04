@@ -6550,3 +6550,116 @@ closed out — proceed to running the three 34.1 flag-SPRT matches from
 the Actions tab. If still red, get the new log and check first whether
 it's another Texel-mirror gap (unlikely, this was the last untouched
 mirror file) before assuming a new class of bug.
+
+## D133 — First 34.1 SPRT Batch: `improving_enabled` and `continuation_correction_enabled` Confirmed No-Signal, `nonpawn_correction_enabled` Inconclusive Pending More Games (Session 136)
+
+**Context**: Gokul ran all three 34.1 flag-SPRT matches (200 games
+each, 100ms/move, NNUE weight forced to 0% both sides per
+`resolve_weights()`) and reported results:
+
+| Flag | A (false) score | Elo diff (A vs B) |
+|---|---|---|
+| `improving_enabled` | 50.7% | +5.2 (favors off) |
+| `nonpawn_correction_enabled` | 47.5% | -17.4 (favors on) |
+| `continuation_correction_enabled` | 51.2% | +8.7 (favors off) |
+
+**Noise bar used**: this project already has a concrete precedent for
+what "within noise" means at this sample size — D124 explicitly called
+a **+5.2 Elo** result at n=200 "within noise... accepted as neutral, no
+further runs." Applying that same bar (not a new, looser one invented
+for this decision):
+
+- **`improving_enabled`**: +5.2 Elo — the *exact* magnitude D124 already
+  called noise. **No change** — default stays `false`. No further runs
+  planned; re-open only if a future change to the search elsewhere
+  makes `improving_enabled` newly relevant to re-test.
+- **`continuation_correction_enabled`**: +8.7 Elo — larger than the
+  D124 precedent but still well inside a ~±25-35 Elo standard-error band
+  at n=200. **No change** — default stays `false`. No further runs
+  planned.
+- **`nonpawn_correction_enabled`**: +17.4 Elo (favoring `true`/on) — the
+  largest of the three, and in the direction of enabling it, but still
+  not clearly outside the noise band on a single 200-game batch.
+  **Inconclusive, not decided either way.** Requested a follow-up: 500
+  more games at `seed_start=200` (fresh games, not a replay), to combine
+  into a 700-game total before making a keep/revert call. Default stays
+  `false` in the meantime — not flipped on a single small-sample
+  result, consistent with this project's general rollout discipline
+  (D23 fixed weight pending Elo test, D124's own "no further runs on
+  noise" call, etc.), the one documented exception being D125's
+  explicit, acknowledged skip of this same step.
+
+**Next session start point:** Gokul runs the requested 500-game
+`nonpawn_correction_enabled` follow-up batch and reports results;
+combine with this session's 200 games (700 total) for the actual
+decision. `improving_enabled` and `continuation_correction_enabled`
+are closed — no further action needed on either.
+
+## D134 — `nonpawn_correction_enabled` Default Flipped to `true` (Session 137)
+
+**Decision**: Gokul's explicit call, given D133's combined 700-game
+result (Elo diff -11.9, i.e. `true`/on ahead by ~11.9 Elo, direction
+consistent across both independent batches: -17.4 then -9.7) — accept
+the directional lean and flip the default now, rather than running
+further batches chasing a clean 2-standard-error result. Same kind of
+judgment call D125 already documented for
+`recapture_extension_enabled` — an explicit, acknowledged skip of
+waiting for a fully decisive statistical result, not a new precedent.
+
+**Implementation — every default site for this flag, found by tracing
+the full call graph rather than only the most obvious one** (this is
+exactly the discipline D129's and D132's process notes called for):
+- `search/mod.rs`: `SearchInfo::new()`'s actual default flipped
+  `false` → `true`; field doc comment rewritten with the full
+  validation history (D82 → D133 → D134).
+- `main.rs`: `EngineState`'s own separate default (used by every real
+  UCI session — `cmd_go` overwrites `SearchInfo`'s value with
+  `EngineState`'s copy regardless of what `SearchInfo::new()` set, so
+  this site's flip is actually load-bearing for real usage, not
+  `search/mod.rs`'s) flipped `false` → `true`; advertised UCI option
+  string (`option name NonPawnCorrectionHistory type check default
+  ...`) flipped `false` → `true` so GUIs querying the engine see the
+  correct default; field doc comment updated.
+- `uci_wasm.rs`: no separate default site — confirmed it constructs
+  `SearchInfo::new()` directly with no override, so it inherits the
+  `search/mod.rs` flip automatically. No changes needed there.
+- 5 tests across 3 files had to be fixed because they asserted or
+  relied on the old `false` default:
+  - `search/alpha_beta.rs`: `test_nonpawn_correction_defaults_to_false`
+    renamed/flipped to `test_nonpawn_correction_defaults_to_true`.
+    `test_nonpawn_correction_off_leaves_table_untouched` — this test's
+    whole purpose is exercising the OFF path, so it now sets
+    `info.nonpawn_correction_enabled = false` explicitly rather than
+    relying on the default, which would otherwise have silently made
+    it test the ON path instead (and fail its own "table must stay
+    untouched" assertion). Two stale comments elsewhere in the file
+    ("default false — see that field's doc comment") corrected.
+  - `main.rs`: `test_nonpawn_correction_history_option_defaults_to_false`
+    renamed/flipped to `..._defaults_to_true`.
+  - `bin/match_runner.rs`: `test_experimental_flag_apply_sets_correct_field`
+    used to assert `SearchInfo::new()`'s default was `false` for all
+    three experimental flags as its starting condition — decoupled
+    from any default by explicitly setting all three to `false` before
+    the assertions, since this test's actual purpose is verifying
+    `ExperimentalFlag::apply()`'s mechanics (right field, no
+    cross-contamination, can unset as well as set), not asserting
+    defaults — and added an explicit apply(false)-unsets-nonpawn-
+    correction check at the end, mirroring the existing Improving
+    check, now that the default direction differs between the flags.
+
+**Not yet CI-confirmed** — no local `cargo test`/`cargo build` in this
+sandbox; verified by grepping every file in the repo for
+`nonpawn_correction_enabled` (7 files total: the 4 with real logic/
+tests above, plus `uci_wasm.rs` confirmed as inheriting the flip with
+no edit needed, plus `selfplay.rs`/`eval_diag.rs`/`texel_gen.rs`/
+`train_nnue.rs`/`lichess_sample.rs`/`aggregate_opening_stats.rs`/
+`uci_match_runner.rs` confirmed to have zero references and therefore
+nothing to update) and manual brace/paren-balance checks on all 4
+edited files.
+
+**Next session start point:** Gokul commits `src/search/mod.rs`,
+`src/main.rs`, `src/search/alpha_beta.rs`, `src/bin/match_runner.rs`
+and confirms CI green. Once green, 34.1 is fully closed (all three
+flags have a keep/revert call: 2 no-change, 1 flipped). Remaining
+upgrade-plan backlog: 34.4 (LMR enrichment), 34.5 (ThreatByKing), 34.6
+(WeakQueenProtection); 34.3 (NNUE) stays parked per D131.

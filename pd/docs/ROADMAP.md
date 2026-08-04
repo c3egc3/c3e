@@ -3083,12 +3083,26 @@ three experimental flags) and #4 (`ThreatByRook`), explicitly skipping
       capability to test is done; actually running the three matches
       and deciding whether any flag flips its default is the next
       step, from the Actions tab.
-- [ ] 34.1a — Run the `nonpawn_correction_enabled` SPRT match via the
-      Actions tab, report results. Blocked on Gokul triggering it.
-- [ ] 34.1b — Run the `continuation_correction_enabled` SPRT match,
-      report results. Blocked on Gokul triggering it.
-- [ ] 34.1c — Run the `improving_enabled` SPRT match, report results.
-      Blocked on Gokul triggering it.
+- [x] 34.1a — `nonpawn_correction_enabled` SPRT — DONE (Session 136/137,
+      D133/D134). Combined 700 games across two batches: Elo diff -11.9
+      (true/on ahead), direction consistent across both independent
+      batches (-17.4, then -9.7). Not a clean 2-standard-error result,
+      but Gokul's explicit call (D134, same kind of judgment call as
+      D125) accepted the directional lean. **Default flipped to
+      `true`** — implemented across every default site
+      (`search/mod.rs`, `main.rs`'s `EngineState` + advertised UCI
+      option string; `uci_wasm.rs` confirmed to inherit automatically),
+      5 tests fixed across 3 files that assumed the old default. ⚠️ Not
+      yet CI-confirmed.
+- [x] 34.1b — `continuation_correction_enabled` SPRT — DONE (Session
+      136, D133): 200 games, +8.7 Elo favoring `false` (off) — within
+      noise (same bar as D124's own +5.2 Elo precedent). **No change**:
+      default stays `false`, no further runs planned for this flag.
+- [x] 34.1c — `improving_enabled` SPRT — DONE (Session 136, D133): 200
+      games, +5.2 Elo favoring `false` (off) — within noise (identical
+      magnitude to the D124 precedent that set this project's own bar
+      for "no signal"). **No change**: default stays `false`, no
+      further runs planned for this flag.
 - [x] 34.2 — `ThreatByRook` (review §8.1) — DONE (Session 133, D130;
       fixed forward once — Session 134, D132 — for a missing Texel
       tuner mirror that broke `predict()`/`evaluate()` consistency and

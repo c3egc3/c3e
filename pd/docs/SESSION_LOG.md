@@ -9,6 +9,82 @@ Most recent session at TOP.
 
 ---
 
+## Session 137 — 2026-08-04, cont. (nonpawn_correction_enabled default flipped to true — D134)
+
+**Built/done:** Gokul's explicit call on D133's combined 700-game
+result (Elo -11.9, direction consistent across both batches): accept
+the directional lean and flip `nonpawn_correction_enabled`'s default
+to `true`, same kind of judgment call as D125. Implemented across
+every default site, found by tracing the full call graph rather than
+just the first one:
+- `search/mod.rs`: `SearchInfo::new()`'s default flipped, doc comment
+  rewritten with the full validation trail.
+- `main.rs`: `EngineState`'s own separate default flipped (this is the
+  one that's actually load-bearing for real UCI usage — `cmd_go`
+  overwrites `SearchInfo`'s value with `EngineState`'s copy
+  regardless of what `SearchInfo::new()` set), plus the advertised UCI
+  option string so GUIs see the correct default.
+- `uci_wasm.rs`: confirmed it has no separate default site and
+  inherits the `search/mod.rs` flip automatically — no edit needed.
+- 5 tests across 3 files fixed: 2 tests that directly asserted the old
+  `false` default (renamed/flipped), 1 test whose whole purpose was
+  exercising the OFF path and would have silently started testing the
+  ON path instead without an explicit override, and 1 test
+  (`match_runner.rs`) decoupled from relying on any default at all
+  since its actual purpose is verifying flag-apply mechanics, not
+  defaults. Two stale explanatory comments elsewhere also corrected.
+- Confirmed via grep that 7 other files (`selfplay.rs`, `eval_diag.rs`,
+  `texel_gen.rs`, `train_nnue.rs`, `lichess_sample.rs`,
+  `aggregate_opening_stats.rs`, `uci_match_runner.rs`) have zero
+  references to this flag and needed no changes.
+
+**Files touched:** `src/search/mod.rs`, `src/main.rs`,
+`src/search/alpha_beta.rs`, `src/bin/match_runner.rs`.
+
+**Bugs fixed:** None (default-flip feature work, with test-suite
+maintenance to match).
+
+**Decisions made:** D134.
+
+**Next session start point:** Gokul commits all 4 files, confirms CI
+green. Once green, 34.1 is fully closed — all three experimental flags
+have a keep/revert call (2 no-change, 1 flipped). Remaining backlog:
+34.4 (LMR enrichment), 34.5 (ThreatByKing), 34.6
+(WeakQueenProtection); 34.3 (NNUE) stays parked per D131.
+
+---
+
+## Session 136 — 2026-08-04 (First 34.1 SPRT batch: 2 of 3 flags closed as no-signal, 1 pending more games — D133)
+
+**Built/done:** Gokul ran all three 34.1 flag-SPRT matches (200 games
+each) and reported results. Applied this project's own existing noise
+bar (D124's precedent: +5.2 Elo at n=200 = "within noise, no further
+runs") rather than inventing a new threshold:
+- `improving_enabled`: +5.2 Elo favoring off — the exact magnitude
+  D124 already called noise. Closed, no change, default stays `false`.
+- `continuation_correction_enabled`: +8.7 Elo favoring off — within
+  the same noise band. Closed, no change, default stays `false`.
+- `nonpawn_correction_enabled`: +17.4 Elo favoring on — largest of the
+  three, and in the direction of enabling it, but still not clearly
+  outside a ~±25-35 Elo standard-error band at n=200. Left
+  undecided; requested a 500-game follow-up batch (`seed_start=200`)
+  to combine into a 700-game total before making a real call, rather
+  than deciding off one small-sample result.
+
+**Files touched:** None (docs-only session — no code changed).
+
+**Bugs fixed:** None.
+
+**Decisions made:** D133.
+
+**Next session start point:** Gokul runs the requested 500-game
+`nonpawn_correction_enabled` follow-up (`flag_a=false`, `flag_b=true`,
+`seed_start=200`) and reports results; combine with this session's 200
+games for the decision. `improving_enabled` and
+`continuation_correction_enabled` are fully closed, no further action.
+
+---
+
 ## Session 135 — 2026-08-03, cont. (CI confirmed green — 34.1/34.2 closed out)
 
 **Built/done:** Gokul confirmed CI green after committing the D132
