@@ -9,6 +9,70 @@ Most recent session at TOP.
 
 ---
 
+## Session 139 — 2026-08-04, cont. (Two external reports: TT torn-write fix (D135) + blunder-fallback fix (D136))
+
+**Built/done:** Gokul uploaded two independent external investigation
+reports on a "tactical blindness"/"blunder" symptom. Spot-verified
+both against live source before trusting either.
+
+`tactical-blindness-report.md`: re-checked 5 prior hypotheses; 4
+refuted (LMP, SEE, null-move zugzwang guard, skill-level leakage all
+check out fine), 1 confirmed real — TT torn writes weren't actually
+self-detecting despite the code comment's claim, since `key` was
+stored as a plain field independent of the payload. Fixed (D135): `key`
+now XORed with a `payload_fingerprint()` of the entry's own payload
+fields at write time; `probe()`/`probe_move()`/`store()` all recompute
+the fingerprint from whatever payload currently sits in the slot before
+trusting the key, so a torn write no longer decodes back to the
+original key. 2 new tests directly simulate a torn write and confirm
+it's now rejected. Report itself framed this as a "leading suspect,"
+not conclusively THE cause — it wasn't; see below.
+
+`blunder-bug-report.md`: confirmed, deterministically-reproduced (15/15
+trigger trials) separate root cause. `iterative_deepening()`'s
+end-of-function fallback picked `moves.get(0)` — an unevaluated,
+arbitrary legal move — whenever depth 1 never completed. Traced the
+exact mechanism: at `movetime <= 30` (default Move Overhead),
+`allocate_time()` returns a 0ms budget, and `is_time_up()` tripped on
+the very first check, before any root move was ever generated. Fixed
+(D136) with the report's own two recommended, complementary changes:
+`is_time_up()`'s elapsed-time check no longer fires while
+`current_depth <= 1` (explicit stop/quit still instant; ponder-hit hard
+override deliberately excluded from this exemption), and the true
+last-resort fallback now uses `score_moves()` instead of blind
+first-in-list. Required fixing 2 existing tests
+(`alpha_beta.rs`'s D95 timeout tests) that called `alpha_beta()`
+directly without going through `iterative_deepening()`'s loop, so
+`current_depth` defaulted to 0 and would have silently defeated what
+those tests actually check. Added 4 new tests, including 3 end-to-end
+reproductions of the report's exact FEN cases through the real
+`iterative_deepening()` entry point (not just the internal mechanism in
+isolation).
+
+Process note: made the same "str_replace deletes the adjacent line"
+mistake as D132 two more times this session (once in `tt/mod.rs`'s test
+module, once in `iterative.rs`'s) — caught both immediately by
+re-viewing the file right after each edit, per the standing lesson from
+D132, which is why neither reached the docs/shipped stage broken.
+
+**Files touched:** `src/tt/mod.rs`, `src/search/mod.rs`,
+`src/search/alpha_beta.rs`, `src/search/iterative.rs`.
+
+**Bugs fixed:** TT torn-write corruption not actually self-detecting
+(D135); blind evaluation-free fallback move at low movetime/on any stop
+before depth 1 completes (D136) — the latter is the confirmed root
+cause of the actual reported blunders.
+
+**Decisions made:** D135, D136.
+
+**Next session start point:** Gokul commits all 4 files together,
+confirms full CI green — the 3 new end-to-end blunder-repro tests in
+`iterative.rs` are the real proof either fix works, not just this
+session's manual tracing. If red, get the log before assuming either
+fix is correct.
+
+---
+
 ## Session 138 — 2026-08-04, cont. (CI confirmed green — Phase 34.1 fully closed)
 
 **Built/done:** Gokul confirmed CI green after committing the D134

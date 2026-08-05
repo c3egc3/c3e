@@ -6663,3 +6663,149 @@ and confirms CI green. Once green, 34.1 is fully closed (all three
 flags have a keep/revert call: 2 no-change, 1 flipped). Remaining
 upgrade-plan backlog: 34.4 (LMR enrichment), 34.5 (ThreatByKing), 34.6
 (WeakQueenProtection); 34.3 (NNUE) stays parked per D131.
+
+## D135 — TT Torn-Write Self-Detection Fixed: Key Now XORed With a Payload Fingerprint (Session 139)
+
+**Context**: Gokul uploaded two independent external investigation
+reports on a reported "tactical blindness" / "blunder" symptom
+(missed captures, hanging pieces, missed recaptures in normal play).
+`tactical-blindness-report.md` re-checked 5 hypotheses raised in prior
+discussion; 4 were refuted on direct source inspection (LMP, SEE,
+null-move zugzwang guard, skill-level leakage), but the 5th — TT
+torn-write corruption — checked out as a real, verifiable gap,
+independent of whether it's proven to be *the* cause of any specific
+game blunder (the report itself frames it as "leading suspect," not
+conclusively causal — see D136 below for what turned out to be the
+actual confirmed cause of the report's own reproduced cases).
+
+**Root cause (spot-verified against live source before trusting)**:
+`TTEntry` is 16 bytes — two 8-byte machine words. `store()`'s
+`ptr.write(new_entry)` is not atomic across that whole write, so a
+concurrent `store()`/`probe()` on the same slot can legally observe a
+torn entry — e.g. `key` from one write paired with `mv`/`score`/`bound`
+from a different, unrelated write. The pre-existing code comment
+claimed `probe()` "detects this via key verification" — but `key` was
+stored as a plain, independent field, not coupled to the payload at
+all, so that claim wasn't actually true: a torn write could leave a
+genuinely matching `key` sitting next to garbage payload fields, and
+`entry.key == exp_key` had no way to tell.
+
+**Fix**: applied Stockfish's actual technique (which the file's own
+comment already claimed to be doing, but wasn't) — `key` is now stored
+XORed with `payload_fingerprint()`, a cheap deterministic 32-bit mix of
+the entry's own depth/bound/age/mv/score. `probe()`, `probe_move()`,
+and `store()`'s replacement-decision logic all recompute the
+fingerprint from whatever payload is CURRENTLY sitting in the slot (not
+from what was originally intended) before trusting the key. A torn
+write mixing two different writes' fields will not recompute back to
+the original key (astronomically unlikely to coincide by chance), so
+verification now correctly fails and the slot is treated as a miss
+rather than silently trusted — the property the old comment claimed
+but the old implementation didn't have. This rests on individual
+struct-field-sized writes (a u32, a u8, an i32) not themselves tearing
+— true on every architecture this project targets, no stronger an
+assumption than the "benign races" design (D4) already rests on.
+
+**Tests**: 2 new regression tests directly simulate a torn write (by
+manually corrupting one field of an already-stored entry, mimicking
+what a second thread's interleaved write would produce) and confirm
+`probe()`/`probe_move()` now correctly reject it instead of returning
+the corrupted value.
+
+**Not yet CI-confirmed** — no local `cargo test`/`cargo build` in this
+sandbox; verified by manual brace/paren-balance checks and by tracing
+every internal `.key` comparison site (`store()`'s replacement
+decision, the move-preservation branch) to confirm all of them were
+updated consistently, not just `probe()`.
+
+## D136 — Blunder Fallback Fixed: Depth 1 Now Guaranteed to Run, Last-Resort Fallback Made Evaluation-Aware (Session 139)
+
+**Context**: `blunder-bug-report.md` (the second of the two reports
+this session) reported a confirmed, deterministically-reproduced bug —
+distinct from D135's TT finding — with FEN-level reproduction cases
+(3 hand-built positions, each isolating one blunder type: missed free
+capture, own piece left hanging, missed recapture; 15/15 trigger trials
+reproduced, 15/15 control trials correct). Spot-verified the exact
+mechanism against live source before trusting it, and it checked out
+precisely as described.
+
+**Root cause**: `iterative_deepening()`'s end-of-function safety net —
+reached whenever `result.best_move == Move::NULL`, i.e. the search
+never completed depth 1 before being stopped — picked
+`generate_moves(pos).get(0)`: an arbitrary legal move in the raw
+pseudo-legal generator's fixed iteration order (pawns, knights,
+bishops, rooks, queen, king, by square index), zero evaluation applied.
+`allocate_time()` subtracts the `Move Overhead` UCI option (default
+30ms) from `movetime`; at `movetime <= 30`, the allocated budget is
+0ms, and `is_time_up()` was tripping on the very FIRST check
+(`nodes==0`, `elapsed_ms() >= 0`) — before `alpha_beta`'s root loop had
+generated or evaluated a single move. `result.best_move` therefore
+stayed `Move::NULL` and the blind fallback fired on every single move
+at `movetime <= 30`, and intermittently (~10-20% per trial, per the
+report's own supplementary testing) whenever a `stop` lands before
+depth 1 finishes for any other reason (thread-scheduling delay under
+load, etc.).
+
+**Fix — the report's own two recommended, complementary changes,
+both implemented**:
+1. **Guarantee depth 1 gets to run.** `SearchInfo::is_time_up()`'s
+   elapsed-time-budget check (not the explicit `stop`/`stop_flag`
+   check above it, which still fires instantly regardless of depth) no
+   longer fires while `current_depth <= 1`. Depth 1 completes in low
+   single-digit milliseconds for real positions (report's own
+   measurement: under 1ms in every case tested) — this can only extend
+   an already-tiny time budget by a similarly tiny, bounded amount,
+   never turn a real time emergency into an unbounded search, and an
+   explicit `stop`/`quit` can still cut it short instantly. Deliberately
+   scoped to exclude the ponder-hit hard-override path (a distinct,
+   deliberate, GUI-driven "you're out of time NOW" signal computed
+   fresh at `ponderhit` time — not the passive "movetime happened to be
+   tiny" scenario this guard targets) — it keeps its pre-existing
+   immediate-abort behavior at every depth.
+2. **Make the true last-resort fallback evaluation-aware.** Replaced
+   `moves.get(0)` with the move ranked first by `score_moves()` — the
+   same SEE-aware, TT-move-aware, killer/history-aware ordering
+   heuristic search already computes cheaply for move ordering every
+   node, no real search needed. This is now a true last resort (fix #1
+   closes the dominant path into it) rather than a routinely-hit path
+   at low `movetime`/Skill Level settings.
+
+**Fix-forward needed on 3 existing tests** that constructed
+`SearchInfo::new()` directly and called `alpha_beta()`/checked
+`is_time_up()` without going through `iterative_deepening()`'s loop
+(where `current_depth` is normally set) — `current_depth` defaults to
+`0`, which the new guard also treats as "depth 1 or below," so these
+tests would have silently stopped exercising what they actually test:
+- `search/alpha_beta.rs::test_alpha_beta_sets_stop_on_real_timeout` and
+  `test_quiescence_in_check_sets_stop_on_real_timeout` (both D95,
+  Session 90) — added `info.current_depth = 5` so they keep testing
+  D95's actual concern (does a real timeout set `info.stop` at all) at
+  a realistic mid-game depth, unrelated to D136's depth-1-specific
+  behavior.
+- `search/mod.rs::test_ponder_hit_hard_override_triggers_timeout` —
+  no test change needed once `is_time_up()`'s ponder-override path was
+  scoped correctly (see fix #1 above) — confirmed by tracing the logic
+  rather than by the test failing first.
+
+**Tests**: 3 new end-to-end regression tests reproduce the report's
+exact three FEN cases at `movetime 30` through the real
+`iterative_deepening()` entry point and assert the correct move is now
+found (not the previously-blundered one), plus 1 test pinning down the
+`is_time_up()` depth-1 mechanism directly in isolation.
+
+**Not yet CI-confirmed** — no local `cargo test`/`cargo build` in this
+sandbox; verified by manually tracing `allocate_time()`'s exact
+arithmetic at `movetime=30` (confirms 0ms budget), `is_time_up()`'s
+check ordering (confirms the elapsed-time branch is what fires first,
+before any move generation), and by grepping the full repo for every
+`time_allocated_ms = 0`-style test that could be affected by the new
+depth-1 guard before deciding a test needed fixing, rather than
+guessing.
+
+**Next session start point:** Gokul commits `src/tt/mod.rs`,
+`src/search/mod.rs`, `src/search/alpha_beta.rs`,
+`src/search/iterative.rs` together and confirms full CI green
+(including the 3 new end-to-end blunder-repro tests, which are the
+real proof this works). If still red, get the log before assuming
+either fix is correct — this session's own analysis has no live
+compiler/test-runner backing it, only manual tracing.

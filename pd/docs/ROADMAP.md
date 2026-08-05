@@ -3133,6 +3133,43 @@ CI-confirmed. Phase 34.2 (`ThreatByRook`) also fully closed (Session
 
 ---
 
+## Phase 35 — Tactical Blindness / Blunder Investigation (2 External Reports, Session 139)
+
+Two independent external investigation reports uploaded together:
+`tactical-blindness-report.md` (5 hypotheses re-checked against source,
+4 refuted, 1 confirmed as a real gap) and `blunder-bug-report.md` (a
+separately confirmed, deterministically-reproduced root cause with
+FEN-level repro cases). Both spot-verified against live source before
+trusting, both fixed.
+
+- [x] 35.1 — TT torn-write self-detection fixed (D135). `key` is now
+      XORed with a `payload_fingerprint()` of the entry's own
+      depth/bound/age/mv/score, so `probe()`/`probe_move()`/`store()`
+      actually catch a torn write mixing two different writes' fields
+      — the old code's comment claimed this already happened via plain
+      key comparison, but `key` was an independent field, so it didn't.
+      2 new tests directly simulate a torn write. ⚠️ Not yet
+      CI-confirmed. Framed by its own report as a "leading suspect,"
+      not conclusively the cause of any specific reported blunder —
+      see 35.2, which turned out to be the actual confirmed root cause
+      of the report's own reproduced cases.
+- [x] 35.2 — Blunder fallback fixed (D136). Root cause:
+      `iterative_deepening()`'s end-of-function safety net picked an
+      unevaluated, arbitrary legal move whenever depth 1 never
+      completed before a stop landed — which happens on every move at
+      `movetime <= 30` (the default Move Overhead reduces the
+      allocated budget to 0ms). Two complementary fixes: (1)
+      `is_time_up()`'s elapsed-time check no longer fires while
+      `current_depth <= 1`, guaranteeing depth 1 always gets to run;
+      (2) the last-resort fallback itself now uses `score_moves()`
+      instead of `moves.get(0)`. 3 fix-forward test corrections needed
+      (2 in `alpha_beta.rs`, scoping confirmed sufficient for 1 in
+      `search/mod.rs`). 4 new tests, including 3 end-to-end
+      reproductions of the report's exact FEN cases through the real
+      `iterative_deepening()` entry point. ⚠️ Not yet CI-confirmed.
+
+---
+
 ## Milestone Targets
 
 | Milestone | Target Elo | Phase |
