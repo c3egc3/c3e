@@ -1,13 +1,19 @@
 # Pet Dragon — Engine Architecture
 
-*Reflects the codebase as of Session 82 (Phases 0-22, plus Phase 23
-items 23.1-23.3 and 23.6-23.7, complete; 23.4/23.5 explicitly held —
-see §3/§4 and DECISIONS.md D61/D62). Previously updated as of Session
-73 — that description missed three real changes landed since: D49
-(thread-differentiated Lazy SMP, Session 76), D59 (singular-extension
-multi-cut + negative extensions, Session 82), D60 (Late Move Pruning,
-Session 82). All three corrected below against actual source, not
-assumed from the old text.*
+*Reflects the codebase as of Session 139 (through Phase 35, D136).
+Previously the header claimed "Session 82" while the body had already
+been patched piecemeal past that point (e.g. D114/Session 116) without
+the header being bumped — a documentation-debt pattern this revision
+corrects rather than repeats. Five real gaps fixed this pass, checked
+directly against live source, not memory of this doc: `TTEntry.key`'s
+torn-write self-detection (D135), the iterative-deepening blunder
+fallback fix (D136), the full correction-history option family
+(`NonPawnCorrectionHistory`/`ContinuationCorrectionHistory`/
+`CorrectionExtension`, Phase 26 items 3a-3c, D82/D85/D86/D88/D89/D133/
+D134), the Threats-term status (`ThreatByRook`/`ThreatByMinor` now
+implemented, only `ThreatByKing`/`WeakQueenProtection` still open,
+D130), and §6's UCI option table, which was missing roughly half the
+engine's actual advertised options.*
 
 ---
 
@@ -92,7 +98,12 @@ pub struct SearchInfo {
     pub history: HistoryTable,
     pub countermoves: CountermoveTable,
     pub cont_hist: Box<[[[i32; 64]; 12]; 64]>,   // [prev_to][piece][to]
-    pub correction_history: pruning::CorrectionHistory, // pawn-hash indexed
+    pub correction_history: pruning::CorrectionHistory, // pawn-hash indexed, always on
+    pub correction_history_nonpawn: pruning::CorrectionHistory, // gated, default ON (D134)
+    pub correction_history_continuation: pruning::CorrectionHistory, // gated, default off
+    pub nonpawn_correction_enabled: bool,        // UCI NonPawnCorrectionHistory, default true
+    pub continuation_correction_enabled: bool,   // UCI ContinuationCorrectionHistory, default false
+    pub correction_extension_enabled: bool,      // UCI CorrectionExtension, default false
 
     // PV / node accounting
     pub pv_table: [[Move; MAX_PLY]; MAX_PLY],
@@ -119,7 +130,9 @@ Lock-free, power-of-2 sized, age-based replacement:
 
 ```rust
 pub struct TTEntry {
-    pub key:   u32,   // upper 32 bits of Zobrist hash (verification)
+    pub key:   u32,   // upper 32 bits of Zobrist hash, XOR'd with a
+                       // payload_fingerprint() of this entry's own
+                       // depth/bound/age/mv/score (D135) — see below
     pub depth: i8,
     pub bound: Bound, // Exact / LowerBound / UpperBound
     pub age:   u8,    // search generation, drives replacement priority
@@ -127,6 +140,21 @@ pub struct TTEntry {
     pub score: i32,
 }
 ```
+
+**Torn-write self-detection (D135, Session 139).** Two Lazy SMP threads
+can race a non-atomic read/write of the same slot; the code has always
+carried a comment claiming this self-detects, but until D135 that was
+false — `key` was stored as a plain, independent field, so a torn write
+mixing one write's key with another's payload decoded as a normal
+(wrong) hit instead of a mismatch. Fixed by XOR-ing `key` with
+`payload_fingerprint()`, computed from the entry's own depth/bound/age/
+mv/score at write time. `probe()`, `probe_move()`, and `store()` all
+recompute the fingerprint from whatever payload currently sits in the
+slot before trusting the key, so a torn write no longer decodes back to
+the original key. Two regression tests directly simulate a torn write.
+Flagged by an external report as a "leading suspect" for a reported
+blunder pattern; real bug, confirmed fixed, but D136 below turned out
+to be the actual root cause of the report's own reproduced cases.
 
 ---
 
@@ -138,7 +166,7 @@ All of the following are implemented and wired into `alpha_beta()`
 | Technique | Where | Notes |
 |---|---|---|
 | Principal Variation Search (PVS) | `alpha_beta.rs` | full-width first move, null-window re-search otherwise |
-| Iterative deepening + aspiration windows | `iterative.rs` | narrowing window per depth, re-widens on fail-high/low |
+| Iterative deepening + aspiration windows | `iterative.rs` | narrowing window per depth, re-widens on fail-high/low. **D136 (Session 139):** `is_time_up()`'s elapsed-time check no longer fires while `current_depth <= 1` (explicit stop/quit and the ponder-hit hard override are still instant), guaranteeing depth 1 always completes before any stop can land — fixes a confirmed, deterministically-reproduced blunder pattern at `movetime <= 30` where the default Move Overhead reduced the allocated budget to 0ms and the search returned before generating a single evaluated root move |
 | Null move pruning | `alpha_beta.rs` | adaptive reduction `3 + depth/6`, zugzwang-guarded (non-pawn material check) |
 | Late Move Reductions (LMR) | `alpha_beta.rs`, `pruning.rs` | `MIN_DEPTH_LMR = 3`, reduction scales with depth and move count |
 | Razoring | `alpha_beta.rs` | `MIN_DEPTH_RAZORING = 1`, drops to qsearch when static eval far below alpha |
@@ -150,7 +178,11 @@ All of the following are implemented and wired into `alpha_beta()`
 | Check extensions | `pruning.rs` (`extension()`) | |
 | Quiescence search | `alpha_beta.rs` | in-check evasions, checkmate detection, per-capture delta pruning, quiet checks at `qs_depth = 0` (13.5) |
 | Move ordering | `ordering.rs` | SEE-based capture ordering, killers, countermoves, history heuristic with gravity, 1-ply continuation history |
-| Correction history | `pruning.rs` (`CorrectionHistory`) | pawn-hash-indexed static-eval error tracker, applied before pruning decisions use static eval |
+| Correction history (pawn-hash) | `pruning.rs` (`CorrectionHistory`) | pawn-hash-indexed static-eval error tracker, applied before pruning decisions use static eval. Always on — no gating option, unlike the two siblings below |
+| Correction history (non-pawn) | `search/mod.rs` (`correction_history_nonpawn`) | Phase 26 item 3a (D82). Second, independent `CorrectionHistory` table indexed by non-pawn material instead of pawn structure. Gated by `SearchInfo::nonpawn_correction_enabled`, UCI `NonPawnCorrectionHistory` — shipped off, SPRT'd at 700 games across two independent batches (D133, Session 136), direction held both times (~+11.9 Elo combined favoring on), **default flipped to `true`** (D134, Session 137) |
+| Correction history (continuation) | `search/mod.rs` (`correction_history_continuation`) | Phase 26 item 3b (D86). Third, independent `CorrectionHistory` table indexed by `pruning::continuation_hash` (last two real moves' squares) rather than any board-state property. Gated by `continuation_correction_enabled`, UCI `ContinuationCorrectionHistory`. SPRT'd (D133, Session 136): +8.7 Elo favoring off, within this project's own noise bar — **no change**, default stays `false` |
+| Correction-scaled singular margin | `alpha_beta.rs` (`correction_extension_enabled`) | Phase 26 item 3c (D89). When true, scales the singular-extension margin down (by up to 1, from a base of 2) using the pawn-hash correction table's magnitude only — deliberately excludes the two tables above. UCI `CorrectionExtension`, default `false` |
+| Last-resort fallback move | `iterative.rs` | **D136 (Session 139).** If depth 1 somehow still doesn't complete, the end-of-function safety net now picks via `score_moves()` instead of blind `moves.get(0)` — the prior blind first-legal-move pick was the confirmed root cause of a separately reported blunder pattern (paired with the depth-1 guard above, which makes this path rare) |
 | Repetition detection | `position/mod.rs` | Stockfish-style `Vec<(u64, i32)>` algorithm (D45), checked before TT probe |
 | Lazy SMP, thread-differentiated | `main.rs` | N-1 helper threads share TT, time-unlimited, killed via shared `stop_flag`. **Thread-differentiated as of D49 (Session 76)** — small fixed offset tables keyed on `thread_id` vary each helper's search parameters (not per-thread RNG — see D49 for why that was rejected); this corrects the old "helpers are not currently parameter-differentiated" note that used to be here |
 | Time management | `search/time.rs` | soft/hard limits plus best-move-stability early stop (`STABILITY_THRESHOLD`) |
@@ -220,17 +252,22 @@ None of the three are scheduled — this is a documented candidate list,
 not a roadmap commitment. See DECISIONS.md D63 for the full
 investigation.
 
-**Fourth gap found separately (D68, Session 84).** Checking whether
-the engine scores pieces defending each other surfaced a gap outside
-D63's original checklist: no **Threats** term (Stockfish's
-`threats.cpp` — hanging-piece penalty, weak-queen-protection penalty,
-minor/rook threat bonus, restricted-piece penalty). The only existing
-piece-support logic anywhere is `open_lines.rs`'s connected-rooks/
-battery detection, which is rook/file-specific, not general. Also
-documented-not-scheduled; full scope in DECISIONS.md D68, including a
-flagged double-counting risk against `mobility.rs`'s attack counts and
-`king_safety.rs`'s attacker-weight term that should be hand-checked
-before implementation, not discovered mid-CI.
+**Fourth gap found separately (D68, Session 84) — partially closed.**
+Checking whether the engine scores pieces defending each other
+surfaced a gap outside D63's original checklist: no **Threats** term
+(Stockfish's `threats.cpp` — hanging-piece penalty, weak-queen-
+protection penalty, minor/rook threat bonus, restricted-piece
+penalty). Two of these are now implemented: `THREAT_BY_MINOR_BONUS`
+and, as of D130 (Phase 34.2, Session 133), `THREAT_BY_ROOK_BONUS =
+s(20, 12)` — rook-attacks-queen only (not rook-attacks-rook, matching
+Stockfish's own restriction; weak signal otherwise). Both accepted the
+same double-counting argument D68 originally flagged against
+`mobility.rs`'s attack counts and `king_safety.rs`'s attacker-weight
+term — hand-checked before landing, not discovered mid-CI. Still open:
+`ThreatByKing` (34.5, review flags this as needing the most care —
+MG/EG weighting, avoid rewarding an exposed king, do last) and
+`WeakQueenProtection` (34.6). Restricted-piece and hanging-piece
+penalties remain unscheduled. Full scope in DECISIONS.md D68/D130.
 
 **Alternative eval paradigms surveyed (D64, Session 82).** For the
 record, so this doesn't get re-investigated from scratch later: MCTS +
@@ -312,7 +349,8 @@ Full option set, confirmed from the actual `option name` output:
 | `Threads` | spin | 1 | Lazy SMP helper count |
 | `UCI_Chess960` | check | false | |
 | `SyzygyPath` | string | empty | |
-| `NNUEWeight` | spin | **0** | 0 = pure HCE, 100 = pure NNUE |
+| `NNUEWeight` | spin | **0** | 0 = pure HCE, 100 = pure NNUE — shelved D61, machinery stays functional |
+| `PlayStyle` | spin | 0 | 0-4 |
 | `MultiPV` | spin | 1 | |
 | `Move Overhead` | spin | — | ms |
 | `Skill Level` | spin | — | depth-capped, helper threads respect it too |
@@ -320,6 +358,15 @@ Full option set, confirmed from the actual `option name` output:
 | `Contempt` | spin | 0 | -100..100 |
 | `UCI_LimitStrength` | check | false | |
 | `UCI_Elo` | spin | — | |
+| `NullMoveKingGuard` | check | false | unproven-technique toggle, same rollout shape as the four below |
+| `NonPawnCorrectionHistory` | check | **true** | flipped from `false` — D134 (Session 137), see §3 |
+| `ContinuationCorrectionHistory` | check | false | SPRT'd, no change — D133, see §3 |
+| `CorrectionExtension` | check | false | see §3 |
+| `LMPEnabled` | check | true | kill-switch for Late Move Pruning (§3) |
+| `SingularMultiCutEnabled` | check | true | kill-switch for the D59 multi-cut/negative-extension pair (§3) |
+| `ThreatDefusal` | check | false | unproven-technique toggle |
+| `ImprovingHeuristic` | check | false | D114, see §3 |
+| `RecaptureExtension` | check | true | D125 |
 
 ---
 
