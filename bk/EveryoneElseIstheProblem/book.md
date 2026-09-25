@@ -46,6 +46,18 @@ General adult reader. Workplace-adjacent but not workplace-exclusive — example
 
 ---
 
+## IP / Copyright Caution (standing rule)
+
+- Citing real, published psychological research, named effects, and researchers (e.g., Dunning-Kruger effect, attribution bias) is fine and expected — these are scientific concepts, not copyrighted works.
+- Never build a chapter's structure around another author's proprietary framework (e.g., Erikson's color/DISC-style model). Archetypes in this book must stay grounded in public psychological research, not a reskin of someone else's invented system.
+- Never quote another book, article, or lyrics at length. Short attributed quotes (a sentence or two) are acceptable within normal nonfiction fair-use practice; no extended reproduction of anyone else's text.
+- Real brand/company names may appear briefly in passing example scenarios (nominative use — e.g., "forwarded the whole email thread") but must never imply endorsement, affiliation, or be used disparagingly at length.
+- No copyrighted or trademarked images, logos, or cover art anywhere in the manuscript or front matter without a confirmed license.
+- Anecdotes and scenarios stay composite/fictionalized (see Continuity Notes) — this also reduces defamation/privacy risk alongside IP risk.
+- This is a standing style-guide rule, checked automatically every session — not legal advice. A qualified IP/publishing attorney (or KDP's content guidelines) should review before final publication.
+
+---
+
 ## Continuity Notes
 
 - Author identity: **anonymous**. Byline is always "Garrett Cole." No content anywhere in the manuscript, docs, or repo should reference or hint at the real author's identity.
