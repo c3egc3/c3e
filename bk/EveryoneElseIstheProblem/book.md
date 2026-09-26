@@ -75,6 +75,8 @@ General adult reader. Workplace-adjacent but not workplace-exclusive — example
 - **Diane** (Ch. 2) — hosts Thanksgiving annually; snaps at her brother Tom during dinner prep due to depleted bandwidth, not character. Composite/fictionalized.
 - **Tom** (Ch. 2) — Diane's brother; makes an innocuous comment that lands badly given Diane's stress level. Composite/fictionalized.
 - **Renee** (Ch. 3) — marketing/agency project manager; deflects blame to a freelance designer on a client call rather than admitting she never sent an updated brief. Composite/fictionalized.
+- **Angela** (Ch. 4) — manages household logistics; repeatedly declines her husband's offers to help, then narrates her workload to others instead of asking directly. Composite/fictionalized.
+- **Dave** (Ch. 4) — Angela's husband; offers to help multiple times, is repeatedly declined, ends up cast as underhelping despite willingness. Composite/fictionalized.
 
 **Research citations used so far (for consistency if referenced again):**
 - Lee Ross — coined "fundamental attribution error" in the late 1970s. (Ch. 1)
@@ -85,9 +87,10 @@ General adult reader. Workplace-adjacent but not workplace-exclusive — example
 - Robert Yerkes & John Dodson (1908) — Yerkes-Dodson law (stress/performance curve). (Ch. 2)
 - Walter Cannon — originated "fight or flight" framing. (Ch. 2)
 - Shelley Taylor et al. (early 2000s) — "tend-and-befriend" stress response. (Ch. 2)
-- Leon Festinger (1957) — cognitive dissonance theory, including the classic $1/$20 peg-turning experiment. (Ch. 3 — primary citation, per the one-or-two-citations-per-archetype-chapter guideline below)
+- Leon Festinger (1957) — cognitive dissonance theory, including the classic $1/$20 peg-turning experiment. (Ch. 3 — primary citation)
+- J. Stacy Adams (early 1960s) — equity theory (input/output ratio fairness, over- and under-benefit responses). (Ch. 4 — primary citation; also calls back to Taylor's tend-and-befriend from Ch. 2 by reference, no new citation needed)
 
-**Note on citation density:** Ch. 2 cites six named researchers/concepts, more than Ch. 1's three. Ch. 3 (the first archetype chapter) kept to a single primary citation (Festinger) as intended — this is the pattern archetype chapters 4–9 should follow: one well-chosen concept, developed in depth, rather than several named in passing.
+**Note on citation density:** Ch. 2 cites six named researchers/concepts, more than Ch. 1's three. Chs. 3 and 4 (archetype chapters) each kept to a single primary citation (Festinger; Adams) as intended — this is the pattern archetype chapters 5–9 should follow: one well-chosen concept, developed in depth, rather than several named in passing.
 
 ---
 
@@ -101,7 +104,7 @@ Status flags: `not started` / `outlined` / `drafted` / `revised` / `final`
 | 1 | The Story You Tell About Strangers | Foundational psychology — attribution bias, self-serving bias, actor-observer asymmetry | drafted |
 | 2 | The Narrowing | Foundational psychology — how attribution bias and self-serving bias intensify under stress/cognitive load; bridges into the seven archetypes as stress-response scripts | drafted |
 | 3 | Not My Department | Archetype 1 — The Blamer (cognitive dissonance / self-serving deflection) | drafted |
-| 4 | TBD | Archetype 2 — The Martyr | not started |
+| 4 | I'll Just Do It Myself | Archetype 2 — The Martyr (equity theory, tend-and-befriend under strain) | drafted |
 | 5 | TBD | Archetype 3 — The Bulldozer | not started |
 | 6 | TBD | Archetype 4 — The Ghost | not started |
 | 7 | TBD | Archetype 5 — The Chronic Interrupter | not started |
@@ -123,8 +126,9 @@ Status flags: `not started` / `outlined` / `drafted` / `revised` / `final`
 | `manuscript/front-matter.docx` | not yet created |
 | `manuscript/ch01.docx` | drafted — committed to repo |
 | `manuscript/ch02.docx` | drafted — committed to repo |
-| `manuscript/ch03.docx` | **drafted — ready for repo commit this session** |
-| `manuscript/ch04.docx` through `ch12.docx` | not yet created |
+| `manuscript/ch03.docx` | drafted — committed to repo |
+| `manuscript/ch04.docx` | **drafted — ready for repo commit this session** |
+| `manuscript/ch05.docx` through `ch12.docx` | not yet created |
 | `manuscript/authors-note.docx` | not yet created |
 
 ---

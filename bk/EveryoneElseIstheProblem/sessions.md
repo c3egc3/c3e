@@ -4,6 +4,22 @@ Append-only. New entries added at the top. Past entries are never edited or dele
 
 ---
 
+## Session 2 (cont'd, part 3) — 2026-09-26
+
+**What was done:**
+- Outlined and drafted Chapter 4 in full: "I'll Just Do It Myself" — The Martyr / *The Sacrifice That Wants to Be Noticed* (~2,680 words). Second archetype chapter, anchored to J. Stacy Adams's equity theory as the primary citation, with a direct callback to Ch. 2's tend-and-befriend framing rather than a new citation. Composite anecdote: Angela and Dave, a household-logistics scenario where repeated offers of help are declined and the workload gets narrated rather than delegated. Included a brief workplace-parallel paragraph per the one-workplace-plus-one-home template noted in the roadmap.
+- Rendered and visually verified `ch04.docx` before delivery.
+- Updated `book.md`: Ch. 4 status set to "drafted," Angela/Dave logged in Continuity Notes, Adams citation logged, citation-density note updated to confirm the one-primary-citation pattern held for a second archetype chapter.
+
+**Decisions made:**
+- Confirmed the one-primary-citation-per-archetype-chapter pattern is working well across two chapters running (Festinger in Ch. 3, Adams in Ch. 4) — continue this approach through Ch. 9.
+- Established a lightweight template worth reusing in future archetype chapters: one central relationship/workplace anecdote, developed at length, plus one brief parallel example in the other domain (home vs. work) rather than two fully developed anecdotes.
+
+**Next session start point:**
+Outline and draft Chapter 5 (The Bulldozer). Ch. 4's closing paragraph sets up the transition — shifting from threat-to-self-image patterns (Blamer, Martyr) to a pattern rooted in not registering other people's competing needs at all, likely grounded in overconfidence/self-perception research (e.g., Dunning-Kruger is reserved per `book.md`'s Core Idea section — confirm which specific concept fits best before drafting).
+
+---
+
 ## Session 2 (cont'd, part 2) — 2026-09-26
 
 **What was done:**
