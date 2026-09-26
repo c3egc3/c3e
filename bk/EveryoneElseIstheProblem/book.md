@@ -69,13 +69,22 @@ General adult reader. Workplace-adjacent but not workplace-exclusive — example
 - Track any recurring example characters/scenarios used across multiple chapters here as they're introduced, to avoid contradicting details (names, jobs, relationships).
 
 **Recurring example characters introduced so far:**
-- **Marcus** (Ch. 1) — office worker; jumps to a character-flaw explanation when a colleague, Priya, is slow to reply to messages; later learns she was dealing with a parent's hospice care. Composite/fictionalized. Available for a possible brief callback in Ch. 2 or Ch. 10 (inward-looking chapter) if useful, but not required — do not force a callback that feels contrived.
+- **Marcus** (Ch. 1) — office worker; jumps to a character-flaw explanation when a colleague, Priya, is slow to reply to messages; later learns she was dealing with a parent's hospice care. Composite/fictionalized. Available for a possible brief callback in Ch. 10 (inward-looking chapter) if useful, but not required.
 - **Priya** (Ch. 1) — Marcus's colleague; reliable, generous, going through her mother's hospice care during the chapter's events. Composite/fictionalized.
+- **Diane** (Ch. 2) — hosts Thanksgiving annually; snaps at her brother Tom during dinner prep due to depleted bandwidth, not character. Composite/fictionalized.
+- **Tom** (Ch. 2) — Diane's brother; makes an innocuous comment that lands badly given Diane's stress level. Composite/fictionalized.
 
 **Research citations used so far (for consistency if referenced again):**
-- Lee Ross — coined "fundamental attribution error" in the late 1970s.
-- Edward Jones & Richard Nisbett (1971) — actor-observer asymmetry.
-- Nisbett & Ross, *The Person and the Situation* — referenced by title in Ch. 1 as a standard field reference; do not quote from it directly, citation by name/description only.
+- Lee Ross — coined "fundamental attribution error" in the late 1970s. (Ch. 1)
+- Edward Jones & Richard Nisbett (1971) — actor-observer asymmetry. (Ch. 1)
+- Nisbett & Ross, *The Person and the Situation* — referenced by title in Ch. 1 as a standard field reference; do not quote from it directly, citation by name/description only. (Ch. 1)
+- Daniel Kahneman — System 1 / System 2 framing from his judgment-and-decision-making research. (Ch. 2)
+- Nicholas Epley, Carey Morewedge, & Boaz Keysar (mid-2000s) — cognitive load increases egocentric bias / reduces perspective-taking accuracy. (Ch. 2)
+- Robert Yerkes & John Dodson (1908) — Yerkes-Dodson law (stress/performance curve). (Ch. 2)
+- Walter Cannon — originated "fight or flight" framing. (Ch. 2)
+- Shelley Taylor et al. (early 2000s) — "tend-and-befriend" stress response. (Ch. 2)
+
+**Note on citation density:** Ch. 2 cites six named researchers/concepts, more than Ch. 1's three. Worth watching across future chapters so the book doesn't feel front-loaded with citations early and thin later — the archetype chapters (3–9) should each anchor to one or two well-chosen concepts rather than stacking many.
 
 ---
 
@@ -87,7 +96,7 @@ Status flags: `not started` / `outlined` / `drafted` / `revised` / `final`
 |---|---|---|---|
 | — | Front Matter / Introduction | Core idea setup | not started |
 | 1 | The Story You Tell About Strangers | Foundational psychology — attribution bias, self-serving bias, actor-observer asymmetry | drafted |
-| 2 | TBD | Foundational psychology — how the bias intensifies under stress; bridge into archetypes | not started |
+| 2 | The Narrowing | Foundational psychology — how attribution bias and self-serving bias intensify under stress/cognitive load; bridges into the seven archetypes as stress-response scripts | drafted |
 | 3 | TBD | Archetype 1 — The Blamer | not started |
 | 4 | TBD | Archetype 2 — The Martyr | not started |
 | 5 | TBD | Archetype 3 — The Bulldozer | not started |
@@ -109,8 +118,9 @@ Status flags: `not started` / `outlined` / `drafted` / `revised` / `final`
 | Repo path | Status |
 |---|---|
 | `manuscript/front-matter.docx` | not yet created |
-| `manuscript/ch01.docx` | **drafted — ready for repo commit this session** |
-| `manuscript/ch02.docx` through `ch12.docx` | not yet created |
+| `manuscript/ch01.docx` | drafted — committed to repo |
+| `manuscript/ch02.docx` | **drafted — ready for repo commit this session** |
+| `manuscript/ch03.docx` through `ch12.docx` | not yet created |
 | `manuscript/authors-note.docx` | not yet created |
 
 ---

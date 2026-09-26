@@ -4,6 +4,22 @@ Append-only. New entries added at the top. Past entries are never edited or dele
 
 ---
 
+## Session 2 (cont'd) — 2026-09-26
+
+**What was done:**
+- Outlined and drafted Chapter 2 in full: "The Narrowing" / *Why the Same Person Looks Reasonable on a Good Day and Impossible on a Bad One* (~3,170 words). Covers how attribution bias and self-serving bias intensify under stress/cognitive load, using a composite Thanksgiving-dinner anecdote (Diane/Tom), and explicitly bridges into the book's seven archetypes by framing them as stress-response scripts (tying fight/flight/tend-and-befriend research to the Bulldozer/Ghost/Martyr patterns specifically) rather than fixed personality types.
+- Rendered and visually verified `ch02.docx` before delivery.
+- Updated `book.md`: Chapter 2 status set to "drafted," new recurring characters (Diane, Tom) and six new research citations logged in Continuity Notes, added a note flagging citation density so chapters 3–9 don't overload on named research.
+
+**Decisions made:**
+- Chapter 2 explicitly ties each upcoming archetype to a stress-response family (fight → Bulldozer, flight → Ghost, tend-and-befriend → Martyr) as a structural thread — worth keeping in mind when drafting Ch. 3 onward so each archetype chapter can reference this framing briefly rather than reintroducing the stress-response concept from scratch.
+- Archetype chapters should anchor to one or two well-chosen research citations each, not stack many, to keep citation density even across the book.
+
+**Next session start point:**
+Decide the open self-assessment quiz/checklist question in `roadmap.md`, then outline and draft Chapter 3 (The Blamer) — first archetype chapter. Note the stress-response framing from Ch. 2 (fight response) applies directly to the Blamer and can be referenced briefly rather than re-derived.
+
+---
+
 ## Session 2 — 2026-09-26
 
 **What was done:**

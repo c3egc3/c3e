@@ -11,13 +11,14 @@ Future plans, open questions, and not-yet-committed ideas. Not append-only — t
 3. ~~Decide standard terminology: "attribution bias" vs. "attribution error"~~ — done, Session 2 ("attribution bias" locked).
 4. ~~Outline Chapter 1 in full before drafting prose~~ — done, Session 2.
 5. ~~Draft Chapter 1~~ — done, Session 2.
-6. Outline and draft Chapter 2 (how attribution bias intensifies under stress; bridge into the archetype chapters).
-7. Decide the self-assessment quiz/checklist question (below) before Chapter 3 drafting begins, since it affects chapter structure consistency across all seven archetype chapters.
+6. ~~Outline and draft Chapter 2~~ — done, Session 2 ("The Narrowing" — stress/cognitive load intensifying attribution bias, bridges to archetypes via stress-response families: fight/flight/tend-and-befriend).
+7. Decide the self-assessment quiz/checklist question (below) before Chapter 3 drafting begins, since it affects chapter structure consistency across all seven archetype chapters. **Still open — needs a decision before Ch. 3.**
+8. Outline and draft Chapter 3 (The Blamer) — first archetype chapter. Can reference Ch. 2's fight-response framing briefly rather than re-deriving it.
 
 ## Planned Order of Work
 
 - Front matter/Introduction — drafted last, after the core idea has been proven out across a few chapters (common nonfiction practice: intros are easier to write once the book's actual voice is established).
-- Chapters 1–2 (foundational psychology) drafted first, since every archetype chapter depends on the vocabulary/concepts established here. Chapter 1 complete; Chapter 2 next.
+- Chapters 1–2 (foundational psychology) drafted first, since every archetype chapter depends on the vocabulary/concepts established here. Both complete as of Session 2. Chapter 3 (The Blamer) is next, pending the quiz/checklist decision below.
 - Chapters 3–9 (archetypes) drafted in outline order, but not necessarily locked — if a stronger archetype idea emerges while writing, order may be revisited (flag any such change here before altering `book.md`'s table).
 - Chapters 10–11 (inward-looking + practical tools) drafted after all archetype chapters are done, since they reference material from each.
 - Chapter 12 (closing synthesis) drafted last.
