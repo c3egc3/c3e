@@ -42,6 +42,7 @@ General adult reader. Workplace-adjacent but not workplace-exclusive — example
 - Oxford comma: yes.
 - Chapter length target: ~3,500–4,500 words.
 - Each archetype chapter should include: opening anecdote → the psychology behind it → how to recognize it in others → how to recognize it in yourself → practical communication/response strategies → short closing summary (not a bulleted "key takeaways" box — keep it in prose, consistent with tone).
+- **No self-assessment quiz/checklist boxes (locked, Session 2):** archetype chapters stay pure prose throughout, including the self-recognition sections. This was an open question as of Session 2's first entry — resolved against including formal quizzes, since gimmicky quiz formatting cuts against the book's explicit differentiation from proprietary-typing-system comp titles.
 - Anecdotes and scenarios throughout the book must be composite/fictionalized. Never depict an identifiable real person, living or dead.
 - **Chapter title style (locked, Session 2):** each chapter gets a short, evocative main title (not the literal archetype name) plus an italicized subtitle that states the actual subject plainly. Example: Ch. 1 — "The Story You Tell About Strangers" / *How the Brain Explains Other People's Bad Behavior (and Lets You Off the Hook)*. Archetype chapters (3–9) should follow the same pattern: evocative title, then a subtitle that names the archetype directly so the chapter is still scannable in a table of contents.
 - **Standard terminology (locked, Session 2):** use **"attribution bias"** as the general umbrella term throughout the book on first and all subsequent references. Use the more specific historical term **"fundamental attribution error"** only when directly citing the original Ross (1977) research or its naming history, as done in Ch. 1. Do not alternate casually between the two terms elsewhere.
@@ -73,6 +74,7 @@ General adult reader. Workplace-adjacent but not workplace-exclusive — example
 - **Priya** (Ch. 1) — Marcus's colleague; reliable, generous, going through her mother's hospice care during the chapter's events. Composite/fictionalized.
 - **Diane** (Ch. 2) — hosts Thanksgiving annually; snaps at her brother Tom during dinner prep due to depleted bandwidth, not character. Composite/fictionalized.
 - **Tom** (Ch. 2) — Diane's brother; makes an innocuous comment that lands badly given Diane's stress level. Composite/fictionalized.
+- **Renee** (Ch. 3) — marketing/agency project manager; deflects blame to a freelance designer on a client call rather than admitting she never sent an updated brief. Composite/fictionalized.
 
 **Research citations used so far (for consistency if referenced again):**
 - Lee Ross — coined "fundamental attribution error" in the late 1970s. (Ch. 1)
@@ -83,8 +85,9 @@ General adult reader. Workplace-adjacent but not workplace-exclusive — example
 - Robert Yerkes & John Dodson (1908) — Yerkes-Dodson law (stress/performance curve). (Ch. 2)
 - Walter Cannon — originated "fight or flight" framing. (Ch. 2)
 - Shelley Taylor et al. (early 2000s) — "tend-and-befriend" stress response. (Ch. 2)
+- Leon Festinger (1957) — cognitive dissonance theory, including the classic $1/$20 peg-turning experiment. (Ch. 3 — primary citation, per the one-or-two-citations-per-archetype-chapter guideline below)
 
-**Note on citation density:** Ch. 2 cites six named researchers/concepts, more than Ch. 1's three. Worth watching across future chapters so the book doesn't feel front-loaded with citations early and thin later — the archetype chapters (3–9) should each anchor to one or two well-chosen concepts rather than stacking many.
+**Note on citation density:** Ch. 2 cites six named researchers/concepts, more than Ch. 1's three. Ch. 3 (the first archetype chapter) kept to a single primary citation (Festinger) as intended — this is the pattern archetype chapters 4–9 should follow: one well-chosen concept, developed in depth, rather than several named in passing.
 
 ---
 
@@ -97,7 +100,7 @@ Status flags: `not started` / `outlined` / `drafted` / `revised` / `final`
 | — | Front Matter / Introduction | Core idea setup | not started |
 | 1 | The Story You Tell About Strangers | Foundational psychology — attribution bias, self-serving bias, actor-observer asymmetry | drafted |
 | 2 | The Narrowing | Foundational psychology — how attribution bias and self-serving bias intensify under stress/cognitive load; bridges into the seven archetypes as stress-response scripts | drafted |
-| 3 | TBD | Archetype 1 — The Blamer | not started |
+| 3 | Not My Department | Archetype 1 — The Blamer (cognitive dissonance / self-serving deflection) | drafted |
 | 4 | TBD | Archetype 2 — The Martyr | not started |
 | 5 | TBD | Archetype 3 — The Bulldozer | not started |
 | 6 | TBD | Archetype 4 — The Ghost | not started |
@@ -119,8 +122,9 @@ Status flags: `not started` / `outlined` / `drafted` / `revised` / `final`
 |---|---|
 | `manuscript/front-matter.docx` | not yet created |
 | `manuscript/ch01.docx` | drafted — committed to repo |
-| `manuscript/ch02.docx` | **drafted — ready for repo commit this session** |
-| `manuscript/ch03.docx` through `ch12.docx` | not yet created |
+| `manuscript/ch02.docx` | drafted — committed to repo |
+| `manuscript/ch03.docx` | **drafted — ready for repo commit this session** |
+| `manuscript/ch04.docx` through `ch12.docx` | not yet created |
 | `manuscript/authors-note.docx` | not yet created |
 
 ---

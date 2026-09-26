@@ -12,22 +12,23 @@ Future plans, open questions, and not-yet-committed ideas. Not append-only — t
 4. ~~Outline Chapter 1 in full before drafting prose~~ — done, Session 2.
 5. ~~Draft Chapter 1~~ — done, Session 2.
 6. ~~Outline and draft Chapter 2~~ — done, Session 2 ("The Narrowing" — stress/cognitive load intensifying attribution bias, bridges to archetypes via stress-response families: fight/flight/tend-and-befriend).
-7. Decide the self-assessment quiz/checklist question (below) before Chapter 3 drafting begins, since it affects chapter structure consistency across all seven archetype chapters. **Still open — needs a decision before Ch. 3.**
-8. Outline and draft Chapter 3 (The Blamer) — first archetype chapter. Can reference Ch. 2's fight-response framing briefly rather than re-deriving it.
+7. ~~Decide the self-assessment quiz/checklist question~~ — done, Session 2 (resolved against including quizzes; prose-only).
+8. ~~Outline and draft Chapter 3 (The Blamer)~~ — done, Session 2.
+9. Outline and draft Chapter 4 (The Martyr) — ties to the "tend-and-befriend" stress-response family from Ch. 2, distinct engine from the Blamer's outward deflection.
 
 ## Planned Order of Work
 
 - Front matter/Introduction — drafted last, after the core idea has been proven out across a few chapters (common nonfiction practice: intros are easier to write once the book's actual voice is established).
 - Chapters 1–2 (foundational psychology) drafted first, since every archetype chapter depends on the vocabulary/concepts established here. Both complete as of Session 2. Chapter 3 (The Blamer) is next, pending the quiz/checklist decision below.
-- Chapters 3–9 (archetypes) drafted in outline order, but not necessarily locked — if a stronger archetype idea emerges while writing, order may be revisited (flag any such change here before altering `book.md`'s table).
+- Chapters 3–9 (archetypes) drafted in outline order, but not necessarily locked — if a stronger archetype idea emerges while writing, order may be revisited (flag any such change here before altering `book.md`'s table). Ch. 3 (The Blamer) complete as of Session 2; Ch. 4 (The Martyr) next.
 - Chapters 10–11 (inward-looking + practical tools) drafted after all archetype chapters are done, since they reference material from each.
 - Chapter 12 (closing synthesis) drafted last.
 - Author's Note drafted after the manuscript is otherwise complete.
 
 ## Open Questions / Not Yet Committed
 
-- Should each archetype chapter include a short self-assessment quiz/checklist, or stay pure prose? (Erikson-style books often include these — worth deciding before Ch. 3 is drafted, since it affects chapter structure consistency.)
-- Should the book include a short "further reading" or citations appendix, given psychological claims are made throughout? Worth deciding before too many chapters are drafted, to keep citation practice consistent from the start. Note: Ch. 1 already cites Ross, Jones & Nisbett, and *The Person and the Situation* by name in-text, so an appendix (if added) should compile citations already used, not introduce a separate parallel system.
+- ~~Should each archetype chapter include a short self-assessment quiz/checklist, or stay pure prose?~~ — resolved, Session 2: pure prose, no quizzes.
+- Should the book include a short "further reading" or citations appendix, given psychological claims are made throughout? Worth deciding before too many chapters are drafted, to keep citation practice consistent from the start. Note: Chs. 1–3 already cite Ross, Jones & Nisbett, Kahneman, Epley et al., Yerkes & Dodson, Cannon, Taylor, and Festinger by name in-text, so an appendix (if added) should compile citations already used, not introduce a separate parallel system.
 - Consider whether "workplace-adjacent" framing needs a dedicated workplace-specific example in every chapter, or just most — to avoid feeling like a management book while still serving that reader segment. Ch. 1 used one workplace example (Marcus/Priya) and one household example (chores) — this split worked well stylistically and may be a reasonable template for the archetype chapters too.
 - Cover/title page design and front-matter docx formatting — not urgent, revisit once several chapters are drafted.
 

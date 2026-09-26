@@ -4,6 +4,23 @@ Append-only. New entries added at the top. Past entries are never edited or dele
 
 ---
 
+## Session 2 (cont'd, part 2) — 2026-09-26
+
+**What was done:**
+- Resolved the last open decision blocking Chapter 3: archetype chapters will stay pure prose, no self-assessment quiz/checklist boxes.
+- Outlined and drafted Chapter 3 in full: "Not My Department" — The Blamer / *Why "Not My Fault" Arrives Before the Facts Do* (~2,930 words). First archetype chapter. Anchored to a single primary citation (Festinger's cognitive dissonance theory, including the $1/$20 experiment) per the citation-density guideline set last entry. Composite anecdote: Renee, an agency project manager who deflects blame to a freelance designer on a client call. References Ch. 2's fight-response framing directly rather than re-deriving it.
+- Rendered and visually verified `ch03.docx` before delivery.
+- Updated `book.md`: Ch. 3 status set to "drafted," quiz/checklist decision locked into Style Conventions, Renee logged in Continuity Notes, Festinger citation logged, citation-density note updated to confirm the one-citation pattern worked as intended.
+
+**Decisions made:**
+- No self-assessment quiz/checklist boxes anywhere in the book — archetype chapters stay prose-only throughout, including the self-recognition sections.
+- Archetype chapters anchor to one primary research citation each (confirmed via Ch. 3 as a working example), not several.
+
+**Next session start point:**
+Outline and draft Chapter 4 (The Martyr). Ch. 3's closing paragraph already sets up the transition — the Martyr's engine is carrying more burden than the situation requires (the "tend-and-befriend" stress family from Ch. 2), rather than the Blamer's outward deflection.
+
+---
+
 ## Session 2 (cont'd) — 2026-09-26
 
 **What was done:**
