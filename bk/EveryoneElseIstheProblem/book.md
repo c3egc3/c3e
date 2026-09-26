@@ -43,6 +43,9 @@ General adult reader. Workplace-adjacent but not workplace-exclusive — example
 - Chapter length target: ~3,500–4,500 words.
 - Each archetype chapter should include: opening anecdote → the psychology behind it → how to recognize it in others → how to recognize it in yourself → practical communication/response strategies → short closing summary (not a bulleted "key takeaways" box — keep it in prose, consistent with tone).
 - Anecdotes and scenarios throughout the book must be composite/fictionalized. Never depict an identifiable real person, living or dead.
+- **Chapter title style (locked, Session 2):** each chapter gets a short, evocative main title (not the literal archetype name) plus an italicized subtitle that states the actual subject plainly. Example: Ch. 1 — "The Story You Tell About Strangers" / *How the Brain Explains Other People's Bad Behavior (and Lets You Off the Hook)*. Archetype chapters (3–9) should follow the same pattern: evocative title, then a subtitle that names the archetype directly so the chapter is still scannable in a table of contents.
+- **Standard terminology (locked, Session 2):** use **"attribution bias"** as the general umbrella term throughout the book on first and all subsequent references. Use the more specific historical term **"fundamental attribution error"** only when directly citing the original Ross (1977) research or its naming history, as done in Ch. 1. Do not alternate casually between the two terms elsewhere.
+- No bulleted "key takeaways" boxes anywhere in the manuscript — chapter closings stay in prose per the tone guide.
 
 ---
 
@@ -62,10 +65,17 @@ General adult reader. Workplace-adjacent but not workplace-exclusive — example
 
 - Author identity: **anonymous**. Byline is always "Garrett Cole." No content anywhere in the manuscript, docs, or repo should reference or hint at the real author's identity.
 - No archetype should be framed as a formal diagnosis or clinical label (avoid implying these map onto DSM categories or personality disorders — keep this a behavioral-pattern book, not a pop-diagnosis book).
-- Keep terminology for the same psychological concept consistent across chapters once introduced (e.g., don't alternate between "attribution bias" and "attribution error" — pick one and note it here once decided).
+- Keep terminology for the same psychological concept consistent across chapters once introduced — see Style Conventions above for the "attribution bias" vs. "fundamental attribution error" decision.
 - Track any recurring example characters/scenarios used across multiple chapters here as they're introduced, to avoid contradicting details (names, jobs, relationships).
 
-*(No recurring characters or terminology decisions logged yet — first chapter not yet drafted.)*
+**Recurring example characters introduced so far:**
+- **Marcus** (Ch. 1) — office worker; jumps to a character-flaw explanation when a colleague, Priya, is slow to reply to messages; later learns she was dealing with a parent's hospice care. Composite/fictionalized. Available for a possible brief callback in Ch. 2 or Ch. 10 (inward-looking chapter) if useful, but not required — do not force a callback that feels contrived.
+- **Priya** (Ch. 1) — Marcus's colleague; reliable, generous, going through her mother's hospice care during the chapter's events. Composite/fictionalized.
+
+**Research citations used so far (for consistency if referenced again):**
+- Lee Ross — coined "fundamental attribution error" in the late 1970s.
+- Edward Jones & Richard Nisbett (1971) — actor-observer asymmetry.
+- Nisbett & Ross, *The Person and the Situation* — referenced by title in Ch. 1 as a standard field reference; do not quote from it directly, citation by name/description only.
 
 ---
 
@@ -76,8 +86,8 @@ Status flags: `not started` / `outlined` / `drafted` / `revised` / `final`
 | # | Working Title | Archetype / Focus | Status |
 |---|---|---|---|
 | — | Front Matter / Introduction | Core idea setup | not started |
-| 1 | TBD | Foundational psychology — attribution bias | not started |
-| 2 | TBD | Foundational psychology — self-serving bias | not started |
+| 1 | The Story You Tell About Strangers | Foundational psychology — attribution bias, self-serving bias, actor-observer asymmetry | drafted |
+| 2 | TBD | Foundational psychology — how the bias intensifies under stress; bridge into archetypes | not started |
 | 3 | TBD | Archetype 1 — The Blamer | not started |
 | 4 | TBD | Archetype 2 — The Martyr | not started |
 | 5 | TBD | Archetype 3 — The Bulldozer | not started |
@@ -90,7 +100,7 @@ Status flags: `not started` / `outlined` / `drafted` / `revised` / `final`
 | 12 | TBD | Closing synthesis — "nobody's actually an idiot" reframe | not started |
 | — | Author's Note | | not started |
 
-**Note:** Archetype names (Blamer, Martyr, Bulldozer, Ghost, Chronic Interrupter, Rule-Bender, Victim) are working titles only — flagged for refinement before Chapter 3 drafting begins, per last session.
+**Note:** Archetype names (Blamer, Martyr, Bulldozer, Ghost, Chronic Interrupter, Rule-Bender, Victim) are confirmed as final working names as of Session 2 (see Open Decisions below — no longer flagged for refinement, but may still be lightly polished at time of drafting each chapter if a better fit emerges).
 
 ---
 
@@ -99,13 +109,16 @@ Status flags: `not started` / `outlined` / `drafted` / `revised` / `final`
 | Repo path | Status |
 |---|---|
 | `manuscript/front-matter.docx` | not yet created |
-| `manuscript/ch01.docx` through `ch12.docx` | not yet created |
+| `manuscript/ch01.docx` | **drafted — ready for repo commit this session** |
+| `manuscript/ch02.docx` through `ch12.docx` | not yet created |
 | `manuscript/authors-note.docx` | not yet created |
 
 ---
 
 ## Open Decisions (unresolved — needs confirmation before proceeding)
 
-- Final names for the seven archetypes (working names above are placeholders).
-- Whether "attribution bias" or "attribution error" is the standard term used throughout (pick one on first use in Ch. 1).
-- Chapter title style — literal (e.g., "The Blamer") vs. more evocative/hooky titles.
+- ~~Final names for the seven archetypes~~ — **resolved Session 2:** working names confirmed as final (Blamer, Martyr, Bulldozer, Ghost, Chronic Interrupter, Rule-Bender, Victim).
+- ~~Whether "attribution bias" or "attribution error" is the standard term~~ — **resolved Session 2:** "attribution bias" is the standard umbrella term; see Style Conventions.
+- ~~Chapter title style~~ — **resolved Session 2:** evocative main title + italicized descriptive subtitle; see Style Conventions.
+- Whether archetype chapters (3–9) include a self-assessment quiz/checklist or stay pure prose — still open, see `roadmap.md`; needs deciding before Ch. 3 drafting begins.
+- Whether the book includes a citations/further-reading appendix — still open, see `roadmap.md`.

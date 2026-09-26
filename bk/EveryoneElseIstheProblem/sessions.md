@@ -4,6 +4,25 @@ Append-only. New entries added at the top. Past entries are never edited or dele
 
 ---
 
+## Session 2 — 2026-09-26
+
+**What was done:**
+- Resolved three open decisions carried over from Session 1: archetype names locked as final (no longer placeholders), chapter title style locked (evocative main title + italicized descriptive subtitle), and standard terminology locked ("attribution bias" as the umbrella term; "fundamental attribution error" reserved for direct citation of the original research).
+- Outlined and drafted Chapter 1 in full: "The Story You Tell About Strangers" / *How the Brain Explains Other People's Bad Behavior (and Lets You Off the Hook)* (~3,400 words). Covers attribution bias, self-serving bias, and the actor-observer asymmetry, using a composite office anecdote (Marcus/Priya) plus a household-chores example, closing with practical habits and a bridge into Chapter 2.
+- Rendered and visually verified `ch01.docx` before delivery.
+- Updated `book.md`: Chapter 1 status set to "drafted," recurring characters and research citations logged in Continuity Notes, Open Decisions section updated to reflect resolved items, Style Conventions expanded with the two locked conventions.
+
+**Decisions made:**
+- Archetype names (The Blamer, The Martyr, The Bulldozer, The Ghost, The Chronic Interrupter, The Rule-Bender, The Victim) are final working titles, not placeholders — may still be lightly polished per-chapter but no longer flagged for a dedicated naming pass.
+- Chapter title convention: evocative title + italicized descriptive subtitle, applied starting with Ch. 1 and to be used consistently through Ch. 12.
+- Terminology convention: "attribution bias" throughout; "fundamental attribution error" only when directly citing Ross's original research.
+- Marcus and Priya (Ch. 1's example characters) are available but not required for a brief callback later in the book (e.g., Ch. 2 or Ch. 10) — flagged in Continuity Notes so a future callback doesn't invent contradicting details.
+
+**Next session start point:**
+Outline and draft Chapter 2 (foundational psychology — how attribution bias intensifies under stress, bridging into the seven archetype chapters). Before drafting Ch. 3 (The Blamer), decide the open question in `roadmap.md` about whether archetype chapters include a self-assessment quiz/checklist.
+
+---
+
 ## Session 1 — 2026-09-25
 
 **What was done:**
